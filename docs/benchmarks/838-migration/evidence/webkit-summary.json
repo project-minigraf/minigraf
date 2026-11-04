@@ -1,0 +1,194 @@
+[
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 17.0,
+    "min_ms": 15.0,
+    "max_ms": 17.0
+  },
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 23.0,
+    "min_ms": 21.0,
+    "max_ms": 25.0
+  },
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 44.0,
+    "min_ms": 42.0,
+    "max_ms": 56.0
+  },
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 4.0,
+    "min_ms": 4.0,
+    "max_ms": 5.0
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 18.0,
+    "min_ms": 16.0,
+    "max_ms": 19.0
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 24.0,
+    "min_ms": 24.0,
+    "max_ms": 26.0
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 79.0,
+    "min_ms": 72.0,
+    "max_ms": 80.0
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 6.0,
+    "min_ms": 5.0,
+    "max_ms": 8.0
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 20.0,
+    "min_ms": 18.0,
+    "max_ms": 27.0
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 26.0,
+    "min_ms": 25.0,
+    "max_ms": 27.0
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 85.0,
+    "min_ms": 82.0,
+    "max_ms": 88.0
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 9.0,
+    "min_ms": 8.0,
+    "max_ms": 10.0
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 23.0,
+    "min_ms": 21.0,
+    "max_ms": 27.0
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 30.0,
+    "min_ms": 28.0,
+    "max_ms": 31.0
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 262.0,
+    "min_ms": 244.0,
+    "max_ms": 283.0
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 22.0,
+    "min_ms": 22.0,
+    "max_ms": 26.0
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 27.0,
+    "min_ms": 23.0,
+    "max_ms": 34.0
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 33.0,
+    "min_ms": 32.0,
+    "max_ms": 34.0
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 413.0,
+    "min_ms": 391.0,
+    "max_ms": 426.0
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 36.0,
+    "min_ms": 31.0,
+    "max_ms": 43.0
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 26.0,
+    "min_ms": 23.0,
+    "max_ms": 30.0
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 37.0,
+    "min_ms": 34.0,
+    "max_ms": 40.0
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 459.0,
+    "min_ms": 450.0,
+    "max_ms": 501.0
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 65.0,
+    "min_ms": 61.0,
+    "max_ms": 70.0
+  }
+]

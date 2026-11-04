@@ -1,0 +1,6 @@
+{
+  "wrong_max_facts": 200000,
+  "recorded_max_facts": 20000,
+  "exit_code": 1,
+  "rejected": true
+}

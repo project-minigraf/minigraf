@@ -1,0 +1,55 @@
+[INFO]: 🎯  Checking for the Wasm target...
+[INFO]: 🌀  Compiling to Wasm...
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+   Compiling unicode-ident v1.0.27
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling wasm-bindgen-shared v0.2.130
+   Compiling serde_core v1.0.229
+   Compiling rustversion v1.0.23
+   Compiling bumpalo v3.20.3
+   Compiling serde v1.0.229
+   Compiling cfg-if v1.0.5
+   Compiling semver v1.0.28
+   Compiling autocfg v1.5.1
+   Compiling slab v0.4.12
+   Compiling futures-core v0.3.34
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-task v0.3.34
+   Compiling thiserror v2.0.21
+   Compiling zmij v1.0.23
+   Compiling byteorder v1.5.0
+   Compiling serde_json v1.0.154
+   Compiling stable_deref_trait v1.2.1
+   Compiling crc32fast v1.5.4
+   Compiling anyhow v1.0.104
+   Compiling sha1_smol v1.0.1
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling regex-lite v0.1.9
+   Compiling rustc_version v0.4.1
+   Compiling num-traits v0.2.19
+   Compiling hash32 v0.2.1
+   Compiling heapless v0.7.17
+   Compiling futures-util v0.3.34
+   Compiling wasm-bindgen v0.2.130
+   Compiling syn v3.0.9
+   Compiling uuid v1.29.0
+   Compiling wasm-bindgen-macro-support v0.2.130
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling cobs v0.3.0
+   Compiling chrono v0.4.45
+   Compiling postcard v1.1.3
+   Compiling wasm-bindgen-macro v0.2.130
+   Compiling js-sys v0.3.107
+   Compiling wasm-bindgen-futures v0.4.80
+   Compiling web-sys v0.3.107
+   Compiling minigraf v2.0.5 (<scratch>/source)
+    Finished `release` profile [optimized] target(s) in 34.40s
+[INFO]: ⬇️  Installing wasm-bindgen...
+warning: the `target_features` custom section is missing, likely due to `strip = true`, so wasm-bindgen cannot detect which Wasm features are enabled. Avoid `strip = true` and run `wasm-opt` on the wasm-bindgen output instead.
+[INFO]: ✨   Done in 35.00s
+[INFO]: 📦   Your wasm pkg is ready to publish at <scratch>/source/scripts/migration-sweep/pkg.
+[WARN]: ⚠️   There's a newer version of wasm-pack available, the new version is: 0.15.1, you are using: 0.13.1. To update, navigate to: https://rustwasm.github.io/wasm-pack/installer/

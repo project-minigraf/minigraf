@@ -1,0 +1,78 @@
+checking 1000-16-integer.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 1000-16-integer.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 1000-16-integer.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 1000-16-repeated256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 1000-16-repeated256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 1000-16-repeated256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 1000-16-unique256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 1000-16-unique256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 1000-16-unique256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 10000-256-integer.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 10000-256-integer.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 10000-256-integer.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 10000-256-repeated256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 10000-256-repeated256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 10000-256-repeated256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 10000-256-unique256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 10000-256-unique256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 10000-256-unique256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete

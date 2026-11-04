@@ -1,0 +1,276 @@
+{
+  "core_revision": "e07379323bca4c2c248c25c2e90707a8d8d9f134",
+  "fixture_writer": "crates.io minigraf 2.0.11",
+  "os": "Ubuntu 26.04.1 Linux x86_64",
+  "filesystem": "ext4 (TMPDIR for native files and browser profiles)",
+  "affinity": "numactl --cpunodebind=1 --membind=1",
+  "native_profile": "release, opt-level=3, lto=true, codegen-units=1",
+  "browser_profile": "core release, opt-level=z, lto=true, codegen-units=1, strip=true",
+  "node": "22.23.4",
+  "playwright": "1.64.1",
+  "browser_versions": {
+    "chromium": "156.0.8078.4",
+    "firefox": "157.0",
+    "webkit": "27.2"
+  },
+  "cache": "OS cache not dropped; fixture copy/seed and checks outside timers; browser same page/context reopen, process reused across samples; fresh context per fixture/sample",
+  "clocks": {
+    "native": "std::time::Instant",
+    "browser": "performance.now milliseconds converted to ns; units do not imply nanosecond precision"
+  },
+  "sessions": {
+    "native": {
+      "start_utc": "2026-11-04T08:16:54Z",
+      "end_utc": "2026-11-04T08:20:42Z",
+      "samples": 225,
+      "idle_before": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ],
+      "idle_after": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ]
+    },
+    "native-repeat": {
+      "start_utc": "2026-11-04T08:25:09Z",
+      "end_utc": "2026-11-04T08:29:17Z",
+      "samples": 225,
+      "idle_before": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ],
+      "idle_after": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ]
+    },
+    "chromium": {
+      "start_utc": "2026-11-04T08:20:46Z",
+      "end_utc": "2026-11-04T08:21:58Z",
+      "samples": 120,
+      "idle_before": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ],
+      "idle_after": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ]
+    },
+    "firefox": {
+      "start_utc": "2026-11-04T08:22:03Z",
+      "end_utc": "2026-11-04T08:23:40Z",
+      "samples": 120,
+      "idle_before": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ],
+      "idle_after": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ]
+    },
+    "webkit": {
+      "start_utc": "2026-11-04T08:23:44Z",
+      "end_utc": "2026-11-04T08:24:49Z",
+      "samples": 120,
+      "idle_before": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ],
+      "idle_after": [
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        },
+        {
+          "r": 0,
+          "b": 0,
+          "us": 0,
+          "sy": 0,
+          "id": 100,
+          "wa": 0,
+          "st": 0
+        }
+      ]
+    }
+  },
+  "timed_samples": 810,
+  "untimed_native_checks": 45,
+  "untimed_browser_checks_per_engine": 24,
+  "harness_sha256": {
+    "scripts/migration-sweep/native/src/main.rs": "238a85a16c3afb328da3030c0d1bf055439a82815b70ba87ea632e2a2367914d",
+    "scripts/migration-sweep/native/Cargo.toml": "10325c96520a36b2e8bfaf9786ea0a270289be04bfe17b551177612fefb696af",
+    "scripts/migration-sweep/browser.mjs": "7ae545191697a1d5d790eab4ae88158d3602dc61d4d257861052adbf4acb0168",
+    "scripts/migration-sweep/browser-runner.mjs": "563b19540347b9bf2a9735e3099cdfc3b2f6d413f2b60dddb22f9a6809150d1e",
+    "scripts/migration-sweep/summarize.py": "ae496cf4342f83a3c92e7c309a7dea0ea8a1313af7e67e27e6804c29536519a3",
+    "scripts/migration-sweep/test_summarize.py": "e2b9651bc1347bb3b9d95ca75b0338505759ce067b4ac31086669496b9dfe14e",
+    "scripts/migration-sweep/package.json": "e1b5e80299c3518ad9846b3da640f23f525220894bbbbb36795f504ea1e0c213",
+    "scripts/migration-sweep/package-lock.json": "6948233a0f6c5e1891e6eb3609a19e9f54b8c4c9eadf7326e5151f04d59b0713"
+  },
+  "build_sha256": {
+    "target/release/migration-sweep": "1170b8d90d948da2426e437ba873c8fd0201512e3c5e7d47ce40687b83776219",
+    "source/scripts/migration-sweep/pkg/minigraf.js": "f4038ce191c23de5a950a746c02a134aa3206bb155c7aaaa1bc12c37d6491c0d",
+    "source/scripts/migration-sweep/pkg/minigraf_bg.wasm": "85753a5f10d9ed50d0a4cd46068aec72ec34b53b716cdba9ae025c5c428ca5e3"
+  },
+  "fixture_archive_sha256": "d2bcbf6f2260aafe6569513fac44bac49ac88154ec383280380db91b38d99836",
+  "exclusions": [
+    "200k browser rung (exploratory untimed Chromium observation only)",
+    "cold-start/cold-cache",
+    "real Safari/mobile",
+    "concurrent browser contexts",
+    "sustained many-pin/RSS/quarantine-byte bounds",
+    "nightly promotion"
+  ],
+  "identity_policy": "Host identity and hardware inventory omitted; idle observations retain only run queue and CPU percentages, final two one-second vmstat intervals."
+}

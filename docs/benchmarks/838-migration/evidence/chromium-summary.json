@@ -1,0 +1,194 @@
+[
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 26.70000010728836,
+    "min_ms": 26.599999964237213,
+    "max_ms": 29.99999988079071
+  },
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 41.0,
+    "min_ms": 39.90000003576279,
+    "max_ms": 44.0
+  },
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 80.29999995231628,
+    "min_ms": 79.10000002384186,
+    "max_ms": 87.89999997615814
+  },
+  {
+    "fixture": "1000-16-integer.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 8.100000023841858,
+    "min_ms": 7.800000011920929,
+    "max_ms": 8.199999988079071
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 24.400000035762787,
+    "min_ms": 21.59999990463257,
+    "max_ms": 26.400000035762787
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 38.5,
+    "min_ms": 36.89999997615814,
+    "max_ms": 42.0
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 130.69999998807907,
+    "min_ms": 122.0,
+    "max_ms": 145.30000001192093
+  },
+  {
+    "fixture": "1000-16-repeated256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 12.199999988079071,
+    "min_ms": 11.299999952316284,
+    "max_ms": 12.599999964237213
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 28.80000001192093,
+    "min_ms": 25.600000023841858,
+    "max_ms": 29.300000071525574
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 45.60000002384186,
+    "min_ms": 41.89999997615814,
+    "max_ms": 52.80000001192093
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 141.69999998807907,
+    "min_ms": 115.60000002384186,
+    "max_ms": 153.19999998807907
+  },
+  {
+    "fixture": "1000-16-unique256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 19.5,
+    "min_ms": 18.899999976158142,
+    "max_ms": 20.600000023841858
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 23.5,
+    "min_ms": 22.299999952316284,
+    "max_ms": 25.599999964237213
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 38.69999998807907,
+    "min_ms": 37.5,
+    "max_ms": 43.5
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 396.69999998807907,
+    "min_ms": 368.10000002384186,
+    "max_ms": 420.69999998807907
+  },
+  {
+    "fixture": "10000-256-integer.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 41.0,
+    "min_ms": 39.19999998807907,
+    "max_ms": 47.0
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 25.5,
+    "min_ms": 23.699999928474426,
+    "max_ms": 26.099999964237213
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 41.09999996423721,
+    "min_ms": 31.0,
+    "max_ms": 41.89999997615814
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 587.5,
+    "min_ms": 578.7999999523163,
+    "max_ms": 591.1000000238419
+  },
+  {
+    "fixture": "10000-256-repeated256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 66.69999998807907,
+    "min_ms": 58.90000003576279,
+    "max_ms": 67.69999998807907
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "churn_pinned",
+    "samples": 5,
+    "median_ms": 25.699999928474426,
+    "min_ms": 24.500000059604645,
+    "max_ms": 26.800000071525574
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "churn_unpinned",
+    "samples": 5,
+    "median_ms": 40.19999998807907,
+    "min_ms": 38.09999996423721,
+    "max_ms": 43.19999998807907
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "migrate_v7",
+    "samples": 5,
+    "median_ms": 656.9000000357628,
+    "min_ms": 631.0,
+    "max_ms": 711.3000000119209
+  },
+  {
+    "fixture": "10000-256-unique256.graph",
+    "operation": "reopen_v8",
+    "samples": 5,
+    "median_ms": 99.59999996423721,
+    "min_ms": 97.60000002384186,
+    "max_ms": 113.90000003576279
+  }
+]

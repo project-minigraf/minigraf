@@ -1,0 +1,101 @@
+[
+  {
+    "file": "1000-16-integer.graph",
+    "entities": 1000,
+    "attributes": 16,
+    "shape": "integer",
+    "facts": 2000,
+    "transactions": 10,
+    "bytes": 577536,
+    "sha256": "99dec6596e94592f1f1f6572a4fd787886482947709d071e1f7b66215cfa3206",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "1000-16-repeated256.graph",
+    "entities": 1000,
+    "attributes": 16,
+    "shape": "repeated256",
+    "facts": 2000,
+    "transactions": 10,
+    "bytes": 1282048,
+    "sha256": "ac1703188e872f2ff1adf31aaa8bc3a48bcb03758a11e97b900d055df0ecf907",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "1000-16-unique256.graph",
+    "entities": 1000,
+    "attributes": 16,
+    "shape": "unique256",
+    "facts": 2000,
+    "transactions": 10,
+    "bytes": 1282048,
+    "sha256": "c5f4f5438a3ccb04aba116158fb2c59ce12da581b19cae32912a839e702b48da",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "10000-256-integer.graph",
+    "entities": 10000,
+    "attributes": 256,
+    "shape": "integer",
+    "facts": 20000,
+    "transactions": 100,
+    "bytes": 5734400,
+    "sha256": "115067f9a25362624047e9e915bb1fd19cbda07572e3d2e1324580377688b19e",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "10000-256-repeated256.graph",
+    "entities": 10000,
+    "attributes": 256,
+    "shape": "repeated256",
+    "facts": 20000,
+    "transactions": 100,
+    "bytes": 12664832,
+    "sha256": "c3b6b8e12213d6f2322c4394656a35fba2e9b2e5ac2c1ef34f8ef932071fa256",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "10000-256-unique256.graph",
+    "entities": 10000,
+    "attributes": 256,
+    "shape": "unique256",
+    "facts": 20000,
+    "transactions": 100,
+    "bytes": 12664832,
+    "sha256": "eaa26efee00fa0cdffddae68cf2bff06df80a789a7dd783aee57d81c50981734",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "100000-4096-integer.graph",
+    "entities": 100000,
+    "attributes": 4096,
+    "shape": "integer",
+    "facts": 200000,
+    "transactions": 1000,
+    "bytes": 59125760,
+    "sha256": "bc8fc48b9d4a22f8bd6e09b295b0474203263958a2483a1923ecc38ab6d920d0",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "100000-4096-repeated256.graph",
+    "entities": 100000,
+    "attributes": 4096,
+    "shape": "repeated256",
+    "facts": 200000,
+    "transactions": 1000,
+    "bytes": 129122304,
+    "sha256": "b214198fac9a0e57699901ae057f20791f7ceff71ba6d913345bef63bb79190c",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  },
+  {
+    "file": "100000-4096-unique256.graph",
+    "entities": 100000,
+    "attributes": 4096,
+    "shape": "unique256",
+    "facts": 200000,
+    "transactions": 1000,
+    "bytes": 129122304,
+    "sha256": "0420472ef77fb190a37c6014d49f3551f870dc1b9149c5956416e9b6a392019c",
+    "writer": "minigraf 2.0.11 (crates.io)"
+  }
+]

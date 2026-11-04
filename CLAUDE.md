@@ -8,6 +8,8 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 
 See `ROADMAP.md` for planned work and current direction. See `CHANGELOG.md` for completed-release history. The [#836 benchmark audit](docs/benchmarks/836-exclusions/README.md) records the 156 unselected native IDs and per-shape manual dispositions; it changes no runtime behavior or test counts.
 
+The [#838 manual migration sweep](docs/benchmarks/838-migration/README.md) covers native v7 migration through 200k facts and Chromium/Firefox/WebKit through 20k facts, including bounded post-migration cursor churn. It changes neither nightly coverage nor the Rust test inventory; larger browser cases remain excluded.
+
 ## Core Philosophy - CRITICAL
 
 **Before implementing ANY feature or change, you MUST assess it against the design philosophy in PHILOSOPHY.md.**

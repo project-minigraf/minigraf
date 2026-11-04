@@ -11,6 +11,13 @@
 Counts above are the current Cargo test inventory (active versus ignored),
 including #777, #789, #781, #794, #795 and #837 (Linux). Verification results below identify which suites ran.
 
+**#838 manual migration verification**: the [manual sweep](benchmarks/838-migration/README.md)
+checks every fixture value and cursor snapshot before accepting timings, including
+post-migration writes and reopen on native storage and three browser engines.
+The 2 golden-corpus and 7 migration-matrix tests pass, alongside five standalone
+Python evidence-integrity tests. These manual probes add no Rust tests to the
+inventory above and do not establish crash, cold-start or sustained-pin bounds.
+
 **#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passed before merging #795 (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
 
 **#781 verification (2026-10-29)**: 24 active tests and two ignored measurement
