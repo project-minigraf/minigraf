@@ -1,0 +1,27 @@
+{
+  "ci_run": 41851223675,
+  "tests_passed": 2,
+  "checked_cases": 14,
+  "benchmark_samples": 0,
+  "package_checksums_verified": true,
+  "embedded_metadata_matches": true,
+  "test_binary_sha256": "1f0b0034c7926d138bb2b52d3fd7178c8562bbf04dca91fb0159498f29285ba6",
+  "build": {
+    "core_revision": "33e5dffadebe0124e6287fc91cede4ff2b7a2b2f",
+    "binding_revision": "d89603d84009c52fc2460081b6280aa4ea5c0068",
+    "evidence_kind": "source-build",
+    "harness_sha256": "8a9723816c086b1b546acf09d4039909d7415e5e9903ca33af5e04b7fa7bbc90",
+    "cargo_lock_sha256": "e28ab925577de46ca00c990e53fba9be2b639eb9d6591730907ffeaf75f3b0a0",
+    "native_sha256": "d9b3643a1774d2fae266a17eeba2c4a8f8e0d1b55d1e1f94b4c81e053974f8aa",
+    "swift_binding_sha256": "273afefb9693aa6d8c43667e69614c410300d2a154bd78e10a8f5804f19f856a",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "xcode": "Xcode 15.4\nBuild version 15F31d",
+    "ios_sdk": "17.5",
+    "profile": "Release",
+    "swift_optimization": "-O",
+    "rust_profile": "release (binding workspace defaults)",
+    "abi": "aarch64-apple-ios",
+    "uniffi": "0.31.1",
+    "xcodegen": "2.46.0"
+  }
+}

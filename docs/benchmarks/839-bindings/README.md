@@ -1,7 +1,7 @@
 # Binding release evidence (#839)
 
-Status: work in progress; binding and release-maintainer acceptance is pending.
-This document is the execution and coverage plan, not a release sign-off.
+Status: runtime evidence collected; binding and release-maintainer acceptance is pending.
+This document records execution and coverage, not a release sign-off.
 
 ## Approved scope
 
@@ -35,7 +35,7 @@ Fixtures contain 1,000 scalar facts and a separate set fact. See
 | C | Six P16 nightly cases | Audit omitted options/errors, preparation/registration and JSON fact-log/LogWriter costs; disposition pending |
 | JVM | No P16 timing | Fourteen cases, smoke and three complete bench repetitions collected; review and acceptance pending |
 | Android | No P16 timing | Fourteen cases; physical-device smoke and three complete timed repetitions collected; acceptance pending |
-| Swift/iOS | No P16 timing | Fourteen-case harness and build/correctness pipeline under validation; physical-device runs pending |
+| Swift/iOS | No P16 timing | Fourteen cases; simulator correctness, physical smoke and three complete iPhone repetitions collected; acceptance pending |
 | WASI | Browser WASM is not WASI evidence | Three actual REPL cases, smoke and three complete bench repetitions collected; review and acceptance pending |
 | Swift/macOS | No qualifying stable platform | Excluded by explicit user decision; no macOS performance claim |
 
@@ -50,6 +50,16 @@ file-backed transaction, and LogWriter append plus finish. Preparation and
 registration are measured on their own; correctness queries run afterwards.
 Storage results are reopened and checked. LogWriter checks every returned record,
 including temporal metadata, against the source.
+
+| JVM/mobile case group | Timed boundary | Verification outside the timer |
+| --- | --- | --- |
+| Six common query/callback cases | Binding calls, full cursor draining where applicable, JSON decoding and structural checks | Exact rows/sets, counts and sums |
+| Preparation / first registration | Prepare or register call on the prepared fixture | Execute the resulting query/callback and check exact output |
+| Typed fact-log drain | Open, drain in batches, host record conversion and close | Values, count, attributes, transaction count and unique entities |
+| Negative cache option | Rejected open, exception conversion and error-prefix extraction | Exact API-017 error code |
+| Read-only open with options | Open the seeded file with options | Query exact contents and release the handle |
+| File transaction | Execute the transaction on an already-open new file | Transaction-result JSON, close/reopen and exact query contents |
+| LogWriter append/finish | Append pre-collected records and finish | Close/reopen, complete record equality including temporal fields, and exact query contents |
 
 The WASI package exposes a REPL, not foreign prepared-query objects or callback
 registration. Its cases are empty-input startup, startup plus a fixed
@@ -110,6 +120,16 @@ not evidence that every latency is stable or acceptable for a release.
 Neither permission to run the work nor a successful CI job supplies maintainer
 sign-off. #839 remains open until these criteria are satisfied.
 
-See [the initial results](results.md) for the nine retained JVM/Android/WASI runs,
+See [the results](results.md) for the twelve retained JVM/Android/Swift-iOS/WASI timing datasets
+(45 distinct cases, 1,350 samples and 135 case/run summaries),
 and [the proposed remaining dispositions](dispositions.md) for the exact limits
-requiring maintainer decisions. Swift/iOS is still in build/device validation.
+requiring maintainer decisions. Swift/iOS's first timing series came from the
+physical smoke job after the oracle and smoke passed; the retained scheduling
+deviation and artifact-collection limitations are described with the results.
+
+Reviewable harnesses: [JVM #21](https://github.com/project-minigraf/minigraf-java/pull/21),
+[Android #17](https://github.com/project-minigraf/minigraf-android/pull/17),
+[Swift/iOS #16](https://github.com/project-minigraf/minigraf-swift/pull/16).
+The [core evidence PR #852](https://github.com/project-minigraf/minigraf/pull/852)
+collects this report and the WASI driver. All are pending review; no issue closure
+or release acceptance is implied.

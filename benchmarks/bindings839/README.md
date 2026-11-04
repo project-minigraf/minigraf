@@ -55,8 +55,39 @@ can obscure the original exception, but cannot turn failure into a valid sample.
 Negative cache validation occurs in the binding before opening the file; the
 pinned shim's `options.to_core()?` precedes `Minigraf::open_with_options`.
 
-All result decoding and structural checks are part of the named foreign round
-trip. Expected-value comparisons, setup and reporting are outside the clock.
+For the six common query/callback cases, result decoding and structural checks
+are part of the named foreign round trip. Expected-value comparisons, setup and
+reporting are outside the clock. The extra lifecycle/storage cases time their
+named calls: transaction-result JSON validation and reopened queries are outside
+the timer, as are the queries that validate preparation, registration and opening.
 Validate JSONL completeness and verify the packaged native artifact, not only a
 build-directory library, before accepting or publishing a run. Preserve failures
 and every sample; keep private machine/provider details out of public artifacts.
+
+## Swift/iOS
+
+Use the binding repository's `bench/device-farm/build.sh` and recorded core
+revision. GitHub builds the Release IPA/XCTest package and runs simulator oracle
+and smoke tests only. `testBenchmark` rejects simulator execution.
+
+For Device Farm `schedule-run`, set `test.type` to `XCTEST` and put the method
+selection in **`test.filter`**, not `test.parameters.filter`. Select
+`BenchmarkTests/testSmoke` before `BenchmarkTests/testBenchmark`. The first
+retained job used the latter, ineffective parameters field and ran all three
+methods; its logs show oracle and smoke passing before the benchmark in fresh
+app processes. This deviation is retained with that series.
+
+Set `configuration.customerArtifactPaths.iosPaths` to
+`["Documents/minigraf-bench-benchmark.jsonl"]` for timing (use `smoke` for smoke).
+The path is relative to the app container: a leading slash is rejected. In this
+series, Device Farm also failed to attach the relative-path file. The complete
+JSONL is therefore recovered from the retained automation log; each
+`MinigrafBench:` record is under 900 bytes. Do not assume file attachment succeeds.
+Extract one complete benchmark stream, not duplicated application/syslog copies,
+then run `validate.py swift-ios OUTPUT.jsonl`. Match the emitted build identity
+to the packaged `build.json` and retained checksums. A provider PASS or smoke
+stream alone does not validate timing evidence.
+
+The measured Swift harness is pinned by its binding revision and hash in
+`swift-ios-build.json`. Retain its package bytes; Device Farm re-signs the app
+for installation, so upload checksums identify the submitted artifacts.

@@ -1,0 +1,14 @@
+{
+  "oracle_automation_log_sha256": "b5863df78e70278855a60424fd0b2e69b3de1115b7010edc02ca27c4915dbf77",
+  "physical_negative_oracle_passed": true,
+  "physical_smoke_cases": 14,
+  "physical_test_names": [
+    "testOracleRejectsEmptyAndWrongRows",
+    "testSmoke",
+    "testBenchmark"
+  ],
+  "series": 3,
+  "simulator_measurements_used": false,
+  "smoke_automation_log_sha256": "efe3370f1bcdb22d18933dc95909f3025262cef9864a6637f9569ee1a1e92ae4",
+  "timing_samples_per_series": 140
+}

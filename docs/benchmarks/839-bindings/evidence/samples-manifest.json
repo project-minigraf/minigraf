@@ -61,5 +61,26 @@
     "omitted_environment_fields": [],
     "retained_original_sha256": "79243e149b12f7365c37b7d2895e0b54d801730da90154a87ebf2595324885cc",
     "sha256": "d77a6e9bb12ed65c3e80b7c212b6594df8bb9d3428b5179bfeade71b288e6503"
+  },
+  {
+    "extracted_from": "10-AUTOMATION_OUTPUT.txt",
+    "file": "swift-ios-1.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "7d87861458c5b7949cc10ccc213e28cc4e48961427c85fd044f066ee578e03a2",
+    "sha256": "7d87861458c5b7949cc10ccc213e28cc4e48961427c85fd044f066ee578e03a2"
+  },
+  {
+    "extracted_from": "2-AUTOMATION_OUTPUT.txt",
+    "file": "swift-ios-2.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "9616d540c5e45a30f80e0158380e57ed6652ee619c8a700251c66fcf4467c26c",
+    "sha256": "9616d540c5e45a30f80e0158380e57ed6652ee619c8a700251c66fcf4467c26c"
+  },
+  {
+    "extracted_from": "2-AUTOMATION_OUTPUT.txt",
+    "file": "swift-ios-3.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "e5595308069a60a38f544f8609a68bfa42a238d0a3198cfeb0aa1f7318a52625",
+    "sha256": "e5595308069a60a38f544f8609a68bfa42a238d0a3198cfeb0aa1f7318a52625"
   }
 ]

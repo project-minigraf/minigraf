@@ -78,9 +78,10 @@ performed locally. These latency cases do not enforce RSS bounds.
 
 ## Deliberate dispositions requiring release sign-off
 
-- Java/JVM: no JVM latency history yet. Python exercises the shared UniFFI
-  adapter, but does not measure JVM allocation, JNI or JVM callbacks. JVM
-  timings remain a manual release check, not claimed nightly coverage.
+- Java/JVM: no JVM nightly latency history. Python exercises the shared UniFFI
+  adapter, but does not measure JVM allocation, JNA or JVM callbacks. The
+  [#839 manual series](benchmarks/839-bindings/results.md) supplies separate
+  release evidence; acceptance remains pending.
 - Android: ART/ABI and device storage timing require a fixed physical device;
   emulator timings on a hosted Linux runner are not a substitute. Manual
   device benchmarks and release sign-off remain required.

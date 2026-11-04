@@ -1,0 +1,16 @@
+{"build":{"binding_revision":"d89603d84009c52fc2460081b6280aa4ea5c0068","core_revision":"33e5dffadebe0124e6287fc91cede4ff2b7a2b2f","harness_sha256":"8a9723816c086b1b546acf09d4039909d7415e5e9903ca33af5e04b7fa7bbc90","native_sha256":"d9b3643a1774d2fae266a17eeba2c4a8f8e0d1b55d1e1f94b4c81e053974f8aa"},"mode":"smoke","model":"iPhone15,4","os":"18.5","rss_verified":false,"storage":"app-documents","thermal_state":0,"type":"environment"}
+{"id":"binding\/swift-ios\/prepared_execute\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/cursor_batch_1\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/cursor_batch_256\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/set_roundtrip\/2","type":"checked"}
+{"id":"binding\/swift-ios\/predicate\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/aggregate\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/prepare\/point","type":"checked"}
+{"id":"binding\/swift-ios\/register_predicate\/first","type":"checked"}
+{"id":"binding\/swift-ios\/register_aggregate\/first","type":"checked"}
+{"id":"binding\/swift-ios\/fact_log_batch_256\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/options_error\/negative_cache","type":"checked"}
+{"id":"binding\/swift-ios\/options_readonly_open\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/file_transact\/1k","type":"checked"}
+{"id":"binding\/swift-ios\/log_writer_append_finish\/1k","type":"checked"}
+{"count":14,"ids":["binding\/swift-ios\/prepared_execute\/1k","binding\/swift-ios\/cursor_batch_1\/1k","binding\/swift-ios\/cursor_batch_256\/1k","binding\/swift-ios\/set_roundtrip\/2","binding\/swift-ios\/predicate\/1k","binding\/swift-ios\/aggregate\/1k","binding\/swift-ios\/prepare\/point","binding\/swift-ios\/register_predicate\/first","binding\/swift-ios\/register_aggregate\/first","binding\/swift-ios\/fact_log_batch_256\/1k","binding\/swift-ios\/options_error\/negative_cache","binding\/swift-ios\/options_readonly_open\/1k","binding\/swift-ios\/file_transact\/1k","binding\/swift-ios\/log_writer_append_finish\/1k"],"mode":"smoke","thermal_state":0,"type":"complete"}
