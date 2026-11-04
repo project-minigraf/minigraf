@@ -79,7 +79,7 @@ jobs:
 
   # Separate from Bencher latency: these existing tests assert fixed retained
   # state/RSS bounds (and QRY-012 exhaustion), rather than uploading RSS as time.
-  # Runtime within the existing 15/30/45-minute budgets remains unverified.
+  # Exact test inventories and RSS records are checked after each command.
   acceptance:
     name: v3 acceptance / ${{ matrix.name }}
     needs: source
@@ -92,7 +92,7 @@ jobs:
         include:
           - name: recursive
             timeout: 45
-            command: cargo test --profile bench --test recursive_acceptance_test -- --ignored --nocapture
+            command: cargo test --profile bench --test recursive_acceptance_test -- --ignored --nocapture --test-threads=1
           - name: memory-limit
             timeout: 30
             command: cargo test --profile bench --test memory_limit_acceptance_test -- --ignored --nocapture --test-threads=1
@@ -101,7 +101,7 @@ jobs:
             command: cargo test --profile bench --test limit_acceptance_test -- --ignored --nocapture
           - name: large-transaction
             timeout: 30
-            command: cargo test --profile bench --features test-hooks --test large_transaction_acceptance_test -- --ignored --nocapture
+            command: cargo test --profile bench --features test-hooks --test large_transaction_acceptance_test -- --ignored --nocapture --test-threads=1
           - name: size-per-fact
             timeout: 15
             command: cargo test --lib size_per_fact_in_433_shape_1m -- --include-ignored --nocapture
@@ -109,6 +109,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.source.outputs.sha }}
+      - name: Checkout the verifier from the workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .acceptance-workflow
+      - name: Test the acceptance evidence verifier
+        run: python3 -m unittest discover -s .acceptance-workflow/.github/acceptance -v
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Run acceptance and retain source/test evidence
@@ -123,11 +130,17 @@ jobs:
             echo "Command: $ACCEPTANCE_COMMAND"
             $ACCEPTANCE_COMMAND
           } 2>&1 | tee acceptance.txt
+      - name: Require the complete test inventory and measured RSS checks
+        env:
+          ACCEPTANCE_SUITE: ${{ matrix.name }}
+        run: python3 .acceptance-workflow/.github/acceptance/verify.py "$ACCEPTANCE_SUITE" acceptance.txt
       - name: Retain acceptance output including executed test names and RSS/state
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: acceptance-${{ matrix.name }}
-          path: acceptance.txt
+          path: |
+            acceptance.txt
+            Cargo.lock
           if-no-files-found: error
           retention-days: 30

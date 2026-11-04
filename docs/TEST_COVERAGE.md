@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,039 | 2,074 |
-| **Ignored** | 19 | 20 |
-| **Total** | 2,058 | 2,094 |
+| **Active** | 2,041 | 2,076 |
+| **Ignored** | 21 | 23 |
+| **Total** | 2,062 | 2,099 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794 and #795. Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795 and #837 (Linux). Verification results below identify which suites ran.
 
 **#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passed before merging #795 (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
 
@@ -380,7 +380,7 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
   - Cursors and fact logs opened before and between chunks keep their snapshot through later checkpoints.
   - The fault matrix injects every write and sync fault at every call of a large transaction, on a file with one and with two valid meta slots, with and without a WAL beforehand.
   - Allocator tracking and release, cache eviction, and cursor peeking have unit tests.
-  - `tests/large_transaction_acceptance_test.rs` (ignored, `test-hooks` only, nightly in `.github/workflows/smoke.yml`) holds at most 65,536 materialised facts (the default chunk) for a 1M-fact `transact`, and prints peak RSS.
+  - `tests/large_transaction_acceptance_test.rs` (ignored, `test-hooks` only, nightly in `.github/workflows/smoke.yml`) holds at most 65,536 materialised facts (the default chunk) for a 1M-fact `transact`, and prints peak RSS. `custom_chunk_bounds` checks public chunk sizes 0, 1, 2, 257, 131,072, 1,000,000 and `usize::MAX`, including million-fact custom chunks, exact retained-fact peaks and complete counts after reopen.
 - **Statement bases and large write transactions** (`src/storage/persistent_facts/large_tx.rs`, 9 tests; `src/fault_matrix.rs`, 4 tests; `src/storage/page.rs` and `src/storage/btree.rs`, 2 tests; `tests/memory_limit_test.rs`, 1 test changed)
   - A `WriteTransaction` whose statements repeat, change, retract and re-assert earlier statements' facts within and across chunks, at chunk sizes 1 to 4, gives every statement the small path's outcome and stores the same records. This includes two statements that fail `API-011`, one only through a repeat of an earlier statement's fact (the claims case). Checked over one transaction and over two with committed and pending facts between them; passes `verify` and survives reopen.
   - Queries after each statement, inside the transaction at chunk sizes none and 1 to 4, return what a commit of the statements so far holds, including a staged retraction of a pending assertion and the reverse.
@@ -630,22 +630,33 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - A native storage test checks that a file whose free pages are all zeros (as the browser exports them), both just migrated from v7 and after 20 saves, opens, verifies clean and keeps committing. The free-list test checks that a checkpoint reports exactly the ids it newly lists.
 - **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,182 passing and seven ignored in the 2026-10-28 bench run with Wasmtime v49.0.2 (`wasm.yml`). All three committed input-order fixtures run here too, and the WASI REPL builds in release mode.
 
+## Acceptance evidence enforcement (#837)
+
+The scheduled Linux route requires the exact ten named acceptance tests, including
+the ignored storage test, and all nine measured RSS records. Missing, renamed,
+ignored or zero tests fail the evidence verifier; its eight Python regressions
+run in lint and acceptance CI. Linux RSS reset/read failure fails the Rust test;
+other platforms explicitly report a skip. Two ordinary Linux tests exercise the
+RSS helper's missing-measurement and over-budget paths. Commands run measured
+binaries serially. Storage asserts exact page bytes <= 200 × history facts and
+prints both counts. See [bounds and validation](benchmarks/837-acceptance-gaps.md).
+
 ## Ignored Tests
 
-The seventeen ignored tests (eighteen with `test-hooks`) are intentionally excluded from a normal local run:
+The twenty-one ignored tests (twenty-three with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
 - One long-haul smoke test intended for scheduled runs.
 - One soak test at 10M facts (`soak`), run weekly by `.github/workflows/soak.yml` (#392). `soak_short` runs the same driver at 20K facts in the normal suite. The memory bound is measured in a child process (`soak_memory_child`, #542).
 - One size test at 1.15M facts (`size_per_fact_in_433_shape_1m`), run by the nightly smoke workflow.
-- One recursive-rule acceptance test (`reach_5m`, #548), run by the nightly smoke workflow: a layered graph whose `reach` rule derives 4,882,500 facts in 62 rounds must return them all with peak RSS under 256 bytes per derived fact, and the default `max_derived_facts` must stop the same rule with `INT-020`.
+- Three recursive-rule acceptance tests (#548, #837), run by the nightly smoke workflow: a layered graph whose `reach` rule derives 4,882,500 facts in 62 rounds must return them all with peak RSS under 256 bytes per derived fact, and the default `max_derived_facts` must stop the same rule with `INT-020`. Nonlinear self-join closure and three-stratum recursion run at 256 and 512 nodes with explicit relation-size/RSS/time-scaling bounds and `INT-020` under a 1,000-fact cap.
 - Three query-memory acceptance tests (`tests/memory_limit_acceptance_test.rs`, #549, #575, #551), run one at a time by the nightly smoke workflow:
   - 1M ordered count and sum groups return 1M rows under a 32 MiB `query_memory_limit`; the floating `sum-distinct` fallback control stops with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
 - One `:limit` and top-k acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow over one 10M-fact fixture written with `LogWriter`: `:limit 10` returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; `:order-by [?v :desc] :limit 10` returns the ten largest values under a 1 MiB limit, adding under 32 MiB.
-- One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
+- Two large-transaction acceptance tests (`tests/large_transaction_acceptance_test.rs`, #550, #837; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 - One committed-group measurement test (`committed_group_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #641): opens prebuilt fixed-size and growing-group fixtures, drains count/count-distinct with and without a limit, and prints meter peaks, active-group high-water and input counts.
 - Two generalized group measurement tests (`generalized_committed_memory_probe` and `certified_growing_distinct_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #781): drain prebuilt fixed-group and growing-distinct fixtures, reporting Aggregate and IdSpace peaks separately, input counts and exact results. See the [100K–10M evidence](benchmarks/781-ordered-aggregate.md).
