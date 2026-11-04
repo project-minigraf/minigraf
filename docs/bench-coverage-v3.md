@@ -8,6 +8,14 @@ unverified reporting/scaling claims are listed below. This documentation-only
 update follows PHILOSOPHY.md's reliability, performance through simplicity and
 documentation principles; it changes no runtime, dependency, API or file format.
 
+**X02 follow-up (2026-11-04):** [the acceptance enforcement report](benchmarks/837-acceptance-gaps.md)
+records a successful revised-workflow dispatch: ten named tests, nine confirmed
+RSS checks, nonlinear/multistratum scaling, custom chunk/clamp bounds and exact
+storage bytes. It supersedes the missing-execution and missing-coverage status
+for X02 below; those rows retain the historical audit context. Activation on the
+default-branch schedule requires v3 PR #848 followed by main PR #849. This adds
+no Bencher memory metric and does not resolve the other manual exclusions.
+
 ## Revisions and method
 
 | Input | Revision |
