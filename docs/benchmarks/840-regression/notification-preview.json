@@ -1,0 +1,358 @@
+[
+  {
+    "kind": "native",
+    "scenario": "failed-upload",
+    "posts": [
+      {
+        "owner": "project-minigraf",
+        "repo": "minigraf",
+        "title": "Benchmark regression: audit_840_native (audit-840-preview)",
+        "body": "Bencher failed in the nightly benchmark run (audit_840_native, audit-840-preview) but listed no alerts. This is likely an API or upload error.\n\n**Branch:** `audit-840-preview`\n**Measured checkout:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n**Run:** https://example.invalid/project-minigraf/minigraf/actions/runs/4",
+        "labels": [
+          "performance"
+        ]
+      }
+    ],
+    "warnings": [
+      "Benchmark regression: audit_840_native (audit-840-preview). Opened #999999."
+    ],
+    "calls": []
+  },
+  {
+    "kind": "native",
+    "scenario": "repeated",
+    "posts": [
+      {
+        "owner": "project-minigraf",
+        "repo": "minigraf",
+        "title": "Benchmark regression: audit_840_native (audit-840-preview)",
+        "body": "Bencher flagged these benchmarks in the nightly run (audit_840_native, audit-840-preview) on two runs in a row:\n\n- `audit/840/example`\n\n**Branch:** `audit-840-preview`\n**Measured checkout:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n**Run:** https://example.invalid/project-minigraf/minigraf/actions/runs/4\n**Previous run:** https://example.invalid/prior-run\n\nPlease review the Bencher dashboard to confirm the regression.",
+        "labels": [
+          "performance"
+        ]
+      }
+    ],
+    "warnings": [
+      "Benchmark regression: audit_840_native (audit-840-preview). Opened #999999."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      },
+      {
+        "action": "listJobsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "run_id": 2,
+          "per_page": 100
+        }
+      },
+      {
+        "action": "downloadJobLogsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "job_id": 3
+        }
+      }
+    ]
+  },
+  {
+    "kind": "native",
+    "scenario": "different-id",
+    "posts": [],
+    "warnings": [
+      "Bencher flagged 1 benchmark(s) in audit_840_native, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      },
+      {
+        "action": "listJobsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "run_id": 2,
+          "per_page": 100
+        }
+      },
+      {
+        "action": "downloadJobLogsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "job_id": 3
+        }
+      }
+    ]
+  },
+  {
+    "kind": "native",
+    "scenario": "different-branch",
+    "posts": [],
+    "warnings": [
+      "Bencher flagged 1 benchmark(s) in audit_840_native, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      }
+    ]
+  },
+  {
+    "kind": "native",
+    "scenario": "different-suite",
+    "posts": [],
+    "warnings": [
+      "Bencher flagged 1 benchmark(s) in audit_840_native, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      },
+      {
+        "action": "listJobsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "run_id": 2,
+          "per_page": 100
+        }
+      }
+    ]
+  },
+  {
+    "kind": "native",
+    "scenario": "lookup-error",
+    "posts": [],
+    "warnings": [
+      "Could not read the previous run's alerts: controlled previous-log lookup failure",
+      "Bencher flagged 1 benchmark(s) in audit_840_native, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      }
+    ]
+  },
+  {
+    "kind": "binding",
+    "scenario": "failed-upload",
+    "posts": [
+      {
+        "owner": "project-minigraf",
+        "repo": "minigraf",
+        "title": "Benchmark regression: binding_audit_840 (audit-840-preview)",
+        "body": "Bencher failed in the nightly benchmark run (binding_audit_840, audit-840-preview) but listed no alerts. This is likely an API or upload error.\n\n**Branch:** `audit-840-preview`\n**Measured checkout:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n**Run:** https://example.invalid/project-minigraf/minigraf/actions/runs/4",
+        "labels": [
+          "performance"
+        ]
+      }
+    ],
+    "warnings": [
+      "Benchmark regression: binding_audit_840 (audit-840-preview). Opened #999999."
+    ],
+    "calls": []
+  },
+  {
+    "kind": "binding",
+    "scenario": "repeated",
+    "posts": [
+      {
+        "owner": "project-minigraf",
+        "repo": "minigraf",
+        "title": "Benchmark regression: binding_audit_840 (audit-840-preview)",
+        "body": "Bencher flagged these benchmarks in the nightly run (binding_audit_840, audit-840-preview) on two runs in a row:\n\n- `audit/840/example`\n\n**Branch:** `audit-840-preview`\n**Measured checkout:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n**Run:** https://example.invalid/project-minigraf/minigraf/actions/runs/4\n**Previous run:** https://example.invalid/prior-run\n\nPlease review the Bencher dashboard to confirm the regression.",
+        "labels": [
+          "performance"
+        ]
+      }
+    ],
+    "warnings": [
+      "Benchmark regression: binding_audit_840 (audit-840-preview). Opened #999999."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      },
+      {
+        "action": "listJobsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "run_id": 2,
+          "per_page": 100
+        }
+      },
+      {
+        "action": "downloadJobLogsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "job_id": 3
+        }
+      }
+    ]
+  },
+  {
+    "kind": "binding",
+    "scenario": "different-id",
+    "posts": [],
+    "warnings": [
+      "Bencher flagged 1 benchmark(s) in binding_audit_840, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      },
+      {
+        "action": "listJobsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "run_id": 2,
+          "per_page": 100
+        }
+      },
+      {
+        "action": "downloadJobLogsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "job_id": 3
+        }
+      }
+    ]
+  },
+  {
+    "kind": "binding",
+    "scenario": "different-branch",
+    "posts": [],
+    "warnings": [
+      "Bencher flagged 1 benchmark(s) in binding_audit_840, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      }
+    ]
+  },
+  {
+    "kind": "binding",
+    "scenario": "different-suite",
+    "posts": [],
+    "warnings": [
+      "Bencher flagged 1 benchmark(s) in binding_audit_840, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      },
+      {
+        "action": "listJobsForWorkflowRun",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "run_id": 2,
+          "per_page": 100
+        }
+      }
+    ]
+  },
+  {
+    "kind": "binding",
+    "scenario": "lookup-error",
+    "posts": [],
+    "warnings": [
+      "Could not read the previous run's alerts: controlled previous-log lookup failure",
+      "Bencher flagged 1 benchmark(s) in binding_audit_840, audit-840-preview, but none alerted on the previous run too. Not reporting."
+    ],
+    "calls": [
+      {
+        "action": "listWorkflowRuns",
+        "args": {
+          "owner": "project-minigraf",
+          "repo": "minigraf",
+          "workflow_id": "bench.yml",
+          "branch": "main",
+          "status": "completed",
+          "per_page": 20
+        }
+      }
+    ]
+  }
+]

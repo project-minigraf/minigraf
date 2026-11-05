@@ -1,0 +1,9 @@
+Verified fresh archive extraction: 746 evidence checksums.
+{'run': 41642356471, 'event': 'workflow_dispatch', 'created': '2026-11-03T13:13:01Z', 'workflow_sha': '4d65022ac963a10b582ac762c4ab2e73935c9115', 'native_suites': 26, 'binding_suites': 4, 'native_ids': 427, 'binding_ids': 26, 'usable_native': 183, 'usable_binding': 0, 'notification_steps': Counter({'skipped': 30})}
+{'run': 41711848743, 'event': 'schedule', 'created': '2026-11-03T20:21:41Z', 'workflow_sha': '4d65022ac963a10b582ac762c4ab2e73935c9115', 'native_suites': 26, 'binding_suites': 4, 'native_ids': 427, 'binding_ids': 26, 'usable_native': 183, 'usable_binding': 0, 'notification_steps': Counter({'skipped': 30})}
+{'run': 41801278030, 'event': 'schedule', 'created': '2026-11-04T08:40:10Z', 'workflow_sha': 'e7923eb710b1e1d8aff517721643c0b0b1f2cb7a', 'native_suites': 21, 'binding_suites': 0, 'native_ids': 177, 'binding_ids': 0, 'usable_native': 177, 'usable_binding': 0, 'notification_steps': Counter({'skipped': 30})}
+{'run': 41908407297, 'event': 'schedule', 'created': '2026-11-04T20:37:44Z', 'workflow_sha': 'e7923eb710b1e1d8aff517721643c0b0b1f2cb7a', 'native_suites': 26, 'binding_suites': 4, 'native_ids': 427, 'binding_ids': 26, 'usable_native': 183, 'usable_binding': 0, 'notification_steps': Counter({'skipped': 30})}
+12 offline policy checks passed; no network requests or notifications sent
+All five derived JSON files match byte-for-byte.
+Negative control: removing one raw upload URL makes audit.py fail.
+No timed workloads or live notification writes executed.

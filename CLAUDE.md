@@ -10,6 +10,13 @@ See `ROADMAP.md` for planned work and current direction. See `CHANGELOG.md` for 
 
 The [#838 manual migration sweep](docs/benchmarks/838-migration/README.md) covers native v7 migration through 200k facts and Chromium/Firefox/WebKit through 20k facts, including bounded post-migration cursor churn. It changes neither nightly coverage nor the Rust test inventory; larger browser cases remain excluded.
 
+The [#840 regression-history audit](docs/benchmarks/840-regression/README.md)
+verifies actual main/v3 scheduled benchmark sets and archives their evidence.
+All 244 native and 26 binding comparison gaps remain: uploads rebase the shared
+v3 Bencher head when main advances. Separate workflow fixes are proposed in
+#853/#854; baseline accumulation and live notification delivery remain open.
+This audit changes no runtime behavior or Rust test counts.
+
 ## Core Philosophy - CRITICAL
 
 **Before implementing ANY feature or change, you MUST assess it against the design philosophy in PHILOSOPHY.md.**

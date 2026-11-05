@@ -18,6 +18,12 @@ The 2 golden-corpus and 7 migration-matrix tests pass, alongside five standalone
 Python evidence-integrity tests. These manual probes add no Rust tests to the
 inventory above and do not establish crash, cold-start or sustained-pin bounds.
 
+**#840 operational benchmark audit**: [offline verification of four Actions runs](benchmarks/840-regression/README.md)
+checks exact selected/executed/uploaded/API sets, hashes and 0.999/30 models.
+Twelve fixture-based notification-policy checks pass, but do not prove live
+delivery. The 244 native and 26 binding baseline gaps remain. No Rust tests are
+added and the inventory above is unchanged.
+
 **#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passed before merging #795 (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
 
 **#781 verification (2026-10-29)**: 24 active tests and two ignored measurement

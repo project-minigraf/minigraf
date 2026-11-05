@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Regression-history audit** (#840): [scheduled-route evidence and durable archive](docs/benchmarks/840-regression/README.md) verify main/v3 executed/uploaded sets. All 244 native and 26 binding comparison gaps remain; API evidence identifies v3 head replacement when main advances. Separate workflow fixes are proposed in #853/#854. Live notification checks remain open; no runtime or nightly workflow change in this audit.
+
 - **Manual migration sweep** (#838): [frozen fixtures, timings and correctness evidence](docs/benchmarks/838-migration/README.md) for native v7-to-v8 migration through 200k facts and Chromium/Firefox/WebKit through 20k facts. Includes nonmigrating native read-only open, v8 reopen and bounded post-migration cursor churn; larger browser cases and sustained pin scaling remain excluded. No production or nightly-route change.
 
 - **Benchmark exclusions audit** (#836): [pinned enumeration and per-shape dispositions](docs/benchmarks/836-exclusions/README.md) reconcile 156 unselected native IDs, retain 110 manual row-frame cases, and distinguish linear full-prefix UDF accumulation from bounded replay. No new latency measurements or runtime changes.
