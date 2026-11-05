@@ -2,6 +2,15 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Manual shape sweeps (#841, unreleased)
+
+The [shape and retention report](benchmarks/841-shape-sweeps/README.md) records
+native sort/window, wider-set, sparse/repeated-reference, recursive-control and
+sustained-reader experiments. It separates query latency, process RSS,
+query-meter observations and quarantine/reuse state, retaining rejected inputs
+and capped attempts. Its finite selection and attribution limits do not expand
+nightly coverage or establish universal memory bounds.
+
 ## Manual v7-to-v8 migration (#838, unreleased)
 
 The [manual migration report](benchmarks/838-migration/README.md) retains frozen

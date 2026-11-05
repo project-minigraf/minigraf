@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Manual shape sweep** (#841): [native shape and retention experiments](docs/benchmarks/841-shape-sweeps/README.md) cover sort/window, set and UUID cases, matched recursive controls and sustained pins/FactLogs. The report distinguishes query timings from process RSS and query-meter observations, and retains input rejections, capped attempts and attribution limits. No production, public API or nightly-route change.
+
 - **Regression history and reporting verification** (#840): [durable API/run evidence](docs/benchmarks/840-regression/completion.md) establishes numeric comparisons for all 427 native and 26 binding IDs with at least three independent v3 runs each. Separate main/v3 fixes #853/#854 preserve v3 history across measured main advances. Actual scheduled routes, 16 isolated live notification scenarios, four delivered messages and complete synthetic-resource cleanup are verified. This adds no database runtime behavior or Rust tests; further runtime lanes are tracked in #858.
 
 - **Manual migration sweep** (#838): [frozen fixtures, timings and correctness evidence](docs/benchmarks/838-migration/README.md) for native v7-to-v8 migration through 200k facts and Chromium/Firefox/WebKit through 20k facts. Includes nonmigrating native read-only open, v8 reopen and bounded post-migration cursor churn; larger browser cases and sustained pin scaling remain excluded. No production or nightly-route change.
