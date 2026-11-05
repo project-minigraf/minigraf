@@ -5,6 +5,9 @@ from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlparse
 
+if not __debug__:
+    raise RuntimeError('Evidence verification requires Python assertions; do not use -O')
+
 ROOT = Path(__file__).resolve().parent
 BASE = ROOT / 'live-evidence'
 SESSION = 'audit-840-20261105'
@@ -48,7 +51,7 @@ def main():
         assert metadata['conclusion'] == ('failure' if stage == 'upload-failure' else 'success')
         jobs = [j for page in read(folder / 'jobs.json') for j in page['jobs']]
         assert len(jobs) == 2
-        artifacts = list((folder / 'artifacts').glob('audit-840-*'))
+        artifacts = sorted((folder / 'artifacts').glob('audit-840-*'))
         assert len(artifacts) == 2
         for artifact in artifacts:
             kind = artifact.name.rsplit('-', 1)[-1]
@@ -116,6 +119,9 @@ def main():
     assert all(r['status'] == 404 for r in independent)
     for issue in (856, 857):
         assert read(BASE / f'issue-{issue}-closed.json')['state'] == 'closed'
+    branch_cleanup = read(BASE / 'branch-cleanup.json')
+    assert branch_cleanup['ref'] == 'refs/heads/audit/840-live-checks'
+    assert branch_cleanup['readback_exit_code'] != 0 and 'HTTP 404' in branch_cleanup['readback_error']
     models = read(BASE / 'production-thresholds-after-cleanup.json')
     assert len(models) == 5
     for model in models:

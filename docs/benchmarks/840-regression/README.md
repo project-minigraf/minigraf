@@ -1,17 +1,22 @@
 # Regression history and scheduled reporting audit
 
-Audit date: 2026-11-05. [Issue #840](https://github.com/project-minigraf/minigraf/issues/840)
-remains open. Actual main/v3 scheduled routes are verified, but the same **244
-native and 26 binding IDs still lack numeric comparisons**. Native uploads
-rebase the shared v3 Bencher head when main advances, preventing those histories
-from accumulating reliably. The proposed fix has separate draft reviews for
+Initial snapshot: 2026-11-05, before the history fixes were merged. The
+[follow-up report](completion.md) records subsequent real measurements, live
+notification delivery and cleanup. The findings and acceptance table below are
+retained as the initial state, not a current status report for
+[issue #840](https://github.com/project-minigraf/minigraf/issues/840).
+
+At this snapshot, actual main/v3 scheduled routes were verified, but **244
+native and 26 binding IDs still lacked numeric comparisons**. Native uploads
+rebased the shared v3 Bencher head when main advanced, preventing those histories
+from accumulating reliably. Separate fixes were proposed in
 [main #853](https://github.com/project-minigraf/minigraf/pull/853) and
 [v3 #854](https://github.com/project-minigraf/minigraf/pull/854).
 
 This is operational evidence under PHILOSOPHY.md's reliability and documentation
 principles. No benchmark was built, enumerated or timed locally. The observations
-come from existing Actions runs. The proposed workflow fix has not been merged;
-no live notification has been sent by this audit.
+come from existing Actions runs. The fixes and live notifications had not yet
+been executed at the time of this initial snapshot.
 
 ## Scheduled routes and exact coverage
 
@@ -146,7 +151,7 @@ requests. Preserve the existing archive before refreshing; a newer active head
 or additional observations can legitimately invalidate this frozen audit's
 assertions. Repack and regenerate checksums only after reviewing the new results.
 
-## Acceptance status
+## Acceptance status at the initial snapshot
 
 | Requirement | Status |
 | --- | --- |

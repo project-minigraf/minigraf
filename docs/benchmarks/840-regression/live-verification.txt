@@ -1,0 +1,31 @@
+Verification date: 2026-11-05
+
+Fresh temporary extraction:
+- evidence.tar.gz: 746 internal SHA-256 checksums passed.
+- live-notifications.tar.gz: 196 internal SHA-256 checksums passed.
+- python3 audit.py, node notification-preview.cjs and python3 verify-live.py passed.
+- inventory.json, missing-baselines.json, active-head-summary.json, summary.json,
+  notification-preview.json and live-summary.json reproduced byte-for-byte.
+- Negative control: replacing the independently retrieved issue-856-comments.json
+  with an empty array causes verify-live.py to reject the evidence.
+
+Live verifier result:
+- 16 native/binding notification scenarios.
+- Four actual deliveries matched independent GitHub reads.
+- 34 synthetic Bencher report responses retained.
+- All 46 disposable resources deleted and independently verified absent.
+- Test issues #856/#857 closed; temporary notification workflow ref absent.
+- Five production v3 threshold models preserved at t_test / 0.999 / 30.
+
+Lightweight workflow regression checks:
+node --test .github/bench/history.test.cjs .github/bench/report.test.cjs .github/bench/bindings-report.test.cjs
+All three files passed.
+
+The live summary sorts artifact paths explicitly so a fresh archive extraction
+reproduces the same output regardless of filesystem directory iteration order.
+
+Optimized-mode negative control:
+- Before the guard, python3 -O verify-live.py accepted the missing-comment fixture.
+- audit.py, verify-live.py and verify-completion.py now refuse Python -O explicitly.
+- All three refusals passed; normal fresh-extraction verification and byte-for-byte
+  regeneration still pass.

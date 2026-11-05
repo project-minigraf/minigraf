@@ -1,7 +1,9 @@
 # Controlled live notification checks
 
-Status: prepared protocol, not executed. This is the remaining delivery work for
-#840. The real nightly histories must receive only real measurements; synthetic
+Status: executed on 2026-11-05 with explicit user authorization.
+[Live results](live-summary.json) verify 16 job scenarios, four independently
+read-back deliveries, and cleanup of all 46 disposable Bencher resources. Test
+issues #856/#857 are closed and the temporary notification workflow ref is deleted. The real nightly histories must receive only real measurements; synthetic
 values belong exclusively to disposable audit history.
 
 ## Scope and externally visible messages
@@ -65,7 +67,7 @@ watchers; closing an issue does not retract delivered mail.
    temporary workflow ref. Never delete normal run history. Close the two test
    issues. Re-query to verify cleanup, and leave #840 open for any unmet gate.
 
-Authorization needed: merge the separately reviewed workflow fixes after CI
-passes; create and close the clearly scoped test issues/comments and disposable
-test history. Repository issue #840 explicitly requires a separate review for
-production changes, and external test notifications need explicit permission.
+Authorization recorded: the user approved merging after CI and running the
+isolated notification tests, including creating and closing their test issues.
+The separately reviewed fixes #853/#854 passed CI and were merged before these
+checks. The protocol above is retained to explain the experiment and its limits.

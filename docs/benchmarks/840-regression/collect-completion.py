@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from urllib.parse import parse_qs, urlparse, urlencode
@@ -42,6 +43,11 @@ def collect_run(item):
                         '--pattern', 'bench-evidence-*', '--pattern', 'binding-evidence-*',
                         '--pattern', 'bench-enumeration', '--dir', str(folder / 'artifacts')], check=True)
         (folder / 'downloaded').write_text('Complete artifact download\n')
+    metadata = json.loads((folder / 'run.json').read_text())
+    source = folder / 'workflow.yml'
+    if not source.exists():
+        source.write_bytes(gh(['api', '--header', 'Accept: application/vnd.github.raw+json',
+            f'repos/{REPO}/contents/.github/workflows/bench.yml?ref={metadata["head_sha"]}']))
     (folder / 'api').mkdir(exist_ok=True)
     for log in list(folder.glob('artifacts/*/bencher_out.txt')) + list(folder.glob('artifacts/*/binding-bencher.txt')):
         urls = re.findall(r'https://bencher.dev/console/projects/minigraf/perf\?\S+', log.read_text())
@@ -54,7 +60,8 @@ def collect_run(item):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    plan = json.loads(Path(sys.argv[1]).read_text())
+    ledger = Path(sys.argv[1])
+    plan = json.loads(ledger.read_text())
     (OUT / 'runs.json').write_text(json.dumps(plan, indent=2) + '\n')
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         list(pool.map(collect_run, plan))
@@ -87,6 +94,16 @@ def main():
     (active / 'queries.json').write_text(json.dumps(queries, indent=2) + '\n')
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(lambda pair: get(pair[1], active / f'{pair[0]:02d}.json'), enumerate(queries)))
+    probes = OUT / 'head-probes'
+    probes.mkdir(exist_ok=True)
+    for role in ('c-probe', 'main-probe', 'v3-probe'):
+        for stage in ('before', 'after'):
+            filename = f'{stage}-{role}.json'
+            shutil.copyfile(ledger.parent / filename, probes / filename)
+    orchestration = OUT / 'orchestration'
+    orchestration.mkdir(exist_ok=True)
+    for filename in ('accumulate.py', 'probes.py'):
+        shutil.copyfile(ledger.parent / filename, orchestration / filename)
     print('Collected active-head comparisons for', sum(map(len, groups.values())), 'IDs')
 
 

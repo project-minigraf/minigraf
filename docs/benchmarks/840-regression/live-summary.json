@@ -18,7 +18,7 @@
     },
     {
       "stage": "other-branch",
-      "kind": "native",
+      "kind": "binding",
       "run": 41961995516,
       "writes": 0,
       "upload_status": "alerts",
@@ -26,7 +26,7 @@
     },
     {
       "stage": "other-branch",
-      "kind": "binding",
+      "kind": "native",
       "run": 41961995516,
       "writes": 0,
       "upload_status": "alerts",
@@ -50,7 +50,7 @@
     },
     {
       "stage": "other-suite",
-      "kind": "native",
+      "kind": "binding",
       "run": 41962206753,
       "writes": 0,
       "upload_status": "alerts",
@@ -58,7 +58,7 @@
     },
     {
       "stage": "other-suite",
-      "kind": "binding",
+      "kind": "native",
       "run": 41962206753,
       "writes": 0,
       "upload_status": "alerts",
@@ -82,7 +82,7 @@
     },
     {
       "stage": "different-id",
-      "kind": "native",
+      "kind": "binding",
       "run": 41962338519,
       "writes": 0,
       "upload_status": "alerts",
@@ -90,7 +90,7 @@
     },
     {
       "stage": "different-id",
-      "kind": "binding",
+      "kind": "native",
       "run": 41962338519,
       "writes": 0,
       "upload_status": "alerts",
@@ -111,17 +111,6 @@
       "writes": 0,
       "upload_status": "alerts",
       "audit_errors": []
-    },
-    {
-      "stage": "upload-failure",
-      "kind": "native",
-      "run": 41962507803,
-      "writes": 1,
-      "upload_status": "error",
-      "audit_errors": [
-        "Upload: missing audit/840/20261105/native/primary, audit/840/20261105/native/secondary",
-        "Bencher outcome: failure (no alerts)"
-      ]
     },
     {
       "stage": "upload-failure",
@@ -133,13 +122,24 @@
         "Upload: missing audit/840/20261105/binding/primary, audit/840/20261105/binding/secondary",
         "Bencher outcome: failure (no alerts)"
       ]
+    },
+    {
+      "stage": "upload-failure",
+      "kind": "native",
+      "run": 41962507803,
+      "writes": 1,
+      "upload_status": "error",
+      "audit_errors": [
+        "Upload: missing audit/840/20261105/native/primary, audit/840/20261105/native/secondary",
+        "Bencher outcome: failure (no alerts)"
+      ]
     }
   ],
   "deliveries": [
     "https://github.com/project-minigraf/minigraf/issues/856",
     "https://github.com/project-minigraf/minigraf/issues/857",
-    "https://github.com/project-minigraf/minigraf/issues/857#issuecomment-6648970917",
-    "https://github.com/project-minigraf/minigraf/issues/856#issuecomment-6648972167"
+    "https://github.com/project-minigraf/minigraf/issues/856#issuecomment-6648972167",
+    "https://github.com/project-minigraf/minigraf/issues/857#issuecomment-6648970917"
   ],
   "synthetic_reports": 34,
   "cleanup_resources": 46,
