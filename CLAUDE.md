@@ -18,6 +18,12 @@ checksummed evidence outlives Actions retention. This changes no database runtim
 behavior or Rust test counts. Additional JVM/WASI and qualified mobile nightly
 lanes are tracked separately in #858.
 
+The [#841 manual shape sweep](docs/benchmarks/841-shape-sweeps/README.md)
+records native sort/window, set, UUID, recursive-control and sustained-reader
+experiments, including rejected inputs, capped attempts and attribution limits.
+Its standalone harness and disposable diagnostic probes do not change the
+library test inventory, production code or nightly routes.
+
 ## Core Philosophy - CRITICAL
 
 **Before implementing ANY feature or change, you MUST assess it against the design philosophy in PHILOSOPHY.md.**

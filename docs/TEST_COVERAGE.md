@@ -27,6 +27,13 @@ cleanup of all 46 synthetic resources. Fresh extraction reproduces the evidence
 reports, and removing delivery/comparison evidence is rejected. No Rust tests
 are added; the inventory above is unchanged. Additional runtime lanes are #858.
 
+**#841 manual shape verification**: the [standalone audit harness](benchmarks/841-shape-sweeps/README.md)
+checks full query answers before accepting timings and records sustained-reader
+snapshot, quarantine-generation, release/reuse, integrity and reopen checks.
+The report identifies executed checks and failed/deferred cases separately.
+Harness tests and disposable diagnostic probes are outside the Cargo inventory
+above; this audit adds no library test or nightly acceptance route.
+
 **#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passed before merging #795 (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
 
 **#781 verification (2026-10-29)**: 24 active tests and two ignored measurement
