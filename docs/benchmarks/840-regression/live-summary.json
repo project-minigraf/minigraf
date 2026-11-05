@@ -1,0 +1,146 @@
+{
+  "scenarios": [
+    {
+      "stage": "first",
+      "kind": "binding",
+      "run": 41961640029,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "first",
+      "kind": "native",
+      "run": 41961640029,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "other-branch",
+      "kind": "native",
+      "run": 41961995516,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "other-branch",
+      "kind": "binding",
+      "run": 41961995516,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "repeat",
+      "kind": "binding",
+      "run": 41962121762,
+      "writes": 1,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "repeat",
+      "kind": "native",
+      "run": 41962121762,
+      "writes": 1,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "other-suite",
+      "kind": "native",
+      "run": 41962206753,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "other-suite",
+      "kind": "binding",
+      "run": 41962206753,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "reset-first",
+      "kind": "binding",
+      "run": 41962254895,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "reset-first",
+      "kind": "native",
+      "run": 41962254895,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "different-id",
+      "kind": "native",
+      "run": 41962338519,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "different-id",
+      "kind": "binding",
+      "run": 41962338519,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "lookup-error",
+      "kind": "binding",
+      "run": 41962460219,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "lookup-error",
+      "kind": "native",
+      "run": 41962460219,
+      "writes": 0,
+      "upload_status": "alerts",
+      "audit_errors": []
+    },
+    {
+      "stage": "upload-failure",
+      "kind": "native",
+      "run": 41962507803,
+      "writes": 1,
+      "upload_status": "error",
+      "audit_errors": [
+        "Upload: missing audit/840/20261105/native/primary, audit/840/20261105/native/secondary",
+        "Bencher outcome: failure (no alerts)"
+      ]
+    },
+    {
+      "stage": "upload-failure",
+      "kind": "binding",
+      "run": 41962507803,
+      "writes": 1,
+      "upload_status": "error",
+      "audit_errors": [
+        "Upload: missing audit/840/20261105/binding/primary, audit/840/20261105/binding/secondary",
+        "Bencher outcome: failure (no alerts)"
+      ]
+    }
+  ],
+  "deliveries": [
+    "https://github.com/project-minigraf/minigraf/issues/856",
+    "https://github.com/project-minigraf/minigraf/issues/857",
+    "https://github.com/project-minigraf/minigraf/issues/857#issuecomment-6648970917",
+    "https://github.com/project-minigraf/minigraf/issues/856#issuecomment-6648972167"
+  ],
+  "synthetic_reports": 34,
+  "limitation": "Previous workflow lookup redirects main to audit/840-live-checks; GitHub delivery, not human mailbox receipt."
+}
