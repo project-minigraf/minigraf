@@ -1,5 +1,12 @@
 # v3 nightly benchmark coverage close-out (#776)
 
+Follow-up on 2026-11-05: the [#840 operational audit](benchmarks/840-regression/README.md)
+verifies actual final main/v3 scheduled routes and archives their evidence beyond
+30 days. The same 244 native and 26 binding baselines remain null: native uploads
+replace the shared v3 Bencher head when main advances. Separate fixes #853/#854
+await review; independent baseline accumulation and live notification checks
+remain open. The original validation snapshot below is retained unchanged.
+
 Audit date: 2026-11-03. P01–P17 are merged. This closes out the implementation
 plan and gives every matrix row a disposition; it does **not** close
 [issue #776](https://github.com/project-minigraf/minigraf/issues/776) or certify
