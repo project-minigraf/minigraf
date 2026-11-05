@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Verify real-run uploads and active numeric comparisons for every intended ID."""
+from datetime import datetime
 import json
 import math
 from pathlib import Path
 import re
+import tarfile
 from urllib.parse import parse_qs, urlparse
 
 if not __debug__:
@@ -24,7 +26,7 @@ def exact(expected, actual):
 
 
 def finite(value):
-    return isinstance(value, (int, float)) and math.isfinite(value)
+    return type(value) in (int, float) and math.isfinite(value)
 
 
 def model(measure):
@@ -41,6 +43,7 @@ def main():
     provenance = {v['report']: dict(run=41908407297, sha=v['sha']) for v in expected.values() if v['head'] == HEAD}
     observations = {}
     summaries = []
+    previous_end = None
     for item in plan:
         folder = BASE / str(item['run'])
         metadata = read(folder / 'run.json')
@@ -51,6 +54,7 @@ def main():
         union = []
         report_ids = []
         alerted = []
+        report_starts, report_ends = [], []
         sha_set = set()
         branch = 'main' if item['role'] == 'main-probe' else 'v3'
         for path in paths:
@@ -93,6 +97,8 @@ def main():
             report_id = ids.pop()
             report_ids.append(report_id)
             api = read(folder / 'api' / (report_id + '.json'))
+            report_starts.append(datetime.fromisoformat(api['start_time']))
+            report_ends.append(datetime.fromisoformat(api['end_time']))
             assert api['branch']['name'] == branch
             assert api['branch']['head']['version']['hash'] == sha
             assert api['testbed']['name'] == testbed
@@ -112,6 +118,8 @@ def main():
                     model(measure)
                     api_ids.append(name)
                     assert finite(measure['metric']['value']) and measure['metric']['value'] > 0
+                    if binding:
+                        assert measure['metric']['value'] == metrics[name]['latency']['value']
                     observations[(report_id, name)] = measure
             exact(selected, api_ids)
             union.extend(selected)
@@ -126,16 +134,41 @@ def main():
             exact([name for name in expected if name.startswith('udf/')], union)
         else:
             exact([name for name in original['41801278030'] if name.startswith('udf/')], union)
+        if item['run'] == 41965724402:
+            assert sorted(alerted) == [
+                'concurrent_file/serialized_writers/100k_16t',
+                'concurrent_file/serialized_writers/100k_2t',
+                'concurrent_file/serialized_writers/100k_4t']
+            job = next(j for j in jobs if j['name'] == 'bench / concurrent_file/serialized_writers')
+            assert any(step['name'] == 'Report regression' and step['conclusion'] == 'success' for step in job['steps'])
+            log = (folder / f'notification-job-{job["id"]}.txt').read_text()
+            assert re.search(r'^2026-11-05T\S+ Alerts in previous run: none$', log, re.M)
+            assert re.search(r'^2026-11-05T\S+ .*Bencher flagged 3 benchmark\(s\).*Not reporting\.$', log, re.M)
+        if previous_end is not None:
+            assert previous_end < min(report_starts), 'Fresh reports must follow the preceding run'
+        previous_end = max(report_ends)
         summaries.append(dict(**item, sha=sha_set.pop(), workflow_sha=metadata['head_sha'],
+                              first_report=min(report_starts).isoformat(), last_report=previous_end.isoformat(),
                               selected=len(union), reports=report_ids, alerts=sorted(alerted)))
     active = BASE / 'active-head'
-    assert read(active / 'branch.json')['head']['uuid'] == HEAD
+    branch = read(active / 'branch.json')
+    assert branch['head']['uuid'] == HEAD
+    prior_ids = {v['report'] for v in expected.values() if v['head'] == HEAD}
+    with tarfile.open(ROOT / 'evidence.tar.gz') as archive:
+        prior = [json.load(archive.extractfile(f'evidence/41908407297/api/{report}.json'))
+                 for report in prior_ids]
+    assert all(r['branch']['name'] == 'v3' and r['branch']['head']['uuid'] == HEAD for r in prior)
+    earliest = min(r['start_time'] for r in prior)
+    start = int(datetime.fromisoformat(earliest).timestamp() * 1000)
+    assert read(active / 'window.json') == dict(head_created=branch['head']['created'],
+        earliest_actual_v3_report_start=earliest, start_time_ms=start)
     inventory = {}
     requested = []
     for index, query in enumerate(read(active / 'queries.json')):
         params = parse_qs(urlparse(query).query)
         ids = params['benchmarks'][0].split(',')
         assert len(ids) <= 8 and params['heads'] == [HEAD]
+        assert params['branches'] == [branch['uuid']] and params['start_time'] == [str(start)]
         requested.extend(ids)
         data = read(active / f'{index:02d}.json')
         for series in data['results']:

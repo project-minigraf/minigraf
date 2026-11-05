@@ -1,0 +1,5901 @@
+{
+  "aggregation/count_distinct_scale/10k": {
+    "baseline": 19689356.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 34814606.860637486,
+    "value": 9788100.0
+  },
+  "aggregation/count_distinct_scale/1k": {
+    "baseline": 1781493.3333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3161981.1141229686,
+    "value": 1006400.0
+  },
+  "aggregation/count_scale/10k": {
+    "baseline": 19556210.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 35821799.10953746,
+    "value": 8630200.0
+  },
+  "aggregation/count_scale/1k": {
+    "baseline": 1595489.3333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3014543.836106753,
+    "value": 869370.0
+  },
+  "aggregation/grouped_count_scale/10k": {
+    "baseline": 23255426.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 42605256.47085299,
+    "value": 9910600.0
+  },
+  "aggregation/grouped_count_scale/1k": {
+    "baseline": 1981023.3333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3590245.030125015,
+    "value": 1019400.0000000001
+  },
+  "aggregation/sum_scale/10k": {
+    "baseline": 18722376.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 33718049.325273156,
+    "value": 8714500.0
+  },
+  "aggregation/sum_scale/1k": {
+    "baseline": 1720661.6666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3121702.3782427697,
+    "value": 896560.0
+  },
+  "aggregation/v3_controls/hash_avg/10k": {
+    "baseline": 8986800.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 56952256.10104735,
+    "value": 8986900.0
+  },
+  "aggregation/v3_controls/hash_exact_float_sum/10k": {
+    "baseline": 9003600.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 79904262.69649069,
+    "value": 8909900.0
+  },
+  "aggregation/v3_controls/hash_mixed_extrema/10k": {
+    "baseline": 9817150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 54557342.67356314,
+    "value": 9761600.0
+  },
+  "aggregation/v3_controls/hash_mixed_sum_distinct/10k": {
+    "baseline": 9706600.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 55301349.65007605,
+    "value": 9731500.0
+  },
+  "aggregation/v3_controls/skew_avg_committed/100k": {
+    "baseline": 48144000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 383350865.62571025,
+    "value": 47808000.0
+  },
+  "aggregation/v3_controls/skew_count_committed/100k": {
+    "baseline": 46850500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 201497746.39475614,
+    "value": 46846000.0
+  },
+  "aggregation/v3_controls/skew_count_pending/100k": {
+    "baseline": 129600000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4766260756.434577,
+    "value": 121780000.0
+  },
+  "aggregation/v3_controls/tuple_float_constant_fallback/100k": {
+    "baseline": 59024500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 330001760.6168365,
+    "value": 58783000.0
+  },
+  "aggregation/v3_controls/tuple_hidden_with_fallback/100k": {
+    "baseline": 510050000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6668373501.709183,
+    "value": 501240000.0
+  },
+  "aggregation/v3_controls/tuple_repeated_constant/100k": {
+    "baseline": 61007000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 193325499.58909613,
+    "value": 61311000.0
+  },
+  "aggregation/with_grouped_sum/10k": {
+    "baseline": 88916733.33333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 149716507.8526269,
+    "value": 48971000.0
+  },
+  "aggregation/with_grouped_sum/1k": {
+    "baseline": 6603086.666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11395375.512682967,
+    "value": 4333400.0
+  },
+  "binding/browser/aggregate/1k": {
+    "baseline": 1561249.9999999271,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 123542366.80897866,
+    "value": 1812500.0
+  },
+  "binding/browser/cursor_batch_1/1k": {
+    "baseline": 1232500.0000004366,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 136307634.9970423,
+    "value": 1429999.9999995634
+  },
+  "binding/browser/cursor_batch_256/1k": {
+    "baseline": 573750.000000291,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 66043840.94252181,
+    "value": 684999.9999998545
+  },
+  "binding/browser/indexeddb_reopen/1k": {
+    "baseline": 2324999.9999970896,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 181506301.5252935,
+    "value": 2699999.9999970896
+  },
+  "binding/browser/indexeddb_write/1k": {
+    "baseline": 7000000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 337796248.9759495,
+    "value": 7849999.999991269
+  },
+  "binding/browser/predicate/1k": {
+    "baseline": 1780000.000000291,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 146503358.92557418,
+    "value": 2084999.9999998545
+  },
+  "binding/browser/prepared_execute/1k": {
+    "baseline": 111249.99999992724,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 13205268.188464118,
+    "value": 160000.00000058208
+  },
+  "binding/browser/set_roundtrip/2": {
+    "baseline": 59999.99999985448,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-browser-ubuntu24-v1",
+    "upper_limit": 5573270.816131966,
+    "value": 82499.99999970896
+  },
+  "binding/c/aggregate/1k": {
+    "baseline": 598971.75,
+    "independent_runs": [
+      41960942244,
+      41965724402,
+      41970954512
+    ],
+    "report": "01a1aa14-152a-74d1-8c9a-591746bd353a",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-c-ubuntu24-v1",
+    "upper_limit": 14133086.781408457,
+    "value": 449278.0
+  },
+  "binding/c/cursor_batch_1/1k": {
+    "baseline": 780590.5,
+    "independent_runs": [
+      41960942244,
+      41965724402,
+      41970954512
+    ],
+    "report": "01a1aa14-152a-74d1-8c9a-591746bd353a",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-c-ubuntu24-v1",
+    "upper_limit": 9591348.591388939,
+    "value": 573590.5
+  },
+  "binding/c/cursor_batch_256/1k": {
+    "baseline": 704413.0,
+    "independent_runs": [
+      41960942244,
+      41965724402,
+      41970954512
+    ],
+    "report": "01a1aa14-152a-74d1-8c9a-591746bd353a",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-c-ubuntu24-v1",
+    "upper_limit": 8663370.750284132,
+    "value": 507792.0
+  },
+  "binding/c/predicate/1k": {
+    "baseline": 778897.5,
+    "independent_runs": [
+      41960942244,
+      41965724402,
+      41970954512
+    ],
+    "report": "01a1aa14-152a-74d1-8c9a-591746bd353a",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-c-ubuntu24-v1",
+    "upper_limit": 5470415.3010558905,
+    "value": 566830.0
+  },
+  "binding/c/prepared_execute/1k": {
+    "baseline": 243786.75,
+    "independent_runs": [
+      41960942244,
+      41965724402,
+      41970954512
+    ],
+    "report": "01a1aa14-152a-74d1-8c9a-591746bd353a",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-c-ubuntu24-v1",
+    "upper_limit": 4319058.705573755,
+    "value": 154578.5
+  },
+  "binding/c/set_roundtrip/2": {
+    "baseline": 10483.5,
+    "independent_runs": [
+      41960942244,
+      41965724402,
+      41970954512
+    ],
+    "report": "01a1aa14-152a-74d1-8c9a-591746bd353a",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-c-ubuntu24-v1",
+    "upper_limit": 1063793.8894373674,
+    "value": 6194.0
+  },
+  "binding/node/aggregate/1k": {
+    "baseline": 1822762.2124999983,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-node-ubuntu24-v1",
+    "upper_limit": 113811854.41631638,
+    "value": 1188005.825000002
+  },
+  "binding/node/cursor_batch_1/1k": {
+    "baseline": 1412191.7125000008,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-node-ubuntu24-v1",
+    "upper_limit": 89849500.67914182,
+    "value": 869541.3250000002
+  },
+  "binding/node/cursor_batch_256/1k": {
+    "baseline": 947436.6374999989,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-node-ubuntu24-v1",
+    "upper_limit": 45877664.86450887,
+    "value": 590473.6250000007
+  },
+  "binding/node/predicate/1k": {
+    "baseline": 1952348.8249999986,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-node-ubuntu24-v1",
+    "upper_limit": 119814252.90971933,
+    "value": 1223864.999999998
+  },
+  "binding/node/prepared_execute/1k": {
+    "baseline": 288239.6875000001,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-node-ubuntu24-v1",
+    "upper_limit": 14811180.514561798,
+    "value": 178523.44999999978
+  },
+  "binding/node/set_roundtrip/2": {
+    "baseline": 19593.19999999991,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-node-ubuntu24-v1",
+    "upper_limit": 3334943.472622972,
+    "value": 9528.899999999396
+  },
+  "binding/python/aggregate/1k": {
+    "baseline": 8105848.050000001,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7388-700a-aeb7-13730e791aa3",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-python-ubuntu24-v1",
+    "upper_limit": 66425902.11956917,
+    "value": 8269807.6
+  },
+  "binding/python/cursor_batch_1/1k": {
+    "baseline": 14052281.325,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7388-700a-aeb7-13730e791aa3",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-python-ubuntu24-v1",
+    "upper_limit": 207567714.8282726,
+    "value": 14384134.425
+  },
+  "binding/python/cursor_batch_256/1k": {
+    "baseline": 1157803.1625,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7388-700a-aeb7-13730e791aa3",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-python-ubuntu24-v1",
+    "upper_limit": 6318534.767958162,
+    "value": 1142358.95
+  },
+  "binding/python/predicate/1k": {
+    "baseline": 8791105.962499999,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7388-700a-aeb7-13730e791aa3",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-python-ubuntu24-v1",
+    "upper_limit": 72263428.76682438,
+    "value": 8918386.875
+  },
+  "binding/python/prepared_execute/1k": {
+    "baseline": 381252.9875,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7388-700a-aeb7-13730e791aa3",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-python-ubuntu24-v1",
+    "upper_limit": 2138022.2751434604,
+    "value": 378179.525
+  },
+  "binding/python/set_roundtrip/2": {
+    "baseline": 90964.6125,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7388-700a-aeb7-13730e791aa3",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "binding-python-ubuntu24-v1",
+    "upper_limit": 8776095.936753022,
+    "value": 102068.375
+  },
+  "checkpoint/100k": {
+    "baseline": 1631976393.3333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 5544293594.980179,
+    "value": 327050000.0
+  },
+  "checkpoint/10k": {
+    "baseline": 167330236.66666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 600183331.5605175,
+    "value": 27502000.0
+  },
+  "checkpoint/1k": {
+    "baseline": 18903826.333333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 75704101.28214636,
+    "value": 3390500.0
+  },
+  "checkpoint/1m": {
+    "baseline": 18354605366.666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 59577266608.01547,
+    "value": 4341400000.0
+  },
+  "checkpoint/after_100k_facts/100k": {
+    "baseline": 1156250000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 68666251144.52009,
+    "value": 1229800000.0
+  },
+  "checkpoint/after_100k_facts/10k": {
+    "baseline": 1181900000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 35750108017.65137,
+    "value": 1196600000.0
+  },
+  "checkpoint/after_1_fact/100k": {
+    "baseline": 70047089.66666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 202412324.15514815,
+    "value": 1196000.0
+  },
+  "checkpoint/after_1_fact/10k": {
+    "baseline": 6718828.666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16207916.33002074,
+    "value": 1066400.0
+  },
+  "checkpoint/after_1_fact/1m": {
+    "baseline": 1206600.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 39082770.50737877,
+    "value": 1210600.0
+  },
+  "checkpoint/set_storage/inline_unique/10k": {
+    "baseline": 29479500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2914849781.6647277,
+    "value": 35008000.0
+  },
+  "checkpoint/set_storage/long_repeated/10k": {
+    "baseline": 77530000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4313375968.09594,
+    "value": 85299000.0
+  },
+  "checkpoint/set_storage/long_unique/10k": {
+    "baseline": 97835000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2973005730.654735,
+    "value": 100550000.0
+  },
+  "checkpoint/storage_v3/multivalue_inline_unique/10k": {
+    "baseline": 21715000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2548447015.070115,
+    "value": 24474000.0
+  },
+  "checkpoint/storage_v3/multivalue_long_repeated/10k": {
+    "baseline": 31906500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3312026972.1055317,
+    "value": 35990000.0
+  },
+  "checkpoint/storage_v3/multivalue_long_unique/10k": {
+    "baseline": 54552500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 809594938.2802799,
+    "value": 54090000.0
+  },
+  "checkpoint/storage_v3/rebuild_damaged_avet/100k_history": {
+    "baseline": 397545000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 31103706810.894623,
+    "value": 426500000.0
+  },
+  "checkpoint/storage_v3/verify/100k_history": {
+    "baseline": 188515000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 25905166722.222458,
+    "value": 219300000.0
+  },
+  "concurrent/readers/100k_16t": {
+    "baseline": 41947.63333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 75094.0576485576,
+    "value": 61234.0
+  },
+  "concurrent/readers/100k_4t": {
+    "baseline": 10580.633333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 18800.37316221075,
+    "value": 15369.0
+  },
+  "concurrent/readers/100k_8t": {
+    "baseline": 21329.8,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 37882.96362972396,
+    "value": 30902.0
+  },
+  "concurrent/readers/10k_16t": {
+    "baseline": 41827.73333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 74162.52906474959,
+    "value": 60961.0
+  },
+  "concurrent/readers/10k_4t": {
+    "baseline": 10766.763333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 19006.093814053223,
+    "value": 15376.0
+  },
+  "concurrent/readers/10k_8t": {
+    "baseline": 21070.866666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 37804.6467525075,
+    "value": 31884.0
+  },
+  "concurrent/readers_plus_writer/100k_16t": {
+    "baseline": 46313.9,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 76383.83943959423,
+    "value": 32828.0
+  },
+  "concurrent/readers_plus_writer/100k_4t": {
+    "baseline": 14392.880000000001,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 24763.3270348016,
+    "value": 8434.2
+  },
+  "concurrent/readers_plus_writer/100k_8t": {
+    "baseline": 24557.033333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 40763.42020364579,
+    "value": 16458.0
+  },
+  "concurrent/readers_plus_writer/10k_16t": {
+    "baseline": 45020.23333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 75150.55125837342,
+    "value": 31235.0
+  },
+  "concurrent/readers_plus_writer/10k_4t": {
+    "baseline": 13906.689999999999,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 23488.453016149255,
+    "value": 8354.2
+  },
+  "concurrent/readers_plus_writer/10k_8t": {
+    "baseline": 23416.533333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 38301.386788933356,
+    "value": 15937.0
+  },
+  "concurrent/serialized_writers/100k_16t": {
+    "baseline": 116441.93333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 209779.0893550347,
+    "value": 43932.0
+  },
+  "concurrent/serialized_writers/100k_2t": {
+    "baseline": 12183.236666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21756.15549767561,
+    "value": 4582.200000000001
+  },
+  "concurrent/serialized_writers/100k_4t": {
+    "baseline": 31238.933333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 58203.44381294352,
+    "value": 13880.0
+  },
+  "concurrent/serialized_writers/100k_8t": {
+    "baseline": 58466.933333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 106083.08688384661,
+    "value": 21655.0
+  },
+  "concurrent/serialized_writers/10k_16t": {
+    "baseline": 113817.2,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 205909.61083169412,
+    "value": 43304.0
+  },
+  "concurrent/serialized_writers/10k_2t": {
+    "baseline": 11987.983333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21870.24479614888,
+    "value": 4499.1
+  },
+  "concurrent/serialized_writers/10k_4t": {
+    "baseline": 30274.466666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 56669.70693311983,
+    "value": 13698.0
+  },
+  "concurrent/serialized_writers/10k_8t": {
+    "baseline": 56778.26666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-f464-7225-ab41-0405bf038929",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 103467.1412517601,
+    "value": 21073.0
+  },
+  "concurrent_btree_scan/100k_2t": {
+    "baseline": 22663.9,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 38951.49776983736,
+    "value": 19284.0
+  },
+  "concurrent_btree_scan/100k_4t": {
+    "baseline": 35511.96666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 64951.673513388654,
+    "value": 27388.0
+  },
+  "concurrent_btree_scan/100k_8t": {
+    "baseline": 71383.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 131405.89396869644,
+    "value": 54496.0
+  },
+  "concurrent_btree_scan/10k_2t": {
+    "baseline": 24861.033333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 43475.84479695286,
+    "value": 19322.0
+  },
+  "concurrent_btree_scan/10k_4t": {
+    "baseline": 38270.86666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 71360.28878518763,
+    "value": 27375.0
+  },
+  "concurrent_btree_scan/10k_8t": {
+    "baseline": 77280.2,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 144770.1454135114,
+    "value": 54300.0
+  },
+  "concurrent_file/readers/100k_16t": {
+    "baseline": 142044.1,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 244325.45278981832,
+    "value": 122730.0
+  },
+  "concurrent_file/readers/100k_4t": {
+    "baseline": 35677.53333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 60652.00594026522,
+    "value": 30963.0
+  },
+  "concurrent_file/readers/100k_8t": {
+    "baseline": 71851.13333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 121910.48065051393,
+    "value": 62356.0
+  },
+  "concurrent_file/readers/10k_16t": {
+    "baseline": 153349.93333333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 266957.345920314,
+    "value": 123260.0
+  },
+  "concurrent_file/readers/10k_4t": {
+    "baseline": 40348.76666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 72055.7031431509,
+    "value": 31157.0
+  },
+  "concurrent_file/readers/10k_8t": {
+    "baseline": 77477.06666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 134560.9609840044,
+    "value": 62398.0
+  },
+  "concurrent_file/readers_plus_writer/100k_16t": {
+    "baseline": 309397.36666666664,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 677506.0688299752,
+    "value": 354110.0
+  },
+  "concurrent_file/readers_plus_writer/100k_4t": {
+    "baseline": 206554.26666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 515105.77025762986,
+    "value": 214770.0
+  },
+  "concurrent_file/readers_plus_writer/100k_8t": {
+    "baseline": 238428.73333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 563965.0193313917,
+    "value": 267710.0
+  },
+  "concurrent_file/readers_plus_writer/10k_16t": {
+    "baseline": 328220.3333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 722461.3140461927,
+    "value": 338550.0
+  },
+  "concurrent_file/readers_plus_writer/10k_4t": {
+    "baseline": 205670.2,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 509877.69779367244,
+    "value": 226040.0
+  },
+  "concurrent_file/readers_plus_writer/10k_8t": {
+    "baseline": 248932.73333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 588728.7812810838,
+    "value": 272220.0
+  },
+  "concurrent_file/serialized_writers/100k_16t": {
+    "baseline": 3584592.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 9252149.862620153,
+    "value": 10804000.0
+  },
+  "concurrent_file/serialized_writers/100k_2t": {
+    "baseline": 417968.5333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1016900.9723351388,
+    "value": 1551700.0
+  },
+  "concurrent_file/serialized_writers/100k_4t": {
+    "baseline": 859359.7333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2112232.0949456147,
+    "value": 3236100.0
+  },
+  "concurrent_file/serialized_writers/100k_8t": {
+    "baseline": 1800923.2333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4862390.634625617,
+    "value": 2021399.9999999998
+  },
+  "concurrent_file/serialized_writers/10k_16t": {
+    "baseline": 3388913.6666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8209697.076624043,
+    "value": 7743400.0
+  },
+  "concurrent_file/serialized_writers/10k_2t": {
+    "baseline": 450308.43333333335,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1165141.8443026468,
+    "value": 544540.0
+  },
+  "concurrent_file/serialized_writers/10k_4t": {
+    "baseline": 870975.3666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2146349.598529378,
+    "value": 1138700.0
+  },
+  "concurrent_file/serialized_writers/10k_8t": {
+    "baseline": 1742668.8333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4236708.402829729,
+    "value": 2368700.0
+  },
+  "disjunction/or_join_scale/10k": {
+    "baseline": 85389100.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 146930062.1667182,
+    "value": 25259000.0
+  },
+  "disjunction/or_join_scale/1k": {
+    "baseline": 7080630.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11970846.177917574,
+    "value": 1791400.0
+  },
+  "disjunction/or_join_short_circuit/10k": {
+    "baseline": 140696233.33333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 252511919.70915186,
+    "value": 21725000.0
+  },
+  "disjunction/or_join_short_circuit/1k": {
+    "baseline": 10985926.666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20034720.537868537,
+    "value": 1672500.0
+  },
+  "disjunction/or_rule_body/10k": {
+    "baseline": 164794766.66666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 342650367.1766092,
+    "value": 14379000.0
+  },
+  "disjunction/or_rule_body/1k": {
+    "baseline": 12400236.666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 24934312.08075893,
+    "value": 1371100.0
+  },
+  "disjunction/or_scale/10k": {
+    "baseline": 76849366.66666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 128974785.03557235,
+    "value": 25320000.0
+  },
+  "disjunction/or_scale/1k": {
+    "baseline": 6620843.333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11286802.266610883,
+    "value": 1781600.0
+  },
+  "disjunction/or_selectivity/match_0pct": {
+    "baseline": 37391633.333333336,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 56865495.84829129,
+    "value": 21251000.0
+  },
+  "disjunction/or_selectivity/match_100pct": {
+    "baseline": 114458033.33333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 203023458.33591154,
+    "value": 23168000.0
+  },
+  "disjunction/or_selectivity/match_25pct": {
+    "baseline": 56748233.333333336,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 93865702.06941906,
+    "value": 21581000.0
+  },
+  "disjunction/or_selectivity/match_50pct": {
+    "baseline": 77562433.33333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 133865020.7050979,
+    "value": 18832000.0
+  },
+  "disjunction/or_selectivity/match_75pct": {
+    "baseline": 99579333.33333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 177337385.85030943,
+    "value": 19822000.0
+  },
+  "disjunction/or_short_circuit/10k": {
+    "baseline": 127659100.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 230176645.6373986,
+    "value": 22529000.0
+  },
+  "disjunction/or_short_circuit/1k": {
+    "baseline": 10232296.666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 18580244.826566443,
+    "value": 1707000.0
+  },
+  "expr/binding_into_agg/100k": {
+    "baseline": 297136333.3333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 482732904.4448254,
+    "value": 135240000.0
+  },
+  "expr/binding_into_agg/10k": {
+    "baseline": 22269200.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 38236979.36678728,
+    "value": 10519000.0
+  },
+  "expr/binding_into_agg/1k": {
+    "baseline": 2090800.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3487732.694706279,
+    "value": 1074900.0
+  },
+  "expr/binding_scale/100k": {
+    "baseline": 279317333.3333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 443006444.1731538,
+    "value": 135680000.0
+  },
+  "expr/binding_scale/10k": {
+    "baseline": 22420566.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 37933779.74062627,
+    "value": 10599000.0
+  },
+  "expr/binding_scale/1k": {
+    "baseline": 2137263.3333333335,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3583243.4714119704,
+    "value": 1055100.0
+  },
+  "expr/filter_scale/100k": {
+    "baseline": 280249666.6666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 443973585.770507,
+    "value": 134270000.0
+  },
+  "expr/filter_scale/10k": {
+    "baseline": 22781066.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 39040483.67089416,
+    "value": 10228000.0
+  },
+  "expr/filter_scale/1k": {
+    "baseline": 1897346.6666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3207301.8948234296,
+    "value": 1018400.0
+  },
+  "expr/keyword_equality/dynamic_eq/10k": {
+    "baseline": 17766500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 512582555.75505745,
+    "value": 17081000.0
+  },
+  "expr/keyword_equality/dynamic_neq/10k": {
+    "baseline": 19255500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 434680456.0015998,
+    "value": 17960000.0
+  },
+  "expr/keyword_equality/literal_eq/10k": {
+    "baseline": 11681000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 366735640.56407464,
+    "value": 10975000.0
+  },
+  "expr/keyword_equality/literal_neq/10k": {
+    "baseline": 12617000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 267881438.79063132,
+    "value": 12076000.0
+  },
+  "expr/keyword_equality/nested_literal_eq/10k": {
+    "baseline": 12001000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 292075157.4635868,
+    "value": 11400000.0
+  },
+  "expr/keyword_equality/prepared_keyword_eq/10k": {
+    "baseline": 11895000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 60963110.26428982,
+    "value": 11132000.0
+  },
+  "fact_log/attribute_only_storage/10k": {
+    "baseline": 3561500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 257778417.33555084,
+    "value": 2960400.0
+  },
+  "fact_log/filter_attribute_entity_tx/100k": {
+    "baseline": 1819150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 72857644.466896,
+    "value": 1608700.0
+  },
+  "fact_log/storage_mixed/100k": {
+    "baseline": 174935000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 5795714597.12848,
+    "value": 155480000.0
+  },
+  "fact_log/tx_mixed_default/100k": {
+    "baseline": 272500000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 12313483462.607748,
+    "value": 233710000.0
+  },
+  "fact_log/tx_mixed_default/10k": {
+    "baseline": 24708500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1007449022.9898496,
+    "value": 21418000.0
+  },
+  "fact_log/tx_mixed_window_4096/100k": {
+    "baseline": 757075000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10325356501.536514,
+    "value": 750830000.0
+  },
+  "insert/batch_100/100k": {
+    "baseline": 418657.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 623174.854182455,
+    "value": 234460.0
+  },
+  "insert/batch_100/10k": {
+    "baseline": 398770.6666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 581070.5078180677,
+    "value": 226880.0
+  },
+  "insert/batch_100/1k": {
+    "baseline": 397135.3333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 587852.3136689191,
+    "value": 233470.0
+  },
+  "insert/batch_100/1m": {
+    "baseline": 411995.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 608441.0288541969,
+    "value": 210860.0
+  },
+  "insert/explicit_tx/100k": {
+    "baseline": 4812.23,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7308.823494539594,
+    "value": 3186.6
+  },
+  "insert/explicit_tx/10k": {
+    "baseline": 4619.916666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6918.482370116439,
+    "value": 3204.2999999999997
+  },
+  "insert/explicit_tx/1k": {
+    "baseline": 4618.496666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6933.850084666557,
+    "value": 3103.7
+  },
+  "insert/explicit_tx/1m": {
+    "baseline": 4527.069999999999,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6936.132652953025,
+    "value": 3028.7000000000003
+  },
+  "insert/single_fact/100k": {
+    "baseline": 4758.83,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7194.937120407247,
+    "value": 2953.3999999999996
+  },
+  "insert/single_fact/10k": {
+    "baseline": 4559.503333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6849.846034391572,
+    "value": 2846.2000000000003
+  },
+  "insert/single_fact/1k": {
+    "baseline": 4541.8933333333325,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6919.098016535425,
+    "value": 2852.1
+  },
+  "insert/single_fact/1m": {
+    "baseline": 4420.063333333331,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6721.098534121742,
+    "value": 2593.6
+  },
+  "insert_file/batch_100/100k": {
+    "baseline": 778729.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1850820.1947021212,
+    "value": 656350.0
+  },
+  "insert_file/batch_100/10k": {
+    "baseline": 773820.6666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1914379.3956190054,
+    "value": 655500.0
+  },
+  "insert_file/batch_100/1k": {
+    "baseline": 767624.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1747334.9373174615,
+    "value": 676630.0
+  },
+  "insert_file/batch_100/1m": {
+    "baseline": 809792.3333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2278141.492789923,
+    "value": 675390.0
+  },
+  "insert_file/chunked/execute/65535": {
+    "baseline": 231960000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3677754260.1327124,
+    "value": 298220000.0
+  },
+  "insert_file/chunked/execute/65537": {
+    "baseline": 294805000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1852304005.5799856,
+    "value": 337310000.0
+  },
+  "insert_file/chunked/retract/65535": {
+    "baseline": 201230000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3917174530.1271167,
+    "value": 256079999.99999997
+  },
+  "insert_file/chunked/retract/65537": {
+    "baseline": 414225000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2164688484.1474175,
+    "value": 476110000.0
+  },
+  "insert_file/chunked/statement_rollback/65537": {
+    "baseline": 283185000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1421675423.547848,
+    "value": 343600000.0
+  },
+  "insert_file/chunked/write_tx/65535": {
+    "baseline": 257275000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3352976563.303229,
+    "value": 346400000.0
+  },
+  "insert_file/chunked/write_tx/65537": {
+    "baseline": 355555000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 9355969607.466642,
+    "value": 442440000.0
+  },
+  "insert_file/explicit_tx/100k": {
+    "baseline": 202388.27333333335,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 583031.5615024453,
+    "value": 214190.0
+  },
+  "insert_file/explicit_tx/10k": {
+    "baseline": 223399.49333333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 766124.3290578438,
+    "value": 208210.0
+  },
+  "insert_file/explicit_tx/1k": {
+    "baseline": 211000.01333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 563453.1860770173,
+    "value": 208250.0
+  },
+  "insert_file/explicit_tx/1m": {
+    "baseline": 241339.79333333336,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1046725.5604677281,
+    "value": 207220.0
+  },
+  "insert_file/set_storage/inline_unique/10k": {
+    "baseline": 50989000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1765616223.8420374,
+    "value": 69232000.0
+  },
+  "insert_file/set_storage/long_repeated/10k": {
+    "baseline": 193795000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6487193636.706385,
+    "value": 248010000.0
+  },
+  "insert_file/set_storage/long_unique/10k": {
+    "baseline": 194290000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8574461640.642755,
+    "value": 253190000.0
+  },
+  "insert_file/set_storage/scalar/10k": {
+    "baseline": 31204000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1098021902.9370885,
+    "value": 40693000.0
+  },
+  "insert_file/single_fact/100k": {
+    "baseline": 266285.7833333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1309990.5904221158,
+    "value": 233460.0
+  },
+  "insert_file/single_fact/10k": {
+    "baseline": 225043.93000000002,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 715007.4665153591,
+    "value": 209950.0
+  },
+  "insert_file/single_fact/1k": {
+    "baseline": 223729.31999999998,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 717551.7896261486,
+    "value": 213150.0
+  },
+  "insert_file/single_fact/1m": {
+    "baseline": 215173.77999999997,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 605710.1260283012,
+    "value": 210340.0
+  },
+  "log_writer/append/100k": {
+    "baseline": 667005000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 30430397501.322315,
+    "value": 615960000.0
+  },
+  "log_writer/append/10k": {
+    "baseline": 30008500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2053103226.0091176,
+    "value": 25100000.0
+  },
+  "log_writer/finish/100k": {
+    "baseline": 438870000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8752882390.84821,
+    "value": 400090000.0
+  },
+  "log_writer/finish/10k": {
+    "baseline": 35193000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e8-3821-7122-870f-13482be89335",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 915662349.3491106,
+    "value": 31434000.0
+  },
+  "memory_meter/count/limited/10k": {
+    "baseline": 4079500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e7-b8c7-722d-97cb-e2cb3d1cb892",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 77020072.89848925,
+    "value": 3198600.0
+  },
+  "memory_meter/count/unlimited/10k": {
+    "baseline": 4028950.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e7-b8c7-722d-97cb-e2cb3d1cb892",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 51470645.37350717,
+    "value": 3198900.0
+  },
+  "memory_meter/hash_groups/limited/10k": {
+    "baseline": 16278500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e7-b8c7-722d-97cb-e2cb3d1cb892",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 95945263.29426779,
+    "value": 13076000.0
+  },
+  "memory_meter/hash_groups/unlimited/10k": {
+    "baseline": 16207500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e7-b8c7-722d-97cb-e2cb3d1cb892",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 53973405.09105452,
+    "value": 13198000.0
+  },
+  "negation/not_join_scale/10k": {
+    "baseline": 29128966.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 50260255.756653026,
+    "value": 24227000.0
+  },
+  "negation/not_join_scale/1k": {
+    "baseline": 2728536.6666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4669762.440159027,
+    "value": 2337500.0
+  },
+  "negation/not_pushdown_selectivity/excl_0pct": {
+    "baseline": 130044433.33333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 231781894.66556084,
+    "value": 68471000.0
+  },
+  "negation/not_pushdown_selectivity/excl_100pct": {
+    "baseline": 63513800.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 115035639.80874114,
+    "value": 27761000.0
+  },
+  "negation/not_pushdown_selectivity/excl_25pct": {
+    "baseline": 130228100.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 237221005.1525284,
+    "value": 58851000.0
+  },
+  "negation/not_pushdown_selectivity/excl_50pct": {
+    "baseline": 129667166.66666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 240934930.24267775,
+    "value": 49245000.0
+  },
+  "negation/not_pushdown_selectivity/excl_75pct": {
+    "baseline": 128562833.33333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 244585955.09695712,
+    "value": 40808000.0
+  },
+  "negation/not_rule_body/10k": {
+    "baseline": 1417629400.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3149485451.038362,
+    "value": 30088000.0
+  },
+  "negation/not_rule_body/1k": {
+    "baseline": 20458420.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 43323103.94586372,
+    "value": 2900300.0
+  },
+  "negation/not_scale/10k": {
+    "baseline": 25076100.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 43121754.38415296,
+    "value": 20419000.0
+  },
+  "negation/not_scale/1k": {
+    "baseline": 2304563.3333333335,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4065381.4716826733,
+    "value": 1917500.0
+  },
+  "negation/not_selectivity/excl_0pct": {
+    "baseline": 20595600.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 34741573.8646623,
+    "value": 19535000.0
+  },
+  "negation/not_selectivity/excl_100pct": {
+    "baseline": 44943166.666666664,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 79982392.69053629,
+    "value": 25749000.0
+  },
+  "negation/not_selectivity/excl_25pct": {
+    "baseline": 28619500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 51119488.65219487,
+    "value": 21593000.0
+  },
+  "negation/not_selectivity/excl_50pct": {
+    "baseline": 35922733.333333336,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 64019762.36681299,
+    "value": 22908000.0
+  },
+  "negation/not_selectivity/excl_75pct": {
+    "baseline": 40762033.333333336,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 72107510.1860354,
+    "value": 24269000.0
+  },
+  "open/checkpointed/100k": {
+    "baseline": 10470946.5,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21921235.063397154,
+    "value": 22897.0
+  },
+  "open/checkpointed/10k": {
+    "baseline": 967423.1666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2015464.7442633947,
+    "value": 22738.0
+  },
+  "open/checkpointed/1k": {
+    "baseline": 108805.16666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 218333.34444847325,
+    "value": 22333.0
+  },
+  "open/checkpointed/1m": {
+    "baseline": 144844119.06666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 300088410.4014503,
+    "value": 22752.0
+  },
+  "open/storage_v3/migrate_v7/multi_checkpoint": {
+    "baseline": 1974330.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 577488130.6919575,
+    "value": 1982600.0
+  },
+  "open/storage_v3/read_only_v7/multi_checkpoint": {
+    "baseline": 582865.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 32783123.202088166,
+    "value": 811750.0
+  },
+  "open/storage_v3/read_only_v8/10k": {
+    "baseline": 13550.95,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2054040.045434268,
+    "value": 19333.0
+  },
+  "open/storage_v3/read_only_wal/10k_plus_1k": {
+    "baseline": 1816500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 275495263.3167805,
+    "value": 2623500.0
+  },
+  "open/wal_replay/100k": {
+    "baseline": 1962566266.6666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6145615544.537551,
+    "value": 278350000.0
+  },
+  "open/wal_replay/10k": {
+    "baseline": 4140631.3666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 22677927.148895204,
+    "value": 26195.0
+  },
+  "open/wal_replay/1k": {
+    "baseline": 266394.4,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-91fe-708a-895c-346483052a19",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1878504.0356882364,
+    "value": 22953.0
+  },
+  "point_query_chain_depth/attr_scan/1": {
+    "baseline": 22323.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 155744.1537523386,
+    "value": 21861.0
+  },
+  "point_query_chain_depth/attr_scan/2000": {
+    "baseline": 732025.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10460191.355206674,
+    "value": 713500.0
+  },
+  "point_query_chain_depth/churned_attr/1": {
+    "baseline": 22305.5,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 145527.10274234577,
+    "value": 21900.0
+  },
+  "point_query_chain_depth/churned_attr/2000": {
+    "baseline": 725055.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11743326.72620036,
+    "value": 707690.0
+  },
+  "point_query_chain_depth/churned_attr_as_of/1": {
+    "baseline": 23863.5,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 152598.37355855812,
+    "value": 23453.0
+  },
+  "point_query_chain_depth/churned_attr_as_of/2000": {
+    "baseline": 644690.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 876247.3742809183,
+    "value": 643730.0
+  },
+  "point_query_chain_depth/sibling_attr/1": {
+    "baseline": 22356.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 80245.34357022957,
+    "value": 21639.0
+  },
+  "point_query_chain_depth/sibling_attr/2000": {
+    "baseline": 28596.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 136104.78091614065,
+    "value": 28499.0
+  },
+  "prepared/count_slots/10k": {
+    "baseline": 9322300.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 219488183.5140144,
+    "value": 8752100.0
+  },
+  "prepared/cursor_drain/10k": {
+    "baseline": 10958000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 250785280.50523674,
+    "value": 10536000.0
+  },
+  "prepared/prepare_value_lookup/10k": {
+    "baseline": 2847.65,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 130507.4357493968,
+    "value": 3103.0
+  },
+  "prepared/threshold_filter/10k": {
+    "baseline": 10822000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 258367859.64793402,
+    "value": 10291000.0
+  },
+  "prepared/threshold_filter/1k": {
+    "baseline": 968695.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 32562493.41230481,
+    "value": 1018500.0
+  },
+  "prepared/time_entity_slots/10k": {
+    "baseline": 4757.15,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 134953.0403248542,
+    "value": 5288.2
+  },
+  "prepared/unprepared_count_slots/10k": {
+    "baseline": 9114550.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 256412312.46120444,
+    "value": 8983000.0
+  },
+  "prepared/unprepared_cursor_drain/10k": {
+    "baseline": 10400000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20323887.46918221,
+    "value": 10705000.0
+  },
+  "prepared/unprepared_time_entity_slots/10k": {
+    "baseline": 10279.95,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 434278.0421208101,
+    "value": 11231.0
+  },
+  "prepared/unprepared_value_lookup/10k": {
+    "baseline": 4021350.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 74287986.55262613,
+    "value": 4068500.0
+  },
+  "prepared/value_lookup/10k": {
+    "baseline": 4046100.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 64636946.270173475,
+    "value": 4139599.9999999995
+  },
+  "prepared/value_lookup/1k": {
+    "baseline": 369205.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 22171434.4427117,
+    "value": 401620.0
+  },
+  "query/cursor_lifecycle/drain/100k": {
+    "baseline": 43230000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 210282105.73123387,
+    "value": 42922000.0
+  },
+  "query/cursor_lifecycle/drain/10k": {
+    "baseline": 4236550.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 22898971.712878767,
+    "value": 4169600.0
+  },
+  "query/cursor_lifecycle/first_batch/10k": {
+    "baseline": 381720.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2366497.493836442,
+    "value": 385540.0
+  },
+  "query/cursor_lifecycle/held_checkpoint_close/10k": {
+    "baseline": 23085.5,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 382275.09367623396,
+    "value": 25979.0
+  },
+  "query/cursor_lifecycle/held_checkpoint_drain/10k": {
+    "baseline": 4380250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8432504.04991607,
+    "value": 4549100.0
+  },
+  "query/cursor_lifecycle/iterator/10k": {
+    "baseline": 4297850.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 41209198.11454161,
+    "value": 4352500.0
+  },
+  "query/cursor_lifecycle/open/10k": {
+    "baseline": 5875.700000000001,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 18335.692044639836,
+    "value": 5157.9
+  },
+  "query/cursor_lifecycle/staged_read/10k_plus_200": {
+    "baseline": 4679950.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16891844.85791033,
+    "value": 4552300.0
+  },
+  "query/distinct/bag/100k": {
+    "baseline": 122690000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 508618957.1348638,
+    "value": 138810000.0
+  },
+  "query/distinct/bag/10k": {
+    "baseline": 8922750.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 38005253.55552009,
+    "value": 8629500.0
+  },
+  "query/distinct/float_set_tuple/100k": {
+    "baseline": 389630000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2005018349.1502154,
+    "value": 383190000.0
+  },
+  "query/distinct/float_set_tuple/10k": {
+    "baseline": 35318000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 273491299.26037306,
+    "value": 33772000.0
+  },
+  "query/distinct/scalar/100k": {
+    "baseline": 122290000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1539200599.7665713,
+    "value": 136560000.0
+  },
+  "query/distinct/scalar/10k": {
+    "baseline": 9383150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11064697.598944763,
+    "value": 8959500.0
+  },
+  "query/distinct/sorted_page/100k": {
+    "baseline": 126320000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 953310622.431851,
+    "value": 137380000.0
+  },
+  "query/distinct/sorted_page/10k": {
+    "baseline": 9953150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 177473883.75061193,
+    "value": 9056300.0
+  },
+  "query/join_3pattern/100k": {
+    "baseline": 807315168.5652174,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1826308698.5380936,
+    "value": 20069.0
+  },
+  "query/join_3pattern/10k": {
+    "baseline": 53845148.1,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 114583745.78891957,
+    "value": 19908.0
+  },
+  "query/join_3pattern/1k": {
+    "baseline": 4672081.333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10184698.600703537,
+    "value": 19868.0
+  },
+  "query/join_3pattern/1m": {
+    "baseline": 9966932579.695652,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 24543319722.063057,
+    "value": 20309.0
+  },
+  "query/operator_paths/anti_committed/10k": {
+    "baseline": 173860000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1160735476.1020088,
+    "value": 181060000.0
+  },
+  "query/operator_paths/entity_committed/10k": {
+    "baseline": 166230000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 309575041.2215208,
+    "value": 172020000.0
+  },
+  "query/operator_paths/entity_pending/10k": {
+    "baseline": 27614500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 599616347.1820302,
+    "value": 27197000.0
+  },
+  "query/operator_paths/hash_committed/10k": {
+    "baseline": 33009000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 110746118.50859295,
+    "value": 33738000.0
+  },
+  "query/operator_paths/hash_pending/10k": {
+    "baseline": 44196500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1090890964.4579124,
+    "value": 44736000.0
+  },
+  "query/operator_paths/union_committed/10k": {
+    "baseline": 195440000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 890112122.8427547,
+    "value": 197170000.0
+  },
+  "query/operator_paths/value_committed/10k": {
+    "baseline": 162750000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 774723060.5995697,
+    "value": 175330000.0
+  },
+  "query/operator_paths/value_pending/10k": {
+    "baseline": 32543500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1059390189.5195482,
+    "value": 33545000.0
+  },
+  "query/operator_paths/windows_committed/10k": {
+    "baseline": 174210000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 482953165.707891,
+    "value": 184750000.0
+  },
+  "query/ordered_groups/avg/100k": {
+    "baseline": 121735000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 758517779.2725252,
+    "value": 113560000.0
+  },
+  "query/ordered_groups/avg/10k": {
+    "baseline": 12308500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 117887636.1304663,
+    "value": 11213000.0
+  },
+  "query/ordered_groups/avg/1k": {
+    "baseline": 1296400.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10117633.305939743,
+    "value": 1222600.0
+  },
+  "query/ordered_groups/avg/1m": {
+    "baseline": 1236100000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 9395740807.994263,
+    "value": 1128500000.0
+  },
+  "query/ordered_groups/avg_limit/100k": {
+    "baseline": 1241000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 13315063.087505022,
+    "value": 1128500.0
+  },
+  "query/ordered_groups/avg_limit/10k": {
+    "baseline": 1236150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16204680.266016502,
+    "value": 1136500.0
+  },
+  "query/ordered_groups/avg_limit/1k": {
+    "baseline": 1201700.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16693990.993556673,
+    "value": 1106100.0
+  },
+  "query/ordered_groups/avg_limit/1m": {
+    "baseline": 1233650.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 14327668.188504307,
+    "value": 1129900.0
+  },
+  "query/ordered_groups/count/100k": {
+    "baseline": 102545000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 463664238.4619082,
+    "value": 98424000.0
+  },
+  "query/ordered_groups/count/10k": {
+    "baseline": 10086500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 19183396.84675036,
+    "value": 9661000.0
+  },
+  "query/ordered_groups/count/1k": {
+    "baseline": 1134400.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20155184.315932572,
+    "value": 1052700.0
+  },
+  "query/ordered_groups/count/1m": {
+    "baseline": 1026550000.0000001,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8276501123.319227,
+    "value": 975140000.0
+  },
+  "query/ordered_groups/count_limit/100k": {
+    "baseline": 1035899.9999999999,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4895189.571348637,
+    "value": 985290.0
+  },
+  "query/ordered_groups/count_limit/10k": {
+    "baseline": 1042450.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 9505320.702885972,
+    "value": 987660.0
+  },
+  "query/ordered_groups/count_limit/1k": {
+    "baseline": 1000210.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4357791.927073315,
+    "value": 958630.0
+  },
+  "query/ordered_groups/count_limit/1m": {
+    "baseline": 1034550.0000000001,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7181846.960076758,
+    "value": 981760.0
+  },
+  "query/ordered_groups/distinct/100k": {
+    "baseline": 117550000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 839788476.9238164,
+    "value": 106740000.0
+  },
+  "query/ordered_groups/distinct/10k": {
+    "baseline": 11471500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 84522338.3148135,
+    "value": 10597000.0
+  },
+  "query/ordered_groups/distinct/1k": {
+    "baseline": 1243150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8217437.58250861,
+    "value": 1147900.0
+  },
+  "query/ordered_groups/distinct/1m": {
+    "baseline": 1159150000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4384413427.484219,
+    "value": 1072400000.0
+  },
+  "query/ordered_groups/distinct_limit/100k": {
+    "baseline": 1187850.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 17810361.510880202,
+    "value": 1079200.0
+  },
+  "query/ordered_groups/distinct_limit/10k": {
+    "baseline": 1183950.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16703807.347637735,
+    "value": 1093300.0
+  },
+  "query/ordered_groups/distinct_limit/1k": {
+    "baseline": 1149300.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 17523714.324150644,
+    "value": 1058400.0
+  },
+  "query/ordered_groups/distinct_limit/1m": {
+    "baseline": 1180850.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 17417432.553745337,
+    "value": 1078100.0
+  },
+  "query/ordered_groups/max/100k": {
+    "baseline": 107800000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1254560329.7721665,
+    "value": 101000000.0
+  },
+  "query/ordered_groups/max/10k": {
+    "baseline": 10633500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 113456000.72236012,
+    "value": 9902100.0
+  },
+  "query/ordered_groups/max/1k": {
+    "baseline": 1146900.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 18072641.40577188,
+    "value": 1084900.0
+  },
+  "query/ordered_groups/max/1m": {
+    "baseline": 1076200000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 9897433305.939743,
+    "value": 998230000.0
+  },
+  "query/ordered_groups/max_limit/100k": {
+    "baseline": 1083000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20324315.148581065,
+    "value": 999050.0
+  },
+  "query/ordered_groups/max_limit/10k": {
+    "baseline": 1083850.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21510518.374066714,
+    "value": 1004999.9999999999
+  },
+  "query/ordered_groups/max_limit/1k": {
+    "baseline": 1053450.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 18392686.716987807,
+    "value": 973820.0
+  },
+  "query/ordered_groups/max_limit/1m": {
+    "baseline": 1085700.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 19720555.358797707,
+    "value": 997470.0
+  },
+  "query/ordered_groups/min/100k": {
+    "baseline": 110170000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 253515041.2215208,
+    "value": 101510000.0
+  },
+  "query/ordered_groups/min/10k": {
+    "baseline": 10829000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 13585635.408106169,
+    "value": 9874200.0
+  },
+  "query/ordered_groups/min/1k": {
+    "baseline": 1150450.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 15347122.351746775,
+    "value": 1081900.0
+  },
+  "query/ordered_groups/min/1m": {
+    "baseline": 1068350000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10192813200.831388,
+    "value": 1006999999.9999999
+  },
+  "query/ordered_groups/min_limit/100k": {
+    "baseline": 1095300.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 15043875.16501722,
+    "value": 1008599.9999999999
+  },
+  "query/ordered_groups/min_limit/10k": {
+    "baseline": 1085850.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20906058.58428336,
+    "value": 1002899.9999999999
+  },
+  "query/ordered_groups/min_limit/1k": {
+    "baseline": 1054550.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21922280.03936374,
+    "value": 971110.0
+  },
+  "query/ordered_groups/min_limit/1m": {
+    "baseline": 1081250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21177122.125093978,
+    "value": 1002699.9999999999
+  },
+  "query/ordered_groups/sum/100k": {
+    "baseline": 107540000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 669893623.2536585,
+    "value": 102440000.0
+  },
+  "query/ordered_groups/sum/10k": {
+    "baseline": 10809500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 37548863.45862985,
+    "value": 9996200.0
+  },
+  "query/ordered_groups/sum/1k": {
+    "baseline": 1150200.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11790812.675289813,
+    "value": 1084700.0
+  },
+  "query/ordered_groups/sum/1m": {
+    "baseline": 1074150000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6504721753.969154,
+    "value": 1006000000.0
+  },
+  "query/ordered_groups/sum_distinct/100k": {
+    "baseline": 112385000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 335672468.05659974,
+    "value": 105590000.0
+  },
+  "query/ordered_groups/sum_distinct/10k": {
+    "baseline": 11286000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 111076201.77344334,
+    "value": 10480000.0
+  },
+  "query/ordered_groups/sum_distinct/1k": {
+    "baseline": 1210900.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8267886.644751795,
+    "value": 1130000.0
+  },
+  "query/ordered_groups/sum_distinct/1m": {
+    "baseline": 1114950000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2906763015.2690105,
+    "value": 1041600000.0000001
+  },
+  "query/ordered_groups/sum_distinct_limit/100k": {
+    "baseline": 1133250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 13455410.274234578,
+    "value": 1062400.0
+  },
+  "query/ordered_groups/sum_distinct_limit/10k": {
+    "baseline": 1137850.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 15775584.017043762,
+    "value": 1069900.0
+  },
+  "query/ordered_groups/sum_distinct_limit/1k": {
+    "baseline": 1101250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 9619253.411048064,
+    "value": 1046899.9999999999
+  },
+  "query/ordered_groups/sum_distinct_limit/1m": {
+    "baseline": 1129800.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 12487137.881397419,
+    "value": 1061500.0
+  },
+  "query/ordered_groups/sum_limit/100k": {
+    "baseline": 1080250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 17316832.553745337,
+    "value": 1002000.0
+  },
+  "query/ordered_groups/sum_limit/10k": {
+    "baseline": 1081100.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16518258.28539455,
+    "value": 1012300.0
+  },
+  "query/ordered_groups/sum_limit/1k": {
+    "baseline": 1049950.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 15742816.725205854,
+    "value": 985870.0
+  },
+  "query/ordered_groups/sum_limit/1m": {
+    "baseline": 1086050.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 16936703.596610475,
+    "value": 1009600.0
+  },
+  "query/ordered_values/index/100k": {
+    "baseline": 470725.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3792470.6667679343,
+    "value": 454430.0
+  },
+  "query/ordered_values/index/10k": {
+    "baseline": 474080.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2260379.744452798,
+    "value": 460030.0
+  },
+  "query/ordered_values/index/1k": {
+    "baseline": 453985.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3930102.24962188,
+    "value": 441600.0
+  },
+  "query/ordered_values/index/1m": {
+    "baseline": 469455.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3052422.377395481,
+    "value": 458710.0
+  },
+  "query/ordered_values/uuid_ties/100k": {
+    "baseline": 214860000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 633868582.0321379,
+    "value": 202580000.0
+  },
+  "query/ordered_values/uuid_ties/10k": {
+    "baseline": 19647000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 41148756.18322812,
+    "value": 18562000.0
+  },
+  "query/ordered_values/uuid_ties/1k": {
+    "baseline": 1919600.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7598268.940698709,
+    "value": 1761500.0
+  },
+  "query/ordered_values/uuid_ties/1m": {
+    "baseline": 2212150000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8524845084.5631275,
+    "value": 2105900000.0
+  },
+  "query/pagination/committed_asc_offset0_k10/100k": {
+    "baseline": 488915.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1936148.5892557392,
+    "value": 468590.0
+  },
+  "query/pagination/committed_asc_offset_half_k10/100k": {
+    "baseline": 18665000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 23626943.734591104,
+    "value": 17822000.0
+  },
+  "query/pagination/committed_compound_ties/100k": {
+    "baseline": 3226850000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11524322578.39957,
+    "value": 3322400000.0
+  },
+  "query/pagination/committed_compound_ties/10k": {
+    "baseline": 318045000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 651597884.3808465,
+    "value": 331890000.0
+  },
+  "query/pagination/committed_desc_k10/100k": {
+    "baseline": 42711500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 337395825.12654954,
+    "value": 40190000.0
+  },
+  "query/pagination/committed_desc_k1000/100k": {
+    "baseline": 44003000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 367080669.8300431,
+    "value": 40946000.0
+  },
+  "query/pagination/pending_asc_offset0_k10/100k": {
+    "baseline": 119720000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 527702040.3997131,
+    "value": 136190000.0
+  },
+  "query/pagination/pending_asc_offset_half_k10/100k": {
+    "baseline": 188355000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1128367674.164204,
+    "value": 201670000.0
+  },
+  "query/pagination/pending_desc_k10/100k": {
+    "baseline": 116210000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3451738843.808465,
+    "value": 136770000.0
+  },
+  "query/pagination/pending_desc_k1000/100k": {
+    "baseline": 119600000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2120917306.285079,
+    "value": 140180000.0
+  },
+  "query/partition_windows/entity/100k": {
+    "baseline": 351370000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2269988244.041894,
+    "value": 318410000.0
+  },
+  "query/partition_windows/entity/10k": {
+    "baseline": 33118500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 105066684.15157205,
+    "value": 29754000.0
+  },
+  "query/partition_windows/entity/1k": {
+    "baseline": 3245250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 14078827.153857246,
+    "value": 2848400.0
+  },
+  "query/partition_windows/entity/1m": {
+    "baseline": 3582650000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21969408172.068153,
+    "value": 3272000000.0
+  },
+  "query/partition_windows/entity_limit/100k": {
+    "baseline": 2968150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 31830122.72287159,
+    "value": 2570700.0
+  },
+  "query/partition_windows/entity_limit/10k": {
+    "baseline": 2807350.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 26652246.28011837,
+    "value": 2400700.0
+  },
+  "query/partition_windows/entity_limit/1k": {
+    "baseline": 2671550.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 23098218.374066714,
+    "value": 2259700.0
+  },
+  "query/partition_windows/entity_limit/1m": {
+    "baseline": 3042650.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 36094708.543192975,
+    "value": 2697800.0
+  },
+  "query/partition_windows/value/100k": {
+    "baseline": 356485000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2641735753.3200145,
+    "value": 320540000.0
+  },
+  "query/partition_windows/value/10k": {
+    "baseline": 33830500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 189580400.55799857,
+    "value": 30101000.0
+  },
+  "query/partition_windows/value/1k": {
+    "baseline": 3415250.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10940864.664129842,
+    "value": 3040500.0
+  },
+  "query/partition_windows/value/1m": {
+    "baseline": 3641550000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 25722199618.930416,
+    "value": 3313400000.0
+  },
+  "query/partition_windows/value_limit/100k": {
+    "baseline": 3130200.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 34500710.94424821,
+    "value": 2730300.0
+  },
+  "query/partition_windows/value_limit/10k": {
+    "baseline": 2982500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 23932929.10160689,
+    "value": 2570200.0
+  },
+  "query/partition_windows/value_limit/1k": {
+    "baseline": 2836800.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21526788.06695983,
+    "value": 2409600.0
+  },
+  "query/partition_windows/value_limit/1m": {
+    "baseline": 3204400.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 34685176.36057246,
+    "value": 2841400.0
+  },
+  "query/point_attribute/100k": {
+    "baseline": 282441304.34782606,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 486220079.54189944,
+    "value": 143970000.0
+  },
+  "query/point_attribute/10k": {
+    "baseline": 18503870.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 33231834.573754095,
+    "value": 8887900.0
+  },
+  "query/point_attribute/1k": {
+    "baseline": 1651663.3333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3011067.9851560583,
+    "value": 800270.0
+  },
+  "query/point_attribute/1m": {
+    "baseline": 3949700000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7147128011.070749,
+    "value": 1915700000.0
+  },
+  "query/point_entity/100k": {
+    "baseline": 205781637.1347826,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 499516470.78292,
+    "value": 7184.599999999999
+  },
+  "query/point_entity/10k": {
+    "baseline": 5999.606666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11023.472658701803,
+    "value": 7138.7
+  },
+  "query/point_entity/1k": {
+    "baseline": 5859.2,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10884.262533192516,
+    "value": 7181.6
+  },
+  "query/point_entity/1m": {
+    "baseline": 2863309471.2173915,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7793680452.890194,
+    "value": 7301.3
+  },
+  "query/predicate_pushdown/100k": {
+    "baseline": 640883000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1153325569.301722,
+    "value": 171120000.0
+  },
+  "query/predicate_pushdown/10k": {
+    "baseline": 48397500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 92008335.0117091,
+    "value": 11205000.0
+  },
+  "query/predicate_pushdown/1k": {
+    "baseline": 4162796.6666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 8079019.97290702,
+    "value": 1003300.0000000001
+  },
+  "query/regex_filter/10k": {
+    "baseline": 23431030.833333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 51884219.829697765,
+    "value": 14035.0
+  },
+  "query/regex_filter/1k": {
+    "baseline": 1917662.8333333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4266649.037490355,
+    "value": 14004.0
+  },
+  "query/set_queries/all_in/committed/10k": {
+    "baseline": 181550000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 550939144.6862267,
+    "value": 183330000.0
+  },
+  "query/set_queries/all_in/pending/10k": {
+    "baseline": 38902500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1243827836.8832068,
+    "value": 39188000.0
+  },
+  "query/set_queries/any_none/committed/10k": {
+    "baseline": 188035000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 345163218.2620517,
+    "value": 187760000.0
+  },
+  "query/set_queries/any_none/pending/10k": {
+    "baseline": 43407000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1258531887.8931997,
+    "value": 43200000.0
+  },
+  "query/set_queries/collect/committed/10k": {
+    "baseline": 186000000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2220396931.182353,
+    "value": 183650000.0
+  },
+  "query/set_queries/collect/pending/10k": {
+    "baseline": 39510000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1071594296.7949499,
+    "value": 40371000.0
+  },
+  "query/set_queries/in/committed/10k": {
+    "baseline": 181165000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 762815071.1104017,
+    "value": 182860000.0
+  },
+  "query/set_queries/in/pending/10k": {
+    "baseline": 37918000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1101427940.4473603,
+    "value": 38949000.0
+  },
+  "query/set_queries/not_in/committed/10k": {
+    "baseline": 182240000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1031283705.6967003,
+    "value": 183420000.0
+  },
+  "query/set_queries/not_in/pending/10k": {
+    "baseline": 38293500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1529908919.3262484,
+    "value": 38705000.0
+  },
+  "query/set_storage/exact_inline_unique/10k": {
+    "baseline": 20386.5,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 124862.98196722384,
+    "value": 17636.0
+  },
+  "query/set_storage/exact_long_unique/10k": {
+    "baseline": 48795.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 934226.2930837019,
+    "value": 44322.0
+  },
+  "query/set_storage/scan_long_unique/10k": {
+    "baseline": 57047000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 388945903.1359828,
+    "value": 59830000.0
+  },
+  "query/storage_v3/multivalue_long_scan/10k": {
+    "baseline": 14741500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 201365717.12878767,
+    "value": 13726000.0
+  },
+  "recursion/ancestors/w10_d4": {
+    "baseline": 235905.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-a076-736f-9c60-d3a45b0923a6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2267545.2957742466,
+    "value": 211870.0
+  },
+  "recursion/chain/depth_10": {
+    "baseline": 5921305.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-a076-736f-9c60-d3a45b0923a6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 12562734.483114593,
+    "value": 419540.0
+  },
+  "recursion/chain/depth_100": {
+    "baseline": 3689371933.3333335,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-a076-736f-9c60-d3a45b0923a6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 7864092442.068277,
+    "value": 17841000.0
+  },
+  "recursion/fanout/w10_d3": {
+    "baseline": 140851233.33333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-a076-736f-9c60-d3a45b0923a6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 285518529.89957154,
+    "value": 17030000.0
+  },
+  "recursion/operator_paths/ancestors_committed/10k": {
+    "baseline": 2875700.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9eb-a076-736f-9c60-d3a45b0923a6",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 32978158.656519372,
+    "value": 2467300.0
+  },
+  "retract/batch_100/10k": {
+    "baseline": 334150.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3024626.1583116213,
+    "value": 332510.0
+  },
+  "retract/single_fact/10k": {
+    "baseline": 3966.3499999999995,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 15847.448608937564,
+    "value": 3931.2
+  },
+  "temporal_metadata/tx_time/100k": {
+    "baseline": 278849000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 472810529.78204024,
+    "value": 127080000.0
+  },
+  "temporal_metadata/tx_time/10k": {
+    "baseline": 24941876.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 46169557.94091761,
+    "value": 8227100.0
+  },
+  "temporal_metadata/tx_time/1k": {
+    "baseline": 2379664.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4576966.905822257,
+    "value": 798780.0
+  },
+  "temporal_metadata/valid_from/100k": {
+    "baseline": 279431000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 474451846.3703128,
+    "value": 122010000.0
+  },
+  "temporal_metadata/valid_from/10k": {
+    "baseline": 24852886.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 45506445.25435001,
+    "value": 8386400.0
+  },
+  "temporal_metadata/valid_from/1k": {
+    "baseline": 2447498.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4561880.407301785,
+    "value": 806790.0
+  },
+  "temporal_metadata/valid_to/100k": {
+    "baseline": 279744666.6666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 471528286.2239855,
+    "value": 119860000.0
+  },
+  "temporal_metadata/valid_to/10k": {
+    "baseline": 24914346.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 46005436.06690152,
+    "value": 8205900.0
+  },
+  "temporal_metadata/valid_to/1k": {
+    "baseline": 2447172.6666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4551074.074631801,
+    "value": 805450.0
+  },
+  "time_travel/as_of_counter/100k": {
+    "baseline": 83283589.85,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 178073470.10772395,
+    "value": 7713.7
+  },
+  "time_travel/as_of_counter/10k": {
+    "baseline": 6725932.416666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 14880910.576378513,
+    "value": 7651.900000000001
+  },
+  "time_travel/as_of_counter/1k": {
+    "baseline": 664046.25,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1480462.0384330647,
+    "value": 7552.1
+  },
+  "time_travel/as_of_counter/1m": {
+    "baseline": 1378887298.98,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2934857771.702593,
+    "value": 7808.4
+  },
+  "time_travel/operator_paths/timestamp_irregular/10k": {
+    "baseline": 4459350.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 56642458.2754498,
+    "value": 4676700.0
+  },
+  "time_travel/operator_paths/timestamp_monotone/10k": {
+    "baseline": 3554050.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 24752576.28833644,
+    "value": 3163700.0
+  },
+  "time_travel/valid_at/100k": {
+    "baseline": 7506.416666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 13181.303936577486,
+    "value": 8580.6
+  },
+  "time_travel/valid_at/10k": {
+    "baseline": 7430.506666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 13087.96190396836,
+    "value": 8502.7
+  },
+  "time_travel/valid_at/1k": {
+    "baseline": 7341.42,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 12923.053055774271,
+    "value": 8429.8
+  },
+  "time_travel/valid_at/1m": {
+    "baseline": 7607.906666666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 13398.953218671413,
+    "value": 8703.900000000001
+  },
+  "udf/aggregate_sum_dispatch/10k": {
+    "baseline": 19403053.333333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 36635442.39099128,
+    "value": 5133400.0
+  },
+  "udf/aggregate_sum_dispatch/1k": {
+    "baseline": 1572928.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3120654.48393311,
+    "value": 496530.0
+  },
+  "udf/predicate_filter_dispatch/10k": {
+    "baseline": 38447743.333333336,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 80862925.43379614,
+    "value": 4979500.0
+  },
+  "udf/predicate_filter_dispatch/1k": {
+    "baseline": 3082067.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 6633477.464859569,
+    "value": 485520.0
+  },
+  "udf/v3/aggregate_fallible/10k": {
+    "baseline": 8573966.666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 28714853.346048675,
+    "value": 4956400.0
+  },
+  "udf/v3/aggregate_infallible/10k": {
+    "baseline": 9174666.666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 18613604.83222439,
+    "value": 5065400.0
+  },
+  "udf/v3/callback_reentry/1k": {
+    "baseline": 8976966.666666666,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 43620422.65784991,
+    "value": 5528100.0
+  },
+  "udf/v3/predicate_fallible/10k": {
+    "baseline": 10745700.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 38578630.454889126,
+    "value": 6187700.0
+  },
+  "udf/v3/predicate_infallible/10k": {
+    "baseline": 10785333.333333334,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 37868842.27662891,
+    "value": 6152500.0
+  },
+  "udf/v3/registry_snapshot_churn/32": {
+    "baseline": 10194.199999999999,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402,
+      41971706654
+    ],
+    "report": "01a1aa1d-240c-757f-a595-9b75dd430226",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 52140.545265291425,
+    "value": 6586.0
+  },
+  "window/many_partitions/100k": {
+    "baseline": 221950000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 10807429967.127691,
+    "value": 184470000.0
+  },
+  "window/many_partitions/10k": {
+    "baseline": 16729500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1113594728.8854449,
+    "value": 13045000.0
+  },
+  "window/many_partitions/1k": {
+    "baseline": 1385650.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 11061440.282452654,
+    "value": 1151200.0
+  },
+  "window/neighbors/lag/hundred/10k": {
+    "baseline": 51879500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 640421159.6306672,
+    "value": 42478000.0
+  },
+  "window/neighbors/lag/one/10k": {
+    "baseline": 50477500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 1259262126.4545553,
+    "value": 42250000.0
+  },
+  "window/neighbors/lag_lead/hundred/100k": {
+    "baseline": 674450000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 4500659946.451363,
+    "value": 556430000.0
+  },
+  "window/neighbors/lag_lead/one/100k": {
+    "baseline": 652245000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3874751792.0761123,
+    "value": 541440000.0
+  },
+  "window/neighbors/lead/hundred/10k": {
+    "baseline": 52327000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 171413649.63018653,
+    "value": 43519000.0
+  },
+  "window/neighbors/lead/one/10k": {
+    "baseline": 51445000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 577411035.8666573,
+    "value": 41592000.0
+  },
+  "window/rank/100k": {
+    "baseline": 355985666.6666667,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 498453579.30969954,
+    "value": 190150000.0
+  },
+  "window/rank/10k": {
+    "baseline": 25411366.666666668,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 39031195.01977421,
+    "value": 12836000.0
+  },
+  "window/rank/1k": {
+    "baseline": 2218803.3333333335,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3543127.412810543,
+    "value": 1181200.0
+  },
+  "window/row_number/100k": {
+    "baseline": 356653333.3333333,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 514485121.3871154,
+    "value": 195620000.0
+  },
+  "window/row_number/10k": {
+    "baseline": 25187133.333333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 38832650.84958584,
+    "value": 13335000.0
+  },
+  "window/row_number/1k": {
+    "baseline": 2216196.6666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3537587.4171026694,
+    "value": 1183400.0
+  },
+  "window/running_sum/100k": {
+    "baseline": 394806000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 568971333.3953856,
+    "value": 185350000.0
+  },
+  "window/running_sum/10k": {
+    "baseline": 25908933.333333332,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 39661122.833365336,
+    "value": 13605000.0
+  },
+  "window/running_sum/1k": {
+    "baseline": 2215966.6666666665,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ed-acab-77a8-824a-99b059685905",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3646472.6516460814,
+    "value": 1184700.0
+  },
+  "window_rows/10000/hundred/frame_bench_sum/two": {
+    "baseline": 32125500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2657269399.1395054,
+    "value": 34091000.0
+  },
+  "window_rows/10000/hundred/sum/prefix": {
+    "baseline": 30156000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3178784963.138867,
+    "value": 32820999.999999996
+  },
+  "window_rows/10000/hundred/sum/two": {
+    "baseline": 30556500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2849767531.8701797,
+    "value": 31746000.0
+  },
+  "window_rows/10000/hundred/sum/zero": {
+    "baseline": 31324500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2732000209.3216143,
+    "value": 31657000.0
+  },
+  "window_rows/10000/one/sum/prefix": {
+    "baseline": 30283500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2803183057.013996,
+    "value": 32002000.000000004
+  },
+  "window_rows/10000/one/sum/two": {
+    "baseline": 30662000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 3045318482.3049073,
+    "value": 31326000.0
+  },
+  "window_rows/10000/one/sum/zero": {
+    "baseline": 29901500.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 2764759488.3821306,
+    "value": 31514000.0
+  },
+  "window_rows/100000/hundred/frame_bench_sum/prefix": {
+    "baseline": 406600000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20199242230.202297,
+    "value": 424690000.0
+  },
+  "window_rows/100000/hundred/max/prefix": {
+    "baseline": 408000000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 19401217961.85151,
+    "value": 424080000.0
+  },
+  "window_rows/100000/hundred/max/two": {
+    "baseline": 398720000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 21977661974.655094,
+    "value": 423940000.0
+  },
+  "window_rows/100000/hundred/min/prefix": {
+    "baseline": 405640000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 15627780723.56227,
+    "value": 429430000.0
+  },
+  "window_rows/100000/hundred/min/two": {
+    "baseline": 406220000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 17387094113.934006,
+    "value": 428700000.0
+  },
+  "window_rows/100000/hundred/sum/prefix": {
+    "baseline": 402800000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 20421486333.667004,
+    "value": 427810000.0
+  },
+  "window_rows/100000/hundred/sum/two": {
+    "baseline": 400170000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 23081766137.897564,
+    "value": 426580000.0
+  },
+  "window_rows/100000/hundred/sum/zero": {
+    "baseline": 398005000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 19156908952.162483,
+    "value": 428500000.0
+  },
+  "window_rows/100000/one/sum/prefix": {
+    "baseline": 375480000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 23161828283.405594,
+    "value": 413800000.0
+  },
+  "window_rows/100000/one/sum/two": {
+    "baseline": 385515000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 26317184284.05474,
+    "value": 417810000.0
+  },
+  "window_rows/100000/one/sum/zero": {
+    "baseline": 376115000.0,
+    "independent_runs": [
+      41908407297,
+      41960942244,
+      41965724402
+    ],
+    "report": "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+    "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+    "testbed": "ubuntu-latest",
+    "upper_limit": 27107208552.405533,
+    "value": 418220000.0
+  }
+}

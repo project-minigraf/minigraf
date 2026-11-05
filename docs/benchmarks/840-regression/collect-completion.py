@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from urllib.parse import parse_qs, urlparse, urlencode
 from urllib.request import urlopen
 
@@ -48,6 +49,13 @@ def collect_run(item):
     if not source.exists():
         source.write_bytes(gh(['api', '--header', 'Accept: application/vnd.github.raw+json',
             f'repos/{REPO}/contents/.github/workflows/bench.yml?ref={metadata["head_sha"]}']))
+    jobs = [job for page in json.loads((folder / 'jobs.json').read_text()) for job in page['jobs']]
+    for job in jobs:
+        if any(step['name'] == 'Report regression' and step['conclusion'] == 'success' for step in job['steps']):
+            log = folder / f'notification-job-{job["id"]}.txt'
+            if not log.exists():
+                # Preserve raw bytes in a file; never render terminal control sequences.
+                log.write_bytes(gh(['api', '--allow-escape-sequences', f'repos/{REPO}/actions/jobs/{job["id"]}/logs']))
     (folder / 'api').mkdir(exist_ok=True)
     for log in list(folder.glob('artifacts/*/bencher_out.txt')) + list(folder.glob('artifacts/*/binding-bencher.txt')):
         urls = re.findall(r'https://bencher.dev/console/projects/minigraf/perf\?\S+', log.read_text())
@@ -69,9 +77,18 @@ def main():
     active.mkdir(exist_ok=True)
     branch = get('https://api.bencher.dev/v0/projects/minigraf/branches/v3', active / 'branch.json')
     assert branch['head']['uuid'] == '01a1a84c-e947-745c-98e7-018e0c2245a3', 'v3 head was unexpectedly replaced'
-    # The head was created after inherited main data. Bound the request to
-    # actual observations since then; count independence by real report/run IDs.
-    start = int(datetime.fromisoformat(branch['head']['created'].replace('Z', '+00:00')).timestamp() * 1000)
+    # A report's CLI start can precede the head it creates. Use the earliest
+    # actual v3 report start, not the head creation timestamp; verify provenance
+    # separately so inherited main observations cannot count as independent v3.
+    original = json.loads((ROOT / 'inventory.json').read_text())['41908407297']
+    prior_ids = {v['report'] for v in original.values() if v['head'] == branch['head']['uuid']}
+    with tarfile.open(ROOT / 'evidence.tar.gz') as archive:
+        prior = [json.load(archive.extractfile(f'evidence/41908407297/api/{report}.json')) for report in prior_ids]
+    assert all(r['branch']['name'] == 'v3' and r['branch']['head']['uuid'] == branch['head']['uuid'] for r in prior)
+    earliest = min(r['start_time'] for r in prior)
+    start = int(datetime.fromisoformat(earliest.replace('Z', '+00:00')).timestamp() * 1000)
+    (active / 'window.json').write_text(json.dumps(dict(head_created=branch['head']['created'],
+        earliest_actual_v3_report_start=earliest, start_time_ms=start), indent=2) + '\n')
     groups = {}
     for item in plan:
         if item['role'] != 'full-v3':

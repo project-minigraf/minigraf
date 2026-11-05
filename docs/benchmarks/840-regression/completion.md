@@ -98,3 +98,35 @@ maximum sample size **30**. The probability is not a latency percentage budget;
 the maximum is not evidence of 30 independent runs. Fresh-run provenance must
 be established separately, and inherited main history never counts as an
 independent v3 run.
+
+## Offline reproduction
+
+From this directory, after all three archives are present:
+
+```sh
+sha256sum -c SHA256SUMS
+tar -xzf evidence.tar.gz
+tar -xzf live-notifications.tar.gz
+tar -xzf completion.tar.gz
+(cd evidence && sha256sum -c SHA256SUMS)
+(cd live-evidence && sha256sum -c SHA256SUMS)
+(cd completion-evidence && sha256sum -c SHA256SUMS)
+python3 audit.py
+node notification-preview.cjs
+python3 verify-live.py
+python3 verify-completion.py
+```
+
+The verifiers reject optimized Python (`-O`) because assertions are part of the
+evidence checks. `audit.py` reproduces the initial snapshot; `verify-live.py`
+reproduces notification/cleanup findings; `verify-completion.py` reproduces the
+fresh-run comparison inventory and history-preservation result. Each archive
+contains its own complete file manifest.
+
+For a network refresh, stage the retained `runs.json`, six `head-probes/*.json`
+files and two `orchestration/*.py` files together in one input directory. Run
+`collect-completion.py INPUT/runs.json` from a fresh copy of the collector together with `inventory.json` and
+`evidence.tar.gz`: it caches files in its adjacent `completion-evidence/` directory for resumable
+collection. Preserve the frozen archives first. Later real observations can
+legitimately change the active history and require review of the frozen verifier's
+expected provenance.

@@ -1,0 +1,141 @@
+{
+  "runs": [
+    {
+      "run": 41960942244,
+      "role": "full-v3",
+      "sha": "cdad3e7270d0e5e791cd48f47a4ed35ff50df6a4",
+      "workflow_sha": "25fd6fb9bdb9bc69021a217c1f755e1780c0eb07",
+      "first_report": "2026-11-05T03:23:00+00:00",
+      "last_report": "2026-11-05T04:06:07+00:00",
+      "selected": 453,
+      "reports": [
+        "01a1a9c7-6874-73fc-8aa3-7f7c79d36fb1",
+        "01a1a9c0-4226-7233-adbc-b0d53a44e031",
+        "01a1a9dc-dea0-77b7-ba27-b86da6856a7e",
+        "01a1a9bd-b134-7228-ae60-c6d653aea55b",
+        "01a1a9c3-c278-734a-80a5-5c94f8d51652",
+        "01a1a9c3-e184-7316-b222-69c4e4eee0ec",
+        "01a1a9be-6ab1-73c5-bdfb-9c39e5f72446",
+        "01a1a9c0-6dcf-75b3-b2d8-602153f139c6",
+        "01a1a9c3-855f-72ff-8ba5-046ca03016ee",
+        "01a1a9bc-fe60-76f7-abd5-a9b56a9da101",
+        "01a1a9bf-137b-7582-84eb-a7c675327f8c",
+        "01a1a9bf-0c42-76ce-8aa8-747d5398bda9",
+        "01a1a9e2-aedc-7740-a63c-1f7be7141788",
+        "01a1a9c0-12ba-765d-8446-f4b92c3f5438",
+        "01a1a9c0-e687-7762-be36-526d09bf6386",
+        "01a1a9c5-c5f8-7057-be29-ff848258c1ba",
+        "01a1a9c4-f4c4-7585-837b-58417551fde8",
+        "01a1a9c1-939e-7036-a885-9a62cb69922f",
+        "01a1a9c0-fd66-715d-9de8-4c14a194968f",
+        "01a1a9bf-2efe-7627-9933-fec71e9b7f83",
+        "01a1a9c0-8ac4-73c5-8477-b90d75199f91",
+        "01a1a9be-0930-75b7-b999-5a24a037e1bd",
+        "01a1a9bd-935c-70dc-ba32-af403f3ff69b",
+        "01a1a9c3-256d-7138-a4a9-a638091dbe95",
+        "01a1a9bf-80ea-7418-a0ad-69bb4ae3a1b2",
+        "01a1a9be-d2dd-7165-8e2e-b465bb76aec5",
+        "01a1a9be-3455-7663-a634-fa70ad38648d",
+        "01a1a9bb-3696-7474-a433-fea9d395c0a4",
+        "01a1a9bb-71c7-756e-a675-aec2e82686c2",
+        "01a1a9bd-82ad-7346-9fce-97d0186c7fbc"
+      ],
+      "alerts": []
+    },
+    {
+      "run": 41965724402,
+      "role": "full-v3",
+      "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+      "workflow_sha": "25fd6fb9bdb9bc69021a217c1f755e1780c0eb07",
+      "first_report": "2026-11-05T04:09:59+00:00",
+      "last_report": "2026-11-05T04:56:53+00:00",
+      "selected": 453,
+      "reports": [
+        "01a1a9ef-3db9-7278-88ca-5087cd7e1c6e",
+        "01a1a9ee-3069-71c9-b01b-13ef083655b8",
+        "01a1aa0a-9399-72a8-85ff-6791e5f7dd90",
+        "01a1a9e8-f32e-775a-ac89-4dfadf7b54ff",
+        "01a1a9e8-7323-7295-8c04-2ca4f4e1f3c4",
+        "01a1a9e8-f464-7225-ab41-0405bf038929",
+        "01a1a9e9-1534-76fb-bf8c-6aa8ecd85188",
+        "01a1a9e8-510f-7266-be06-79a92bbbdec0",
+        "01a1a9eb-ff8c-7374-9ccf-f0663c524097",
+        "01a1a9eb-08d5-7106-b75c-a4d98467b778",
+        "01a1a9ec-cd9c-70b2-9bac-59d341319432",
+        "01a1a9e8-e2aa-774b-bbb5-1321d9e4ab27",
+        "01a1aa11-2ad0-75b4-84a2-68464e44d805",
+        "01a1a9ea-44bf-72fb-95ca-88cc4b053495",
+        "01a1a9ec-d0a5-7413-b578-06186b6fbfbf",
+        "01a1a9ed-acab-77a8-824a-99b059685905",
+        "01a1a9ee-194c-73c9-b9ce-0f666e50fdc1",
+        "01a1a9e9-3eaa-74ca-8031-deba90a2b017",
+        "01a1a9e8-8a30-76e1-9c00-6ac45086112c",
+        "01a1a9e7-b8c7-722d-97cb-e2cb3d1cb892",
+        "01a1a9ea-4b8a-7666-a873-826fb9488ed6",
+        "01a1a9e9-5cd8-72d4-9b96-b91ee7c6d763",
+        "01a1a9e8-3821-7122-870f-13482be89335",
+        "01a1a9ee-63a8-717d-985d-5fbe2a5806ce",
+        "01a1a9eb-a076-736f-9c60-d3a45b0923a6",
+        "01a1a9e9-91fe-708a-895c-346483052a19",
+        "01a1a9e8-62ae-73d6-a1ba-fceab1ee1762",
+        "01a1a9e6-ef5a-76c2-a7a5-5ea3040f552f",
+        "01a1a9e6-37a1-7475-a2e6-402006843f6e",
+        "01a1a9e8-7388-700a-aeb7-13730e791aa3"
+      ],
+      "alerts": [
+        "concurrent_file/serialized_writers/100k_16t",
+        "concurrent_file/serialized_writers/100k_2t",
+        "concurrent_file/serialized_writers/100k_4t"
+      ]
+    },
+    {
+      "run": 41970954512,
+      "role": "c-probe",
+      "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+      "workflow_sha": "44a8edb949a0b5a1e0b5cbc096ee8e7478216817",
+      "first_report": "2026-11-05T05:00:04+00:00",
+      "last_report": "2026-11-05T05:00:04+00:00",
+      "selected": 6,
+      "reports": [
+        "01a1aa14-152a-74d1-8c9a-591746bd353a"
+      ],
+      "alerts": []
+    },
+    {
+      "run": 41971233145,
+      "role": "main-probe",
+      "sha": "25fd6fb9bdb9bc69021a217c1f755e1780c0eb07",
+      "workflow_sha": "44a8edb949a0b5a1e0b5cbc096ee8e7478216817",
+      "first_report": "2026-11-05T05:04:29+00:00",
+      "last_report": "2026-11-05T05:04:29+00:00",
+      "selected": 4,
+      "reports": [
+        "01a1aa18-1dc7-77c2-91f5-b12b7c03749d"
+      ],
+      "alerts": []
+    },
+    {
+      "run": 41971706654,
+      "role": "v3-probe",
+      "sha": "5a0ff549271084018c7d4e6050658e64e7e6432e",
+      "workflow_sha": "44a8edb949a0b5a1e0b5cbc096ee8e7478216817",
+      "first_report": "2026-11-05T05:09:58+00:00",
+      "last_report": "2026-11-05T05:09:58+00:00",
+      "selected": 10,
+      "reports": [
+        "01a1aa1d-240c-757f-a595-9b75dd430226"
+      ],
+      "alerts": []
+    }
+  ],
+  "native_numeric": 427,
+  "binding_numeric": 26,
+  "missing": 0,
+  "head": "01a1a84c-e947-745c-98e7-018e0c2245a3",
+  "model": {
+    "test": "t_test",
+    "upper_probability": 0.999,
+    "max_sample_size": 30
+  },
+  "minimum_independent_v3_runs": 3
+}
