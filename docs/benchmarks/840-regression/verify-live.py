@@ -15,6 +15,13 @@ def read(path):
 
 
 def main():
+    workflow = (BASE / 'sources/production-bench.yml').read_text()
+    bodies = [re.sub(r'^            ', '', body, flags=re.M)
+              for body in re.findall(r'          script: \|\n((?:            .*\n|\n)+)', workflow)]
+    assert len(bodies) == 2
+    for name, body in zip(('native', 'binding'), bodies):
+        expected = 'module.exports = async function ({github, context, core}) {\n' + body + '\n};\n'
+        assert (BASE / 'sources' / (name + '.cjs')).read_text() == expected
     runs = read(BASE / 'notifications/runs.json')
     plan = read(BASE / 'sources/cleanup-plan.json')
     reports = {r['uuid']: r for r in plan['reports']}
@@ -98,7 +105,24 @@ def main():
             summary.append(dict(stage=stage, kind=kind, run=run, writes=expected_writes,
                                 upload_status=audit['uploadStatus'], audit_errors=audit['errors']))
     assert len(delivered) == 4
+    cleanup = read(BASE / 'cleanup/audit-840-cleanup/cleanup-receipts.json')
+    assert read(BASE / 'cleanup/run.json')['conclusion'] == 'success'
+    assert len(cleanup) == 46
+    planned = {kind + '/' + row['uuid'] for kind, rows in plan.items() for row in rows}
+    assert {r['resource'] for r in cleanup} == planned
+    assert all(r['delete_status'] in (200, 202, 204) and r['verification_status'] == 404 for r in cleanup)
+    independent = read(BASE / 'independent-cleanup.json')
+    assert {r['url'].split('/minigraf/')[1] for r in independent} == planned
+    assert all(r['status'] == 404 for r in independent)
+    for issue in (856, 857):
+        assert read(BASE / f'issue-{issue}-closed.json')['state'] == 'closed'
+    models = read(BASE / 'production-thresholds-after-cleanup.json')
+    assert len(models) == 5
+    for model in models:
+        assert model['branch']['name'] == 'v3'
+        assert (model['model']['test'], model['model']['upper_boundary'], model['model']['max_sample_size']) == ('t_test', .999, 30)
     result = dict(scenarios=summary, deliveries=delivered, synthetic_reports=len(reports),
+                  cleanup_resources=len(cleanup), test_issues_closed=[856, 857],
                   limitation='Previous workflow lookup redirects main to audit/840-live-checks; GitHub delivery, not human mailbox receipt.')
     (ROOT / 'live-summary.json').write_text(json.dumps(result, indent=2) + '\n')
     print(f'Verified {len(summary)} live job scenarios, {len(delivered)} independently read-back deliveries, and {len(reports)} synthetic API reports')

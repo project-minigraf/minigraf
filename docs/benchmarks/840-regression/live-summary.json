@@ -142,5 +142,10 @@
     "https://github.com/project-minigraf/minigraf/issues/856#issuecomment-6648972167"
   ],
   "synthetic_reports": 34,
+  "cleanup_resources": 46,
+  "test_issues_closed": [
+    856,
+    857
+  ],
   "limitation": "Previous workflow lookup redirects main to audit/840-live-checks; GitHub delivery, not human mailbox receipt."
 }
