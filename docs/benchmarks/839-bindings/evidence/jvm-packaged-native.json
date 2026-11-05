@@ -1,0 +1,7 @@
+{
+  "runtime": "jvm",
+  "installed_jar_sha256": "bd195fdd0d64e5a8ffd3527a773e29235219b02519b5a661951ba91565882b20",
+  "native_entry": "natives/linux/x86_64/libminigraf_ffi.so",
+  "packaged_native_sha256": "28deab9bdb6cb86d1a0321dc9dfab1f4ce82fa030768fd5eea2f5ff80808d756",
+  "build_output_matches": true
+}

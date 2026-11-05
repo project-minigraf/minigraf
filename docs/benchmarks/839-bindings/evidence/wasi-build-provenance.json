@@ -1,0 +1,14 @@
+{
+  "core_revision": "33e5dffadebe0124e6287fc91cede4ff2b7a2b2f",
+  "compilation_inputs_verified": 93,
+  "compilation_inputs_manifest_sha256": "f6b2afce9aba75eb4f8c7c2831b4dea91f43e75b678f6c91b9761b8ee42e68c7",
+  "wasm_sha256": "544e7324505ecff87dd01ed639ba189c9fa334d84107e1e39b28d76062b5920f",
+  "cargo_lock_sha256": "f92a0efd757d1201883e5383f87d0c97730c70a2456525ac1f46eeb2eab441f9",
+  "harness_sha256": "611e1ea1590fbe203958c60cf72ee4aec369d464ea2319735af920bce555256d",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "target": "wasm32-wasip1",
+  "profile": "release (core workspace: opt-level z, LTO)",
+  "evidence_kind": "source-build",
+  "validation": "post-run verification of retained compilation inputs and artifacts",
+  "driver_encoding": "UTF-8"
+}

@@ -1,0 +1,32 @@
+{
+  "benchmark_source": "Complete JSONL records extracted from one automation log; standalone customer file attachment failed",
+  "device": "Apple iPhone 15",
+  "device_minutes": {
+    "metered": 0.44,
+    "total": 8.63,
+    "unmetered": 0.0
+  },
+  "filter_deviation": null,
+  "general_system_logs_retained": "Selected first-run logs retained locally; remaining general system logs available from provider",
+  "idle_verified": false,
+  "model": "iPhone15,4",
+  "os": "18.5",
+  "physical_unit_reserved": false,
+  "power_state_verified": false,
+  "provider": "AWS Device Farm",
+  "provider_run_id": "c59146ce-d82a-47b1-a914-e7c7e183361b",
+  "provider_timestamps": {
+    "created": "2026-11-04T20:53:21.035000+05:30",
+    "started": "2026-11-04T20:53:21.035000+05:30",
+    "stopped": "2026-11-04T21:02:35.694000+05:30"
+  },
+  "requested_app_performance_monitoring": false,
+  "requested_video_capture": false,
+  "result": "PASSED",
+  "source_log_sha256": "76bdbe0f866e0bb9fd37ee5c6bebf349a008c31d2982acad3aa94666971c862b",
+  "status": "COMPLETED",
+  "thermal_coverage": "Environment and per-sample snapshots, not continuous monitoring.",
+  "thermal_states": [
+    0
+  ]
+}

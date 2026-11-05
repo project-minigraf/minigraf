@@ -1,0 +1,9 @@
+{
+  "ci_run_url": "https://github.com/project-minigraf/minigraf-swift/actions/runs/41851223675",
+  "evidence_kind": "source-build; not published-package certification",
+  "files": {
+    "BenchmarkTests.xctest.zip": "64a33ca3dccd102a02cd17506851e8189c1381e29696f35f46d8008ae6b55c5c",
+    "MinigrafBenchmark.ipa": "9cc429f4eeb481b5378c6bcd70b3ba08f96a345fb85dd46ccb883b7a979abc54"
+  },
+  "provider_resigns_app": true
+}

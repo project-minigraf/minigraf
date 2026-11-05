@@ -1,0 +1,68 @@
+{
+  "after": {
+    "battery_level": 100,
+    "current_hal_temperatures": {
+      "BIG": {
+        "status": 0,
+        "value": 50.000004
+      },
+      "LITTLE": {
+        "status": 0,
+        "value": 51.000004
+      },
+      "MID": {
+        "status": 0,
+        "value": 51.000004
+      },
+      "VIRTUAL-SKIN": {
+        "status": 0,
+        "value": 34.7895
+      },
+      "battery": {
+        "status": 0,
+        "value": 31.600002
+      }
+    },
+    "thermal_status": 0,
+    "usb_powered": true
+  },
+  "before": {
+    "battery_level": 100,
+    "current_hal_temperatures": {
+      "BIG": {
+        "status": 0,
+        "value": 47.000004
+      },
+      "LITTLE": {
+        "status": 0,
+        "value": 51.000004
+      },
+      "MID": {
+        "status": 0,
+        "value": 49.000004
+      },
+      "VIRTUAL-SKIN": {
+        "status": 0,
+        "value": 31.684002
+      },
+      "battery": {
+        "status": 0,
+        "value": 31.400002
+      }
+    },
+    "thermal_status": 0,
+    "usb_powered": true
+  },
+  "coverage": "Before/after snapshots, not continuous monitoring. cpuinfo does not verify measurement idle.",
+  "device_minutes": {
+    "metered": 1.62,
+    "total": 1.81,
+    "unmetered": 0.0
+  },
+  "idle_verified": false,
+  "physical_unit_reserved": false,
+  "provider": "AWS Device Farm",
+  "provider_run_id": "f13f2445-7315-4c11-afd7-27080828c092",
+  "result": "PASSED",
+  "status": "COMPLETED"
+}

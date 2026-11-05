@@ -1,5 +1,10 @@
 # Binding benchmarks (#776 P16)
 
+The remaining manual work is tracked in [#839's scope and coverage plan](benchmarks/839-bindings/README.md).
+For that issue, new timings come only from Device Farm and the dedicated Linux
+bench; macOS timing is excluded. GitHub may build and check correctness, and the
+existing nightly measurements described here continue unchanged.
+
 These are foreign-runtime measurements, independent of native Criterion data.
 The `bindings` matrix in `.github/workflows/bench.yml` selects the whole fixed
 shortlist in each binding's `bench/nightly.*` entry point. Core and binding PRs
@@ -73,14 +78,16 @@ performed locally. These latency cases do not enforce RSS bounds.
 
 ## Deliberate dispositions requiring release sign-off
 
-- Java/JVM: no JVM latency history yet. Python exercises the shared UniFFI
-  adapter, but does not measure JVM allocation, JNI or JVM callbacks. JVM
-  timings remain a manual release check, not claimed nightly coverage.
+- Java/JVM: no JVM nightly latency history. Python exercises the shared UniFFI
+  adapter, but does not measure JVM allocation, JNA or JVM callbacks. The
+  [#839 manual series](benchmarks/839-bindings/results.md) supplies separate
+  release evidence; acceptance remains pending.
 - Android: ART/ABI and device storage timing require a fixed physical device;
   emulator timings on a hosted Linux runner are not a substitute. Manual
   device benchmarks and release sign-off remain required.
 - Swift: ARC/callback and Apple-device storage timing require stable Apple
-  hardware. Manual macOS/iOS benchmarks and release sign-off remain required;
+  hardware. Manual iOS benchmarks and release sign-off remain required for #839;
+  macOS timing is explicitly excluded from that issue's approved scope.
   Linux UniFFI tests do not provide these timings.
 - WASI: browser Wasm does not measure the WASI runtime. Tier 2 WASI REPL startup
   and runtime overhead remain manual; it exposes no matching foreign prepared

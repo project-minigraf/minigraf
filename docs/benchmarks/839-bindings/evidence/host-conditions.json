@@ -1,0 +1,18 @@
+{
+  "builds_during_measurement": false,
+  "continuous_idle_monitoring": false,
+  "cpu_and_memory_affinity": "same NUMA node for every run",
+  "idle_check_count": 12,
+  "jvm_flags": [
+    "-Xms512m",
+    "-Xmx512m",
+    "-XX:+UseG1GC"
+  ],
+  "jvm_processes": 3,
+  "measurement_serial": true,
+  "platform": "dedicated Linux bench",
+  "pre_and_post_idle_checks": "each selected logical CPU at least 95% idle over two seconds; iowait included",
+  "private_details_omitted": "Machine identity, network addresses, CPU topology, OS distribution and private paths.",
+  "storage": "disk-backed filesystem; not tmpfs",
+  "wasi_series": 3
+}
