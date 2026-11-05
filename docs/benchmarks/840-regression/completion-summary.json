@@ -132,6 +132,7 @@
   "binding_numeric": 26,
   "missing": 0,
   "head": "01a1a84c-e947-745c-98e7-018e0c2245a3",
+  "temporary_probe_ref_deleted": true,
   "model": {
     "test": "t_test",
     "upper_probability": 0.999,

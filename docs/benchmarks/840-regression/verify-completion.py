@@ -199,7 +199,12 @@ def main():
     for filename in ('before-c-probe.json', 'after-c-probe.json', 'before-main-probe.json',
                      'after-main-probe.json', 'before-v3-probe.json', 'after-v3-probe.json'):
         assert read(BASE / 'head-probes' / filename)['head']['uuid'] == HEAD
+    cleanup = read(BASE / 'branch-cleanup.json')
+    assert cleanup['ref'] == 'refs/heads/audit/840-history-probe'
+    assert cleanup['last_sha'] == summaries[-1]['workflow_sha']
+    assert cleanup['readback_exit_code'] != 0 and 'HTTP 404' in cleanup['readback_error']
     summary = dict(runs=summaries, native_numeric=427, binding_numeric=26, missing=0, head=HEAD,
+                   temporary_probe_ref_deleted=True,
                    model=dict(test='t_test', upper_probability=.999, max_sample_size=30),
                    minimum_independent_v3_runs=min(len(v['independent_runs']) for v in inventory.values()))
     (ROOT / 'completion-summary.json').write_text(json.dumps(summary, indent=2) + '\n')

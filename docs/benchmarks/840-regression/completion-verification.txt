@@ -1,0 +1,10 @@
+Verification date: 2026-11-05
+
+evidence.tar.gz: 746 internal checksums passed
+live-notifications.tar.gz: 196 internal checksums passed
+completion.tar.gz: 558 internal checksums passed
+All eight derived outputs reproduced byte-for-byte from fresh extraction
+Negative control: a missing numeric comparison is rejected
+Negative control: substituting inherited main history for a v3 observation is rejected
+Negative control: missing independently read notification delivery is rejected
+All three verifiers refuse optimized Python
