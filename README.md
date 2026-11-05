@@ -36,10 +36,11 @@ The unreleased v3.0.0 branch adds bounded sliding windows such as `(avg ?salary 
 
 The [manual v7-to-v8 migration sweep](docs/benchmarks/838-migration/README.md) (#838) measures native fixtures through 200k facts and browser fixtures through 20k facts, with separate read-only/reopen controls and bounded cursor churn. These measurements do not expand nightly coverage or establish cold-start and sustained-reader bounds.
 
-The [regression-history audit](docs/benchmarks/840-regression/README.md) (#840)
-verifies scheduled main/v3 benchmark execution and preserves the raw evidence.
-Numeric comparisons for 244 native and 26 binding IDs, and live notification
-delivery checks, remain release work; successful uploads alone do not close them.
+The [regression-history follow-up](docs/benchmarks/840-regression/completion.md) (#840)
+verifies numeric comparisons for all 427 native and 26 binding IDs, independent v3
+history, scheduled main/v3 routes and isolated live notification delivery with
+cleanup. Raw evidence and offline verifiers are retained in Git. JVM/WASI and
+qualified mobile nightly expansion are tracked separately in #858.
 
 On v3.0.0, an ascending value-only query such as `[:find ?v :where [?e :score ?v] :order-by [?v] :limit 10]` can read directly in index order and stop early when all committed `:score` history has one value kind (integer, float, or Boolean) and its source range has no pending writes. A query whose full order cannot be proved uses the existing sort (#641). Built-in `count`, `count-distinct`, `sum`, and `avg` can release completed groups when the pinned source proves their grouping order (#781). `min`/`max` also qualify when their arguments are proved Integer/Float/Boolean/nil; `sum-distinct` requires Integer/nil. A single Integer/Boolean/Float key (including mixed numeric groups) is supported. A longer effective tuple, including hidden `:with` keys, must reduce to one varying Integer/Boolean slot plus repeated occurrences and proved Integer/Boolean/nil constants. Any requested final Sort is retained for `:with`. Small grouped point queries pay proof startup cost; see the [measurements](docs/benchmarks/781-ordered-aggregate.md). Memory follows the active group and batches; distinct members within one group still grow. A limit can stop after enough emitted groups, but dropped min/max groups do not count and a retained Sort drains the input. Callbacks, `collect-set`, aggregate+window queries and unproved arguments keep full-input evaluation. When every built-in window uses the same proved nonconstant partition key, the engine can also finish and release one partition at a time. Its memory follows the largest partition plus bounded batches; one growing partition still grows. Unpartitioned windows, incompatible keys, aggregate queries, callbacks and `collect-set` keep full-input evaluation. A surrounding sort or distinct operation can still require more memory.
 

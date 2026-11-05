@@ -7,6 +7,9 @@ from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlparse
 
+if not __debug__:
+    raise RuntimeError('Evidence verification requires Python assertions; do not use -O')
+
 ROOT = Path(__file__).resolve().parent
 RUNS = (41642356471, 41711848743, 41801278030, 41908407297)
 
