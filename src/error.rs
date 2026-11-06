@@ -1755,7 +1755,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Int015,
         "INT-015",
-        "{} must be a positive integer",
+        "{} must be a non-negative integer",
         ErrorCategory::Internal,
     ),
     (

@@ -10,28 +10,29 @@ EBNF has no lookahead, so a pest lookahead appears as a comment: `(* not followe
 
 ```ebnf
 (* ── WORD-BOUNDARY HELPER ── *)
-word-cont            ::= letter | numeral | "?" | "_" | "-" | "/"
-kw-find              ::= ":find" (* not followed by word-cont *)  (* token *)
-kw-where             ::= ":where" (* not followed by word-cont *)  (* token *)
-kw-with              ::= ":with" (* not followed by word-cont *)  (* token *)
-kw-as-of             ::= ":as-of" (* not followed by word-cont *)  (* token *)
-kw-valid-at          ::= ":valid-at" (* not followed by word-cont *)  (* token *)
-kw-any-valid-time    ::= ":any-valid-time" (* not followed by word-cont *)  (* token *)
-kw-max-derived-facts ::= ":max-derived-facts" (* not followed by word-cont *)  (* token *)
-kw-max-results       ::= ":max-results" (* not followed by word-cont *)  (* token *)
-kw-limit             ::= ":limit" (* not followed by word-cont *)  (* token *)
-kw-offset            ::= ":offset" (* not followed by word-cont *)  (* token *)
-kw-distinct          ::= ":distinct" (* not followed by word-cont *)  (* token *)
-kw-over              ::= ":over" (* not followed by word-cont *)  (* token *)
-kw-rows              ::= ":rows" (* not followed by word-cont *)  (* token *)
-kw-partition-by      ::= ":partition-by" (* not followed by word-cont *)  (* token *)
-kw-order-by          ::= ":order-by" (* not followed by word-cont *)  (* token *)
-kw-desc              ::= ":desc" (* not followed by word-cont *)  (* token *)
-kw-asc               ::= ":asc" (* not followed by word-cont *)  (* token *)
-kw-valid-from        ::= ":valid-from" (* not followed by word-cont *)  (* token *)
-kw-valid-to          ::= ":valid-to" (* not followed by word-cont *)  (* token *)
-reserved-head        ::= ("not-join" | "not" | "or-join" | "or") (* not followed by word-cont *)  (* token *)
-and-head             ::= "and" (* not followed by word-cont *)  (* token *)
+word-cont             ::= letter | numeral | "?" | "_" | "-" | "/"
+kw-find               ::= ":find" (* not followed by word-cont *)  (* token *)
+kw-where              ::= ":where" (* not followed by word-cont *)  (* token *)
+kw-with               ::= ":with" (* not followed by word-cont *)  (* token *)
+kw-as-of              ::= ":as-of" (* not followed by word-cont *)  (* token *)
+kw-valid-at           ::= ":valid-at" (* not followed by word-cont *)  (* token *)
+kw-any-valid-time     ::= ":any-valid-time" (* not followed by word-cont *)  (* token *)
+kw-max-derived-facts  ::= ":max-derived-facts" (* not followed by word-cont *)  (* token *)
+kw-max-results        ::= ":max-results" (* not followed by word-cont *)  (* token *)
+kw-query-memory-limit ::= ":query-memory-limit" (* not followed by word-cont *)  (* token *)
+kw-limit              ::= ":limit" (* not followed by word-cont *)  (* token *)
+kw-offset             ::= ":offset" (* not followed by word-cont *)  (* token *)
+kw-distinct           ::= ":distinct" (* not followed by word-cont *)  (* token *)
+kw-over               ::= ":over" (* not followed by word-cont *)  (* token *)
+kw-rows               ::= ":rows" (* not followed by word-cont *)  (* token *)
+kw-partition-by       ::= ":partition-by" (* not followed by word-cont *)  (* token *)
+kw-order-by           ::= ":order-by" (* not followed by word-cont *)  (* token *)
+kw-desc               ::= ":desc" (* not followed by word-cont *)  (* token *)
+kw-asc                ::= ":asc" (* not followed by word-cont *)  (* token *)
+kw-valid-from         ::= ":valid-from" (* not followed by word-cont *)  (* token *)
+kw-valid-to           ::= ":valid-to" (* not followed by word-cont *)  (* token *)
+reserved-head         ::= ("not-join" | "not" | "or-join" | "or") (* not followed by word-cont *)  (* token *)
+and-head              ::= "and" (* not followed by word-cont *)  (* token *)
 
 (* ── EDN PRIMITIVES ── *)
 boolean-lit ::= ("true" | "false") (* not followed by word-cont *)  (* token *)
@@ -80,8 +81,8 @@ query-cmd     ::= "(" "query" query-vector ")"
 query-vector  ::= "[" query-section+ "]"
 query-section ::= find-section | where-section | as-of-section | valid-at-section
                 | any-valid-time-section | with-section | max-derived-facts-section
-                | max-results-section | limit-section | offset-section
-                | order-by-section | distinct-section
+                | max-results-section | query-memory-limit-section | limit-section
+                | offset-section | order-by-section | distinct-section
 
 (* ── FIND SECTION ── *)
 find-section      ::= kw-find find-spec+
@@ -123,17 +124,18 @@ expr-arg         ::= expr | set-lit | boolean-lit | nil-lit | float-lit | intege
                    | string-lit | bind-slot | keyword | variable
 
 (* ── TEMPORAL / WITH SECTIONS ── *)
-as-of-section             ::= kw-as-of (integer-lit | string-lit | bind-slot)
-valid-at-section          ::= kw-valid-at (string-lit | kw-any-valid-time | bind-slot)
-any-valid-time-section    ::= kw-any-valid-time
-with-section              ::= kw-with variable+
-max-derived-facts-section ::= kw-max-derived-facts integer-lit
-max-results-section       ::= kw-max-results integer-lit
-limit-section             ::= kw-limit (integer-lit | bind-slot)
-offset-section            ::= kw-offset (integer-lit | bind-slot)
-distinct-section          ::= kw-distinct
-order-by-section          ::= kw-order-by "[" order-entry+ "]"
-order-entry               ::= find-spec (kw-asc | kw-desc)?
+as-of-section              ::= kw-as-of (integer-lit | string-lit | bind-slot)
+valid-at-section           ::= kw-valid-at (string-lit | kw-any-valid-time | bind-slot)
+any-valid-time-section     ::= kw-any-valid-time
+with-section               ::= kw-with variable+
+max-derived-facts-section  ::= kw-max-derived-facts (integer-lit | bind-slot)
+max-results-section        ::= kw-max-results (integer-lit | bind-slot)
+query-memory-limit-section ::= kw-query-memory-limit (integer-lit | bind-slot)
+limit-section              ::= kw-limit (integer-lit | bind-slot)
+offset-section             ::= kw-offset (integer-lit | bind-slot)
+distinct-section           ::= kw-distinct
+order-by-section           ::= kw-order-by "[" order-entry+ "]"
+order-entry                ::= find-spec (kw-asc | kw-desc)?
 
 (* ── RULE ── *)
 rule-cmd    ::= "(" "rule" rule-vector ")"

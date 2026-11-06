@@ -93,3 +93,10 @@ TDD: write each group failing first, then implement.
 - Codex review is skipped (quota out until 2026-11-11). Then watch CI until it is green.
 
 After merge: #861 (`MaxIterations`, reusing `resolve_limit_slot` and the setter pattern), then #872.
+
+## Deviations found while implementing
+
+2. **Zero is narrower than spec §3 says.** The meter counts entity ids (`IdSpace`) as held state. Uncheckpointed facts take provisional ids, and a returned entity resolves one. So under `:query-memory-limit 0`, the only query that runs is a value-only one over checkpointed facts. The §8 test 3 "scan-and-filter returns rows" holds only in that case. The tests and docs say so.
+3. **`clippy::large_enum_variant` on `DatalogCommand`.** Three `Option<Count>` fields push `Query` over the lint threshold. A command is parsed once and moved, so the lint is allowed with a reason instead of boxing the query.
+4. **Grammar conformance** opens its handle with every `Overridable` listed, so an API-025 refusal of a valid corpus entry is not reported as a parse error.
+5. **Size.** The dist binary is 1,263,928 B, +672 B over base `b79ff1d6`, which is 312 B over the 1,234 KiB gate. The decision is the maintainer's.

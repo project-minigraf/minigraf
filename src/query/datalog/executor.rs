@@ -341,8 +341,12 @@ impl DatalogExecutor {
         };
         check_clauses(&query, &functions)?;
         let snapshot = self.read_snapshot()?;
-        let stream =
-            crate::query::engine::open(snapshot.clone(), plan, functions, self.query_memory_limit)?;
+        let stream = crate::query::engine::open(
+            snapshot.clone(),
+            plan,
+            functions,
+            self.memory_limit(&query)?,
+        )?;
         #[cfg(test)]
         crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
         Ok(Answer::Stream(Box::new(stream)))
@@ -382,8 +386,8 @@ impl DatalogExecutor {
         check_per_fact_pseudo_attrs(query)?;
         let limits = crate::query::engine::Limits {
             max_iterations: crate::query::datalog::evaluator::DEFAULT_MAX_ITERATIONS,
-            max_derived_facts: self.derived_limit(query),
-            query_memory: self.query_memory_limit,
+            max_derived_facts: self.derived_limit(query)?,
+            query_memory: self.memory_limit(query)?,
         };
         let snapshot = self.read_snapshot()?;
         // The keywords the query's rule calls name as entities (#721).
@@ -423,10 +427,23 @@ impl DatalogExecutor {
     /// The most facts `query`'s rules may derive: a per-query limit replaces
     /// the executor's; `:max-results` is a deprecated alias of
     /// `:max-derived-facts`, and the lower of the two applies (#553).
-    fn derived_limit(&self, query: &DatalogQuery) -> usize {
-        match (query.max_derived_facts, query.max_results) {
+    fn derived_limit(&self, query: &DatalogQuery) -> Result<usize> {
+        let limit = |c: &Option<crate::query::datalog::types::Count>, option| match c {
+            Some(c) => c.literal(option),
+            None => Ok(usize::MAX),
+        };
+        Ok(match (&query.max_derived_facts, &query.max_results) {
             (None, None) => self.max_derived_facts,
-            (a, b) => a.unwrap_or(usize::MAX).min(b.unwrap_or(usize::MAX)),
+            (a, b) => limit(a, ":max-derived-facts")?.min(limit(b, ":max-results")?),
+        })
+    }
+
+    /// The most bytes `query` may hold: its `:query-memory-limit` replaces
+    /// the executor's (#870).
+    fn memory_limit(&self, query: &DatalogQuery) -> Result<usize> {
+        match &query.query_memory_limit {
+            Some(c) => c.literal(":query-memory-limit"),
+            None => Ok(self.query_memory_limit),
         }
     }
 
@@ -1532,6 +1549,7 @@ mod tests {
                 with_vars: Vec::new(),
                 max_derived_facts: None,
                 max_results: None,
+                query_memory_limit: None,
                 limit: None,
                 offset: None,
                 order_by: Vec::new(),
@@ -1594,6 +1612,7 @@ mod tests {
                 with_vars: Vec::new(),
                 max_derived_facts: None,
                 max_results: None,
+                query_memory_limit: None,
                 limit: None,
                 offset: None,
                 order_by: Vec::new(),

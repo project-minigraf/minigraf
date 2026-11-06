@@ -739,6 +739,20 @@ mod tests {
         }
     }
 
+    // #870: `:query-memory-limit` is not in the default list, so BrowserDb
+    // refuses it.
+    #[wasm_bindgen_test]
+    async fn query_memory_limit_keyword_is_refused() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let err = db
+            .execute("(query [:find ?x :where [?e :a ?x] :query-memory-limit 1000])".to_string())
+            .await
+            .expect_err("refused");
+        let text = err.as_string().expect("rejection is a string");
+        assert!(text.starts_with("[API-025] "), "rejection is API-025");
+        assert!(text.contains(":query-memory-limit"), "names the keyword");
+    }
+
     #[wasm_bindgen_test]
     async fn in_memory_transact_and_query() {
         let db = BrowserDb::open_in_memory().expect("open_in_memory");

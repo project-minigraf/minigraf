@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,050 | 2,085 |
+| **Active** | 2,073 | 2,108 |
 | **Ignored** | 21 | 24 |
-| **Total** | 2,071 | 2,109 |
+| **Total** | 2,094 | 2,132 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837, #865 and #869 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837, #865, #869 and #870 (Linux). Verification results below identify which suites ran.
 
 **#838 manual migration verification**: the [manual sweep](benchmarks/838-migration/README.md)
 checks every fixture value and cursor snapshot before accepting timings, including
@@ -642,6 +642,7 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
   - Thirteen new `tests/grammar/invalid/syntax/` fixtures.
 - **Grammar page** (`tests/grammar_doc.rs`, 10 tests; #643): `docs/GRAMMAR.md` matches the EBNF rendered from `tests/grammar/grammar.pest`. Each rendering rule is checked on a small grammar: sequence, choice and grouping, names and builtins, `SOI`/`EOI` dropped, lookaheads as comments, bounded repetition, quoting, token marks, section titles, line breaking, the whitespace note and the comment note it joins.
 - **`OpenOptions::allow_overrides`** (#869; `tests/allow_overrides_test.rs`, 6 tests; `src/overrides.rs`, 2 unit tests; 1 doc test on `OpenOptions::allow_overrides`): the defaults allow `:max-derived-facts` and `:max-results`; an empty list refuses each with `API-025` from `execute`, `query`, `prepare` and `WriteTransaction::execute`, and queries without them still run; a list replaces the defaults; a refused statement leaves the write transaction usable; `DEFAULTS` read back, chained and with duplicates; the list holds on a file database and is not persisted; `:max-derived-facts` is reported first when both keywords are refused. API-025's registration and documentation are checked by the registry tests.
+- **`:query-memory-limit`, limit slots and `PreparedQuery` setters** (#870; `tests/limit_keywords_test.rs`, 17 tests; parser 3 unit tests, `src/overrides.rs` 1 unit test; 2 doc tests on the setters; 1 `#[wasm_bindgen_test]` in `src/browser/mod.rs`): the keyword lowers and raises the database limit (execute, cursor, write transaction); under 0 every stateful query fails with `QRY-012`, while a value-only query over checkpointed facts runs (keyword and setter); it is refused by default with `API-025` (literal and slot, every entry point, `BrowserDb`) and the list replaces the defaults; `INT-012`/`013`/`015` validation; slots on all three keywords change the outcome per execution, with `API-024`/`API-022`/`INT-014`/`INT-015` bind errors and `API-010` on `execute`/`query`; the setters replace the database value, a keyword overrides them, and they are not gated; `check_overrides` order over three keywords; `Count::literal` on a slot is `INT-032`. Grammar corpus: 3 valid, 2 syntax, 2 semantic fixtures; verifier 41 tokens and an `INT-015` witness; one `datalog_parser` fuzz seed.
 
 ## Browser and WASI
 

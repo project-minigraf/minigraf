@@ -580,10 +580,13 @@ pub struct DatalogQuery {
     /// Per-query `:max-derived-facts`: the most facts the query's rules may
     /// derive in total, base facts not counted (#553). With neither this nor
     /// `max_results`, the executor's limit (from `OpenOptions`) applies.
-    pub max_derived_facts: Option<usize>,
+    pub max_derived_facts: Option<Count>,
     /// Per-query `:max-results`, a deprecated alias of `:max-derived-facts`;
     /// with both, the lower applies (#553). It never limited returned rows.
-    pub max_results: Option<usize>,
+    pub max_results: Option<Count>,
+    /// Per-query `:query-memory-limit`: replaces the executor's
+    /// `query_memory_limit` for this query (#870).
+    pub query_memory_limit: Option<Count>,
     /// `:limit`: the most rows the query returns (#306).
     pub limit: Option<Count>,
     /// `:offset`: the rows of the ordered answer skipped before `:limit`'s
@@ -597,12 +600,27 @@ pub struct DatalogQuery {
     pub distinct: bool,
 }
 
-/// The value of `:limit` or `:offset` (#306): a literal, or a bind slot a
-/// prepared query fills.
+/// The value of `:limit`, `:offset` (#306), `:max-derived-facts`,
+/// `:max-results` or `:query-memory-limit` (#870): a literal, or a bind slot
+/// a prepared query fills.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Count {
     Literal(usize),
     Slot(String),
+}
+
+impl Count {
+    /// The literal. `execute` rejects an unbound slot (API-010) and a
+    /// prepared query fills every slot, so a slot here is an invariant error.
+    pub(crate) fn literal(&self, option: &str) -> anyhow::Result<usize> {
+        match self {
+            Count::Literal(n) => Ok(*n),
+            Count::Slot(_) => Err(crate::error::err_coded!(
+                crate::error::ErrorCode::Int032,
+                format!("a {option} slot reached the planner")
+            )),
+        }
+    }
 }
 
 impl DatalogQuery {
@@ -615,6 +633,7 @@ impl DatalogQuery {
             with_vars: Vec::new(),
             max_derived_facts: None,
             max_results: None,
+            query_memory_limit: None,
             limit: None,
             offset: None,
             order_by: Vec::new(),
@@ -633,6 +652,7 @@ impl DatalogQuery {
             with_vars: Vec::new(),
             max_derived_facts: None,
             max_results: None,
+            query_memory_limit: None,
             limit: None,
             offset: None,
             order_by: Vec::new(),
@@ -800,6 +820,9 @@ pub enum ValidAt {
 }
 
 /// A Datalog command (top-level form)
+// A command is parsed once and moved into the executor, never stored in
+// bulk, so boxing the query would only add an allocation (#870).
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DatalogCommand {
     /// Execute a query
