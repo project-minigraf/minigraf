@@ -65,8 +65,8 @@ Compatibility: an embedder that sets `allow_overrides(vec![])` breaks queries th
 
 ## 3. `:query-memory-limit`
 
-- **Syntax.** `:query-memory-limit N` in the query vector, where `N` is an integer of at least 1 (bytes), or a `$slot`. Validation follows `:max-derived-facts`: duplicate is INT-012, missing value INT-013, `0` INT-014, non-integer INT-015.
-- **Why not 0.** At open level, `0` is allowed and means "fail any stateful query". That isn't a useful per-query override, so the keyword rejects it. This is a deliberate difference.
+- **Syntax.** `:query-memory-limit N` in the query vector, where `N` is a non-negative integer (bytes), or a `$slot`. Errors: duplicate is INT-012, missing value INT-013, a negative value or a non-integer INT-015.
+- **Zero is allowed.** `0` means what `query_memory_limit(0)` means at open level: the query runs only if no operator keeps state, and otherwise fails at once with QRY-012. This asserts that a query streams in constant memory. `:max-derived-facts` and `:max-results` keep rejecting `0` with INT-014 (unchanged; relaxing that is outside #862).
 - **Effect.** It replaces the effective `query_memory_limit` for this query only. It applies to the query's top-level engine plan, rule evaluation and every operator the query uses, the same as the open-level value.
 - **Gate.** `Overridable::QueryMemoryLimit`, which is not in `DEFAULTS`.
 - **Syntax-change rule.** The PR updates `tests/grammar/grammar.pest`, regenerates `GRAMMAR.md`, adds a corpus seed and adds the keyword to the verifier's TOKENS/SEMANTIC lists.
@@ -74,7 +74,7 @@ Compatibility: an embedder that sets `allow_overrides(vec![])` breaks queries th
 ## 4. Bind slots on limit keywords
 
 - `:max-derived-facts`, `:max-results` and `:query-memory-limit` (and `:max-iterations` in #861) accept `$name`, parsed into a `Literal | Slot` value as `:limit $n` is today (`types.rs` `LimitValue`).
-- A bind value must be `Val(Value::Integer(n))` with `n >= 1`. Anything else fails at execute time with API-024 (type) or INT-014 (`n < 1`), matching `:limit $n`. A missing value is API-022.
+- A bind value must be `Val(Value::Integer(n))`. The range follows the keyword's literal form: `n >= 1` for `:max-derived-facts`/`:max-results` (INT-014 otherwise), `n >= 0` for `:query-memory-limit` (INT-015 for a negative value). Any other type fails at execute time with API-024, as for `:limit $n`. A missing value is API-022.
 - `Minigraf::execute` and `query` with an unbound limit slot are refused with API-010, as for any other slot.
 
 ## 5. `PreparedQuery` setters
@@ -135,7 +135,7 @@ After PR 1 merges, #861 is unblocked. It adds `MaxIterations` and `:max-iteratio
 ## 9. Tests (minimum)
 
 - **Gate.** A default handle accepts `:max-derived-facts` and `:max-results`. `allow_overrides([])` refuses both with API-025 on `execute`, `query`, `prepare` and `WriteTransaction::execute`, for both the literal and the slot form. `QueryMemoryLimit` is refused by default and accepted when listed. Replace semantics: `[QueryMemoryLimit]` alone refuses `:max-derived-facts`.
-- **`:query-memory-limit`.** A query that passes at open-level `usize::MAX` fails with QRY-012 under a small keyword value. A query that fails at a small open-level limit passes under a larger keyword value. Plus the validation codes.
+- **`:query-memory-limit`.** A query that passes at open-level `usize::MAX` fails with QRY-012 under a small keyword value. A query that fails at a small open-level limit passes under a larger keyword value. With `:query-memory-limit 0`, a scan-and-filter query returns its rows and a hash-join or aggregate query fails with QRY-012. Plus the validation codes.
 - **Slots.** Different per-execution values change the outcome; type, range and missing-value errors.
 - **Setters.** A setter replaces the database value, and a keyword overrides the setter. Setters work even with `allow_overrides([])`.
 - **`TxOptions`.** Chunk size changes when a transaction becomes large. Durability as in §6.
