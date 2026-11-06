@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,041 | 2,076 |
+| **Active** | 2,050 | 2,085 |
 | **Ignored** | 21 | 24 |
-| **Total** | 2,062 | 2,100 |
+| **Total** | 2,071 | 2,109 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837 and #865 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837, #865 and #869 (Linux). Verification results below identify which suites ran.
 
 **#838 manual migration verification**: the [manual sweep](benchmarks/838-migration/README.md)
 checks every fixture value and cursor snapshot before accepting timings, including
