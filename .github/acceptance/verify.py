@@ -13,7 +13,10 @@ SUITES = {
         ['cartesian_k13_streams', 'count_holds_no_rows'],
     ),
     'limit': (['limit_and_top_k_over_10m_facts'], ['limit_10m', 'top_k_10m']),
-    'large-transaction': (['one_million_fact_transact_holds_one_chunk', 'custom_chunk_bounds'], []),
+    'large-transaction': (
+        ['one_million_fact_transact_holds_one_chunk', 'custom_chunk_bounds', 'one_million_fact_wal_entry_replays_on_open'],
+        [],
+    ),
     'size-per-fact': (['storage::persistent_facts::tests::size_per_fact_in_433_shape_1m'], []),
 }
 

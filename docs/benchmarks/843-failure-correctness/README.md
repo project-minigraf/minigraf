@@ -198,6 +198,11 @@ that a v7 → v8 migration replays. #865 proposes a correctness test only, likel
 among the ignored nightly acceptance tests. No production change is expected
 unless that test fails.
 
+Follow-up: `one_million_fact_wal_entry_replays_on_open` in
+`tests/large_transaction_acceptance_test.rs` now covers this path (#865,
+nightly); it passes with no production change. The map above stays pinned to
+`a95e51ffe`.
+
 **The 1,000-round recursion bound has no test at the pin.** `INT-020`
 "Max iterations (1000) exceeded" (`engine/recursive.rs`) is not triggered by
 any test. A check on the alternate host at the pin confirmed it is reachable:

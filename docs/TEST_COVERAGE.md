@@ -5,11 +5,11 @@
 | | Default features | With `--features test-hooks` |
 |---|---|---|
 | **Active** | 2,041 | 2,076 |
-| **Ignored** | 21 | 23 |
-| **Total** | 2,062 | 2,099 |
+| **Ignored** | 21 | 24 |
+| **Total** | 2,062 | 2,100 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795 and #837 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837 and #865 (Linux). Verification results below identify which suites ran.
 
 **#838 manual migration verification**: the [manual sweep](benchmarks/838-migration/README.md)
 checks every fixture value and cursor snapshot before accepting timings, including
@@ -415,7 +415,7 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
   - Cursors and fact logs opened before and between chunks keep their snapshot through later checkpoints.
   - The fault matrix injects every write and sync fault at every call of a large transaction, on a file with one and with two valid meta slots, with and without a WAL beforehand.
   - Allocator tracking and release, cache eviction, and cursor peeking have unit tests.
-  - `tests/large_transaction_acceptance_test.rs` (ignored, `test-hooks` only, nightly in `.github/workflows/smoke.yml`) holds at most 65,536 materialised facts (the default chunk) for a 1M-fact `transact`, and prints peak RSS. `custom_chunk_bounds` checks public chunk sizes 0, 1, 2, 257, 131,072, 1,000,000 and `usize::MAX`, including million-fact custom chunks, exact retained-fact peaks and complete counts after reopen.
+  - `tests/large_transaction_acceptance_test.rs` (ignored, `test-hooks` only, nightly in `.github/workflows/smoke.yml`) holds at most 65,536 materialised facts (the default chunk) for a 1M-fact `transact`, and prints peak RSS. `custom_chunk_bounds` checks public chunk sizes 0, 1, 2, 257, 131,072, 1,000,000 and `usize::MAX`, including million-fact custom chunks, exact retained-fact peaks and complete counts after reopen. `one_million_fact_wal_entry_replays_on_open` (#865) writes one WAL entry of exactly 1,000,000 facts (`transaction_chunk_facts(1_000_000)`) and a small second entry, closes without a checkpoint (`wal_checkpoint_threshold(usize::MAX)`), and checks after `Minigraf::open` replay, after `checkpoint` + `verify()`, and after a second reopen: entity, attribute-scan and attribute-value lookups, `current_tx_count() == 2` and the `:as-of 1` boundary. A frozen v2.x fixture with a larger entry was not added: its WAL alone is about 50 MB.
 - **Statement bases and large write transactions** (`src/storage/persistent_facts/large_tx.rs`, 9 tests; `src/fault_matrix.rs`, 4 tests; `src/storage/page.rs` and `src/storage/btree.rs`, 2 tests; `tests/memory_limit_test.rs`, 1 test changed)
   - A `WriteTransaction` whose statements repeat, change, retract and re-assert earlier statements' facts within and across chunks, at chunk sizes 1 to 4, gives every statement the small path's outcome and stores the same records. This includes two statements that fail `API-011`, one only through a repeat of an earlier statement's fact (the claims case). Checked over one transaction and over two with committed and pending facts between them; passes `verify` and survives reopen.
   - Queries after each statement, inside the transaction at chunk sizes none and 1 to 4, return what a commit of the statements so far holds, including a staged retraction of a pending assertion and the reverse.
@@ -691,7 +691,7 @@ The twenty-one ignored tests (twenty-three with `test-hooks`) are intentionally 
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
 - One `:limit` and top-k acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow over one 10M-fact fixture written with `LogWriter`: `:limit 10` returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; `:order-by [?v :desc] :limit 10` returns the ten largest values under a 1 MiB limit, adding under 32 MiB.
-- Two large-transaction acceptance tests (`tests/large_transaction_acceptance_test.rs`, #550, #837; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
+- Three large-transaction acceptance tests (`tests/large_transaction_acceptance_test.rs`, #550, #837, #865; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 - One committed-group measurement test (`committed_group_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #641): opens prebuilt fixed-size and growing-group fixtures, drains count/count-distinct with and without a limit, and prints meter peaks, active-group high-water and input counts.
 - Two generalized group measurement tests (`generalized_committed_memory_probe` and `certified_growing_distinct_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #781): drain prebuilt fixed-group and growing-distinct fixtures, reporting Aggregate and IdSpace peaks separately, input counts and exact results. See the [100K–10M evidence](benchmarks/781-ordered-aggregate.md).
