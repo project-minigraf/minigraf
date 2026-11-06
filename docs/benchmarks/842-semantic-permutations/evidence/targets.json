@@ -1,0 +1,1294 @@
+{
+  "targets": 130,
+  "missing": [],
+  "cells": {
+    "bind: B1 value/entity/expression slots": {
+      "tests": 8,
+      "needs_test_hooks": 0
+    },
+    "bind: B2 time slots": {
+      "tests": 10,
+      "needs_test_hooks": 0
+    },
+    "bind: B3 count slots": {
+      "tests": 4,
+      "needs_test_hooks": 2
+    },
+    "bind: B4 Entity versus Val(Ref) and rule arguments": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "bind: B5 keyword/ref equality through a slot": {
+      "tests": 2,
+      "needs_test_hooks": 0
+    },
+    "bind: B6 set binds": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "bind: B7 bind failures": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "bind: B8 prepared queries over snapshots and committed data": {
+      "tests": 5,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J1 entity probe": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J2 value probe and hash fallback": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J3 hash joins and variable attributes": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J4 pending/committed/mixed sources": {
+      "tests": 4,
+      "needs_test_hooks": 1
+    },
+    "cross_kind: J5 per-fact pseudo metadata source": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J6 keyword/ref join equality": {
+      "tests": 7,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J7 float join equality": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J8 anti and union operators": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "cross_kind: J9 correlated rule bodies": {
+      "tests": 3,
+      "needs_test_hooks": 2
+    },
+    "forced: F1 clause reordering on/off": {
+      "tests": 5,
+      "needs_test_hooks": 3
+    },
+    "forced: F2 subplans Choose/Hash/Correlated": {
+      "tests": 3,
+      "needs_test_hooks": 1
+    },
+    "forced: F3 input order on/off": {
+      "tests": 2,
+      "needs_test_hooks": 1
+    },
+    "forced: F4 full matrix (reorder x subplans x execute/cursor)": {
+      "tests": 6,
+      "needs_test_hooks": 3
+    },
+    "forced: F5 join kind (no forcing hook)": {
+      "tests": 2,
+      "needs_test_hooks": 0
+    },
+    "numeric: N1 ordinary avg": {
+      "tests": 8,
+      "needs_test_hooks": 0
+    },
+    "numeric: N2 exact sums": {
+      "tests": 5,
+      "needs_test_hooks": 0
+    },
+    "numeric: N3 mixed sums and sum-distinct": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "numeric: N4 extrema": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "numeric: N5 tuple fallbacks": {
+      "tests": 5,
+      "needs_test_hooks": 0
+    },
+    "numeric: N6 signed zero and NaN incl. set elements": {
+      "tests": 9,
+      "needs_test_hooks": 3
+    },
+    "numeric: N7 numeric answers under every forced plan": {
+      "tests": 3,
+      "needs_test_hooks": 3
+    }
+  },
+  "checked": [
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_reproduction_returns_float",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_reproduction_returns_float",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_groups_skip_nonnumbers_and_preserve_with_multiplicity",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_groups_skip_nonnumbers_and_preserve_with_multiplicity",
+      "tags": "num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_matches_sum_results_and_preserves_dropped_groups",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_matches_sum_results_and_preserves_dropped_groups",
+      "tags": "num_avg num_extrema num_sum",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_matches_window_without_removing_nonnumeric_rows",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_matches_window_without_removing_nonnumeric_rows",
+      "tags": "num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_recursive_rule_and_transaction_reads",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_recursive_rule_and_transaction_reads",
+      "tags": "num_avg rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_cursor_spans_batches_without_dropping_groups",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_cursor_spans_batches_without_dropping_groups",
+      "tags": "num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_pending_checkpointed_and_reopened_agree",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_pending_checkpointed_and_reopened_agree",
+      "tags": "data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N1 ordinary avg",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "ordinary_avg_uses_exact_unsaturated_totals_in_every_order",
+      "listed_as": "lib query::datalog::aggregate::tests::ordinary_avg_uses_exact_unsaturated_totals_in_every_order",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N2 exact sums",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "exact_sum_is_the_same_in_every_order",
+      "listed_as": "lib query::datalog::aggregate::tests::exact_sum_is_the_same_in_every_order",
+      "tags": "num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N2 exact sums",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "exact_sum_rounds_once",
+      "listed_as": "lib query::datalog::aggregate::tests::exact_sum_rounds_once",
+      "tags": "num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N2 exact sums",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "integer_sum_saturates_once",
+      "listed_as": "lib query::datalog::aggregate::tests::integer_sum_saturates_once",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N2 exact sums",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "sliding_integer_sum_recovers_after_saturation",
+      "listed_as": "lib query::datalog::aggregate::tests::sliding_integer_sum_recovers_after_saturation",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N2 exact sums",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "skipped_arguments_preserve_exact_sums_and_special_float_results",
+      "listed_as": "lib query::datalog::aggregate::tests::skipped_arguments_preserve_exact_sums_and_special_float_results",
+      "tags": "num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N3 mixed sums and sum-distinct",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "sum_skips_nonnumbers_and_distinct_keeps_numeric_identity",
+      "listed_as": "tests/aggregate_value_handling_test.rs sum_skips_nonnumbers_and_distinct_keeps_numeric_identity",
+      "tags": "num_sum num_sum_distinct",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N3 mixed sums and sum-distinct",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "existing_nil_and_nonnumeric_groups_differ_from_no_matches",
+      "listed_as": "tests/aggregate_value_handling_test.rs existing_nil_and_nonnumeric_groups_differ_from_no_matches",
+      "tags": "bind_prepare bind_slot num_sum num_sum_distinct",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N3 mixed sums and sum-distinct",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "with_groups_and_join_multiplicity_remain_intact",
+      "listed_as": "tests/aggregate_value_handling_test.rs with_groups_and_join_multiplicity_remain_intact",
+      "tags": "num_sum num_sum_distinct",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N3 mixed sums and sum-distinct",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "rule_and_temporal_queries_use_the_same_aggregate_contract",
+      "listed_as": "tests/aggregate_value_handling_test.rs rule_and_temporal_queries_use_the_same_aggregate_contract",
+      "tags": "num_extrema num_sum num_sum_distinct rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N4 extrema",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "extrema_accept_mixed_numbers_and_every_nonnil_class",
+      "listed_as": "tests/aggregate_value_handling_test.rs extrema_accept_mixed_numbers_and_every_nonnil_class",
+      "tags": "num_extrema",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N4 extrema",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "min_max_mixed_values_do_not_depend_on_order",
+      "listed_as": "lib query::datalog::aggregate::tests::min_max_mixed_values_do_not_depend_on_order",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N4 extrema",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "min_max_of_floats_use_the_total_order",
+      "listed_as": "lib query::datalog::aggregate::tests::min_max_of_floats_use_the_total_order",
+      "tags": "num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N4 extrema",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "certified_extrema_accept_mixed_scalars_and_preserve_dropped_groups",
+      "listed_as": "lib query::engine::aggregate_order_tests::certified_extrema_accept_mixed_scalars_and_preserve_dropped_groups",
+      "tags": "data_committed force_reorder num_avg num_extrema",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N5 tuple fallbacks",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "generalized_unproved_tuple_components_stay_materialized",
+      "listed_as": "lib query::engine::aggregate_order_tests::generalized_unproved_tuple_components_stay_materialized",
+      "tags": "data_committed force_reorder num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N5 tuple fallbacks",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "generalized_constant_and_repeated_group_columns_keep_projection_and_sort_order",
+      "listed_as": "lib query::engine::aggregate_order_tests::generalized_constant_and_repeated_group_columns_keep_projection_and_sort_order",
+      "tags": "data_committed force_reorder",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N5 tuple fallbacks",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "generalized_hidden_groups_stream_but_keep_visible_tie_sorting",
+      "listed_as": "lib query::engine::aggregate_order_tests::generalized_hidden_groups_stream_but_keep_visible_tie_sorting",
+      "tags": "data_committed force_reorder num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N5 tuple fallbacks",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "certified_unsupported_argument_origins_and_payloads_keep_full_input",
+      "listed_as": "lib query::engine::aggregate_order_tests::certified_unsupported_argument_origins_and_payloads_keep_full_input",
+      "tags": "data_committed force_reorder join_var_attr num_extrema num_sum_distinct",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N5 tuple fallbacks",
+      "file": "src/query/engine/tests.rs",
+      "test": "generalized_ordered_operator_uses_the_complete_tuple",
+      "listed_as": "lib query::engine::tests::generalized_ordered_operator_uses_the_complete_tuple",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "src/query/datalog/aggregate/tests.rs",
+      "test": "exact_sum_signs_of_zero_and_specials",
+      "listed_as": "lib query::datalog::aggregate::tests::exact_sum_signs_of_zero_and_specials",
+      "tags": "num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "tests/aggregate_window_rules_test.rs",
+      "test": "min_max_of_signed_zeros_and_nan",
+      "listed_as": "tests/aggregate_window_rules_test.rs min_max_of_signed_zeros_and_nan",
+      "tags": "num_extrema num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "src/graph/types.rs",
+      "test": "value_set_holds_one_nan",
+      "listed_as": "lib graph::types::tests::value_set_holds_one_nan",
+      "tags": "bind_set num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "src/graph/types.rs",
+      "test": "value_set_keeps_negative_zero_whatever_the_order",
+      "listed_as": "lib graph::types::tests::value_set_keeps_negative_zero_whatever_the_order",
+      "tags": "bind_set num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "tests/set_values_test.rs",
+      "test": "sets_with_a_zero_of_either_sign_are_equal",
+      "listed_as": "tests/set_values_test.rs sets_with_a_zero_of_either_sign_are_equal",
+      "tags": "data_committed force_reorder num_signed_zero_nan",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "tests/set_predicates_test.rs",
+      "test": "nan_is_one_element",
+      "listed_as": "tests/set_predicates_test.rs nan_is_one_element",
+      "tags": "bind_prepare bind_set bind_slot num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "tests/distinct_test.rs",
+      "test": "typed_values_nan_and_sets_use_group_equality_and_canonical_output",
+      "listed_as": "tests/distinct_test.rs typed_values_nan_and_sets_use_group_equality_and_canonical_output",
+      "tags": "bind_set data_committed num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "tests/plan_independence_test.rs",
+      "test": "unify_negative_zero_equals_zero",
+      "listed_as": "tests/plan_independence_test.rs unify_negative_zero_equals_zero",
+      "tags": "answer_oracle force_reorder force_subplans force_subplans_correlated force_subplans_hash num_signed_zero_nan",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "numeric",
+      "cell": "N6 signed zero and NaN incl. set elements",
+      "file": "tests/plan_independence_test.rs",
+      "test": "unify_int_never_equals_float",
+      "listed_as": "tests/plan_independence_test.rs unify_int_never_equals_float",
+      "tags": "answer_oracle force_reorder force_subplans force_subplans_correlated force_subplans_hash",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "numeric",
+      "cell": "N7 numeric answers under every forced plan",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_is_independent_of_plan_choices",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_is_independent_of_plan_choices",
+      "tags": "data_committed force_input_order force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not num_avg",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "numeric",
+      "cell": "N7 numeric answers under every forced plan",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "value_handling_is_independent_of_join_and_negation_plans",
+      "listed_as": "tests/aggregate_value_handling_test.rs value_handling_is_independent_of_join_and_negation_plans",
+      "tags": "force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not num_extrema num_sum_distinct",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "numeric",
+      "cell": "N7 numeric answers under every forced plan",
+      "file": "tests/input_order_test.rs",
+      "test": "ordered_results_are_independent_of_order_modes_and_physical_plans",
+      "listed_as": "tests/input_order_test.rs ordered_results_are_independent_of_order_modes_and_physical_plans",
+      "tags": "data_committed force_input_order force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_or num_avg num_extrema num_signed_zero_nan num_sum num_sum_distinct rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_entity_slot",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_entity_slot",
+      "tags": "bind_entity bind_prepare bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_value_slot",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_value_slot",
+      "tags": "bind_prepare bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_expr_slot",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_expr_slot",
+      "tags": "bind_prepare bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_combined",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_combined",
+      "tags": "bind_entity bind_prepare bind_slot bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "plan_reused_across_executions",
+      "listed_as": "tests/prepared_statements_test.rs plan_reused_across_executions",
+      "tags": "bind_entity bind_prepare bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_entity_slot",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_entity_slot",
+      "tags": "bind_entity",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_value_slot",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_value_slot",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 value/entity/expression slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_expr_slot",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_expr_slot",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_as_of_counter",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_as_of_counter",
+      "tags": "bind_prepare bind_slot bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_as_of_timestamp",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_as_of_timestamp",
+      "tags": "bind_prepare bind_slot bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_valid_at",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_valid_at",
+      "tags": "bind_prepare bind_slot bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepare_and_execute_valid_at_any",
+      "listed_as": "tests/prepared_statements_test.rs prepare_and_execute_valid_at_any",
+      "tags": "bind_prepare bind_slot bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "prepared_literal_as_of_and_valid_at_are_kept",
+      "listed_as": "tests/prepared_statements_test.rs prepared_literal_as_of_and_valid_at_are_kept",
+      "tags": "bind_prepare join_pseudo",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_as_of_counter",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_as_of_counter",
+      "tags": "bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_as_of_timestamp",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_as_of_timestamp",
+      "tags": "bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_valid_at_timestamp",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_valid_at_timestamp",
+      "tags": "bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_valid_at_any",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_valid_at_any",
+      "tags": "bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 time slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "test_substitute_keeps_literal_as_of_and_valid_at",
+      "listed_as": "lib query::datalog::prepared::tests::test_substitute_keeps_literal_as_of_and_valid_at",
+      "tags": "bind_entity",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "limit_slot_takes_a_non_negative_integer",
+      "listed_as": "lib query::datalog::prepared::tests::limit_slot_takes_a_non_negative_integer",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slots",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "offset_slot_is_collected_and_resolved",
+      "listed_as": "lib query::datalog::prepared::tests::offset_slot_is_collected_and_resolved",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slots",
+      "file": "tests/limit_order_test.rs",
+      "test": "limit_slot_errors",
+      "listed_as": "tests/limit_order_test.rs limit_slot_errors",
+      "tags": "bind_count bind_prepare bind_slot bind_time data_committed rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slots",
+      "file": "tests/limit_order_test.rs",
+      "test": "offset_slot_errors",
+      "listed_as": "tests/limit_order_test.rs offset_slot_errors",
+      "tags": "bind_count bind_prepare bind_slot bind_time data_committed rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "bind",
+      "cell": "B4 Entity versus Val(Ref) and rule arguments",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "entity_and_ref_bind_values_fit_each_others_slots",
+      "listed_as": "tests/prepared_statements_test.rs entity_and_ref_bind_values_fit_each_others_slots",
+      "tags": "bind_entity bind_prepare bind_slot bind_val_ref rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B5 keyword/ref equality through a slot",
+      "file": "tests/join_rules_test.rs",
+      "test": "expression_equality_equates_keyword_and_ref",
+      "listed_as": "tests/join_rules_test.rs expression_equality_equates_keyword_and_ref",
+      "tags": "bind_prepare bind_slot bind_val_ref join_keyword_ref",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B5 keyword/ref equality through a slot",
+      "file": "tests/join_rules_test.rs",
+      "test": "expression_equality_equates_keyword_and_ref_after_checkpoint",
+      "listed_as": "tests/join_rules_test.rs expression_equality_equates_keyword_and_ref_after_checkpoint",
+      "tags": "bind_prepare bind_slot bind_val_ref data_committed join_keyword_ref",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B6 set binds",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "set_in_operand_slot_reused_across_executions",
+      "listed_as": "tests/prepared_statements_test.rs set_in_operand_slot_reused_across_executions",
+      "tags": "bind_prepare bind_set bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B6 set binds",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "set_in_value_slot_reused_across_executions",
+      "listed_as": "tests/prepared_statements_test.rs set_in_value_slot_reused_across_executions",
+      "tags": "bind_prepare bind_set bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B6 set binds",
+      "file": "tests/collect_set_test.rs",
+      "test": "predicates_over_the_result_and_prepared_slots",
+      "listed_as": "tests/collect_set_test.rs predicates_over_the_result_and_prepared_slots",
+      "tags": "bind_prepare bind_set bind_slot",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B7 bind failures",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "missing_bind_value_is_api_022_in_every_position",
+      "listed_as": "tests/prepared_statements_test.rs missing_bind_value_is_api_022_in_every_position",
+      "tags": "bind_prepare bind_slot bind_time join_not join_or rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B7 bind failures",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "attribute_slot_is_api_023_in_every_clause",
+      "listed_as": "tests/prepared_statements_test.rs attribute_slot_is_api_023_in_every_clause",
+      "tags": "bind_prepare bind_slot join_not join_or",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B7 bind failures",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind",
+      "listed_as": "tests/prepared_statements_test.rs bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind",
+      "tags": "bind_prepare bind_slot bind_time",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B8 prepared queries over snapshots and committed data",
+      "file": "tests/aggregate_value_handling_test.rs",
+      "test": "grouped_cursor_and_prepared_queries_survive_checkpoint_and_reopen",
+      "listed_as": "tests/aggregate_value_handling_test.rs grouped_cursor_and_prepared_queries_survive_checkpoint_and_reopen",
+      "tags": "bind_prepare data_committed num_extrema num_sum num_sum_distinct",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B8 prepared queries over snapshots and committed data",
+      "file": "tests/ordinary_avg_test.rs",
+      "test": "ordinary_avg_prepared_execute_and_cursor_use_numeric_count",
+      "listed_as": "tests/ordinary_avg_test.rs ordinary_avg_prepared_execute_and_cursor_use_numeric_count",
+      "tags": "bind_prepare bind_slot num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B8 prepared queries over snapshots and committed data",
+      "file": "tests/cursor_test.rs",
+      "test": "prepared_cursor_pins_like_a_query_cursor",
+      "listed_as": "tests/cursor_test.rs prepared_cursor_pins_like_a_query_cursor",
+      "tags": "bind_prepare bind_slot data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B8 prepared queries over snapshots and committed data",
+      "file": "src/query/engine/order_tests.rs",
+      "test": "prepared_queries_recheck_each_snapshot_and_rules_keep_original_strategy",
+      "listed_as": "lib query::engine::order_tests::prepared_queries_recheck_each_snapshot_and_rules_keep_original_strategy",
+      "tags": "bind_count bind_prepare bind_slot data_committed rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B8 prepared queries over snapshots and committed data",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "generalized_prepared_tuple_proofs_follow_bindings_and_pinned_snapshots",
+      "listed_as": "lib query::engine::aggregate_order_tests::generalized_prepared_tuple_proofs_follow_bindings_and_pinned_snapshots",
+      "tags": "bind_prepare bind_slot data_committed num_avg",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J1 entity probe",
+      "file": "src/query/engine/tests.rs",
+      "test": "planner_chooses_the_join",
+      "listed_as": "lib query::engine::tests::planner_chooses_the_join",
+      "tags": "force_reorder join_var_attr",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J1 entity probe",
+      "file": "src/query/engine/tests.rs",
+      "test": "entity_probe_reuses_repeated_entities",
+      "listed_as": "lib query::engine::tests::entity_probe_reuses_repeated_entities",
+      "tags": "answer_oracle force_reorder rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J1 entity probe",
+      "file": "src/query/engine/tests.rs",
+      "test": "cached_entity_probe_normalizes_keyword_and_ref",
+      "listed_as": "lib query::engine::tests::cached_entity_probe_normalizes_keyword_and_ref",
+      "tags": "force_reorder join_keyword_ref rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J1 entity probe",
+      "file": "src/query/engine/tests.rs",
+      "test": "entity_probe_cache_evicts_without_losing_rows",
+      "listed_as": "lib query::engine::tests::entity_probe_cache_evicts_without_losing_rows",
+      "tags": "answer_oracle force_reorder rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J2 value probe and hash fallback",
+      "file": "src/query/engine/tests.rs",
+      "test": "value_probe_reads_only_the_probed_keys",
+      "listed_as": "lib query::engine::tests::value_probe_reads_only_the_probed_keys",
+      "tags": "answer_oracle data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J2 value probe and hash fallback",
+      "file": "src/query/engine/tests.rs",
+      "test": "value_probe_matches_as_joins_do",
+      "listed_as": "lib query::engine::tests::value_probe_matches_as_joins_do",
+      "tags": "answer_oracle data_committed num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J2 value probe and hash fallback",
+      "file": "src/query/engine/tests.rs",
+      "test": "value_probe_falls_back_mid_batch",
+      "listed_as": "lib query::engine::tests::value_probe_falls_back_mid_batch",
+      "tags": "answer_oracle data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J3 hash joins and variable attributes",
+      "file": "src/query/engine/tests.rs",
+      "test": "engine_matches_executor_in_memory",
+      "listed_as": "lib query::engine::tests::engine_matches_executor_in_memory",
+      "tags": "answer_oracle join_keyword_ref join_pseudo join_var_attr num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J3 hash joins and variable attributes",
+      "file": "src/query/engine/tests.rs",
+      "test": "engine_matches_executor_across_checkpoints_and_reopen",
+      "listed_as": "lib query::engine::tests::engine_matches_executor_across_checkpoints_and_reopen",
+      "tags": "answer_oracle data_committed join_keyword_ref join_pseudo join_var_attr num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J3 hash joins and variable attributes",
+      "file": "src/query/engine/tests.rs",
+      "test": "planner_builds_a_keyless_join_on_the_smaller_product",
+      "listed_as": "lib query::engine::tests::planner_builds_a_keyless_join_on_the_smaller_product",
+      "tags": "force_reorder join_var_attr",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J4 pending/committed/mixed sources",
+      "file": "tests/live_reads_test.rs",
+      "test": "committed_and_in_memory_histories_answer_alike",
+      "listed_as": "tests/live_reads_test.rs committed_and_in_memory_histories_answer_alike",
+      "tags": "data_committed join_var_attr rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J4 pending/committed/mixed sources",
+      "file": "tests/collect_set_test.rs",
+      "test": "pending_committed_and_mixed",
+      "listed_as": "tests/collect_set_test.rs pending_committed_and_mixed",
+      "tags": "bind_set data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J4 pending/committed/mixed sources",
+      "file": "src/graph/storage.rs",
+      "test": "committed_and_pending_facts_combine_in_every_lookup",
+      "listed_as": "lib graph::storage::tests::committed_and_pending_facts_combine_in_every_lookup",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J4 pending/committed/mixed sources",
+      "file": "tests/plan_independence_test.rs",
+      "test": "matrix_file_backed_after_checkpoint",
+      "listed_as": "tests/plan_independence_test.rs matrix_file_backed_after_checkpoint",
+      "tags": "answer_oracle data_committed force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_pseudo num_signed_zero_nan rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J5 per-fact pseudo metadata source",
+      "file": "tests/pseudo_source_test.rs",
+      "test": "nearest_earlier_pattern_in_the_text_is_the_source",
+      "listed_as": "tests/pseudo_source_test.rs nearest_earlier_pattern_in_the_text_is_the_source",
+      "tags": "join_pseudo",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J5 per-fact pseudo metadata source",
+      "file": "tests/pseudo_source_test.rs",
+      "test": "every_fact_of_an_entity_through_a_variable_attribute",
+      "listed_as": "tests/pseudo_source_test.rs every_fact_of_an_entity_through_a_variable_attribute",
+      "tags": "join_pseudo",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J5 per-fact pseudo metadata source",
+      "file": "tests/pseudo_source_test.rs",
+      "test": "a_not_body_reads_the_outer_fact",
+      "listed_as": "tests/pseudo_source_test.rs a_not_body_reads_the_outer_fact",
+      "tags": "join_not join_pseudo",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J5 per-fact pseudo metadata source",
+      "file": "tests/pseudo_source_test.rs",
+      "test": "or_branches_read_the_outer_fact_never_a_sibling",
+      "listed_as": "tests/pseudo_source_test.rs or_branches_read_the_outer_fact_never_a_sibling",
+      "tags": "join_or join_pseudo",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J5 per-fact pseudo metadata source",
+      "file": "tests/pseudo_source_test.rs",
+      "test": "rule_bodies_are_closed",
+      "listed_as": "tests/pseudo_source_test.rs rule_bodies_are_closed",
+      "tags": "join_pseudo rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J5 per-fact pseudo metadata source",
+      "file": "tests/join_rules_test.rs",
+      "test": "pseudo_attribute_pattern_never_replaces_a_value",
+      "listed_as": "tests/join_rules_test.rs pseudo_attribute_pattern_never_replaces_a_value",
+      "tags": "join_pseudo",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/join_rules_test.rs",
+      "test": "keyword_or_ref_follows_where_order_not_plan",
+      "listed_as": "tests/join_rules_test.rs keyword_or_ref_follows_where_order_not_plan",
+      "tags": "join_keyword_ref",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/join_rules_test.rs",
+      "test": "keyword_or_ref_same_order_both_ways",
+      "listed_as": "tests/join_rules_test.rs keyword_or_ref_same_order_both_ways",
+      "tags": "join_keyword_ref",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/join_rules_test.rs",
+      "test": "keyword_or_ref_through_the_attribute_position",
+      "listed_as": "tests/join_rules_test.rs keyword_or_ref_through_the_attribute_position",
+      "tags": "join_keyword_ref join_var_attr",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/join_rules_test.rs",
+      "test": "keyword_or_ref_in_a_rule_query",
+      "listed_as": "tests/join_rules_test.rs keyword_or_ref_in_a_rule_query",
+      "tags": "join_keyword_ref rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/negation_equality_test.rs",
+      "test": "imported_keyword_equals_ref_to_its_entity",
+      "listed_as": "tests/negation_equality_test.rs imported_keyword_equals_ref_to_its_entity",
+      "tags": "join_keyword_ref join_not",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/or_equality_test.rs",
+      "test": "branch_ref_meets_outer_keyword",
+      "listed_as": "tests/or_equality_test.rs branch_ref_meets_outer_keyword",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J6 keyword/ref join equality",
+      "file": "tests/or_equality_test.rs",
+      "test": "branch_ref_meets_outer_keyword_after_checkpoint",
+      "listed_as": "tests/or_equality_test.rs branch_ref_meets_outer_keyword_after_checkpoint",
+      "tags": "data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J7 float join equality",
+      "file": "tests/join_rules_test.rs",
+      "test": "float_join_pairs_zero_with_negative_zero",
+      "listed_as": "tests/join_rules_test.rs float_join_pairs_zero_with_negative_zero",
+      "tags": "num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J7 float join equality",
+      "file": "tests/join_rules_test.rs",
+      "test": "float_constant_matches_equal_floats_only_after_checkpoint",
+      "listed_as": "tests/join_rules_test.rs float_constant_matches_equal_floats_only_after_checkpoint",
+      "tags": "bind_prepare bind_slot data_committed num_signed_zero_nan rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J7 float join equality",
+      "file": "tests/negation_equality_test.rs",
+      "test": "imported_float_compares_by_ieee_equality_after_checkpoint",
+      "listed_as": "tests/negation_equality_test.rs imported_float_compares_by_ieee_equality_after_checkpoint",
+      "tags": "data_committed join_not rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J7 float join equality",
+      "file": "tests/or_equality_test.rs",
+      "test": "branch_float_meets_outer_float_by_ieee_equality",
+      "listed_as": "tests/or_equality_test.rs branch_float_meets_outer_float_by_ieee_equality",
+      "tags": "join_or num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J8 anti and union operators",
+      "file": "src/query/engine/tests.rs",
+      "test": "negation_matches_executor",
+      "listed_as": "lib query::engine::tests::negation_matches_executor",
+      "tags": "answer_oracle data_committed force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_pseudo num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J8 anti and union operators",
+      "file": "src/query/engine/tests.rs",
+      "test": "disjunction_matches_executor",
+      "listed_as": "lib query::engine::tests::disjunction_matches_executor",
+      "tags": "answer_oracle data_committed force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_or join_pseudo num_signed_zero_nan",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J8 anti and union operators",
+      "file": "src/query/engine/tests.rs",
+      "test": "not_bodies_plan_as_clause_lists",
+      "listed_as": "lib query::engine::tests::not_bodies_plan_as_clause_lists",
+      "tags": "answer_oracle force_subplans force_subplans_correlated force_subplans_hash join_not join_or rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J8 anti and union operators",
+      "file": "src/query/engine/tests.rs",
+      "test": "planner_chooses_the_body_form",
+      "listed_as": "lib query::engine::tests::planner_chooses_the_body_form",
+      "tags": "force_subplans force_subplans_correlated force_subplans_hash join_not",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J9 correlated rule bodies",
+      "file": "tests/plan_independence_test.rs",
+      "test": "or_branch_expression_reads_outer_variable_in_rule_body",
+      "listed_as": "tests/plan_independence_test.rs or_branch_expression_reads_outer_variable_in_rule_body",
+      "tags": "answer_oracle force_reorder force_subplans force_subplans_correlated force_subplans_hash join_or rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J9 correlated rule bodies",
+      "file": "tests/plan_independence_test.rs",
+      "test": "expression_reads_variable_bound_only_by_or_with_rules",
+      "listed_as": "tests/plan_independence_test.rs expression_reads_variable_bound_only_by_or_with_rules",
+      "tags": "answer_oracle force_reorder force_subplans force_subplans_correlated force_subplans_hash join_or rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "cross_kind",
+      "cell": "J9 correlated rule bodies",
+      "file": "tests/join_rules_test.rs",
+      "test": "expression_equality_in_rule_bodies_and_negation",
+      "listed_as": "tests/join_rules_test.rs expression_equality_in_rule_bodies_and_negation",
+      "tags": "join_keyword_ref join_not rule_def",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F1 clause reordering on/off",
+      "file": "src/query/datalog/optimizer.rs",
+      "test": "test_reorder_off_keeps_source_order",
+      "listed_as": "lib query::datalog::optimizer::tests::test_reorder_off_keeps_source_order",
+      "tags": "force_reorder",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F1 clause reordering on/off",
+      "file": "src/query/datalog/optimizer.rs",
+      "test": "test_reorder_switch_is_per_thread_and_restored",
+      "listed_as": "lib query::datalog::optimizer::tests::test_reorder_switch_is_per_thread_and_restored",
+      "tags": "force_reorder",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F1 clause reordering on/off",
+      "file": "tests/limit_order_test.rs",
+      "test": "order_by_on_committed_and_pending_facts",
+      "listed_as": "tests/limit_order_test.rs order_by_on_committed_and_pending_facts",
+      "tags": "bind_count bind_prepare bind_slot data_committed force_reorder rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F1 clause reordering on/off",
+      "file": "tests/window_functions_test.rs",
+      "test": "bounded_rows_answer_bag_is_plan_independent",
+      "listed_as": "tests/window_functions_test.rs bounded_rows_answer_bag_is_plan_independent",
+      "tags": "data_committed force_reorder num_signed_zero_nan num_sum",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F1 clause reordering on/off",
+      "file": "tests/set_values_test.rs",
+      "test": "set_queries_are_plan_independent",
+      "listed_as": "tests/set_values_test.rs set_queries_are_plan_independent",
+      "tags": "data_committed force_reorder join_not join_or",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F2 subplans Choose/Hash/Correlated",
+      "file": "src/query/datalog/optimizer.rs",
+      "test": "subplans_switch_is_per_thread_and_restored",
+      "listed_as": "lib query::datalog::optimizer::tests::subplans_switch_is_per_thread_and_restored",
+      "tags": "force_subplans force_subplans_correlated force_subplans_hash",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F2 subplans Choose/Hash/Correlated",
+      "file": "src/query/engine/tests.rs",
+      "test": "repeated_join_variable_matches_single",
+      "listed_as": "lib query::engine::tests::repeated_join_variable_matches_single",
+      "tags": "force_subplans force_subplans_correlated force_subplans_hash join_not join_or join_var_attr",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F2 subplans Choose/Hash/Correlated",
+      "file": "tests/distinct_test.rs",
+      "test": "distinct_is_independent_of_join_and_subplan_choices",
+      "listed_as": "tests/distinct_test.rs distinct_is_independent_of_join_and_subplan_choices",
+      "tags": "force_reorder force_subplans force_subplans_correlated force_subplans_hash join_or num_signed_zero_nan",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F3 input order on/off",
+      "file": "tests/input_order_test.rs",
+      "test": "ordered_results_are_independent_of_order_modes_and_physical_plans",
+      "listed_as": "tests/input_order_test.rs ordered_results_are_independent_of_order_modes_and_physical_plans",
+      "tags": "data_committed force_input_order force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_or num_avg num_extrema num_signed_zero_nan num_sum num_sum_distinct rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F3 input order on/off",
+      "file": "src/query/engine/order_tests.rs",
+      "test": "forced_fallback_restores_sort_and_gives_the_same_ordered_list",
+      "listed_as": "lib query::engine::order_tests::forced_fallback_restores_sort_and_gives_the_same_ordered_list",
+      "tags": "data_committed",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F4 full matrix (reorder x subplans x execute/cursor)",
+      "file": "tests/plan_independence_test.rs",
+      "test": "matrix_in_memory",
+      "listed_as": "tests/plan_independence_test.rs matrix_in_memory",
+      "tags": "answer_oracle force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_pseudo num_signed_zero_nan rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F4 full matrix (reorder x subplans x execute/cursor)",
+      "file": "tests/plan_independence_test.rs",
+      "test": "matrix_file_backed_after_checkpoint",
+      "listed_as": "tests/plan_independence_test.rs matrix_file_backed_after_checkpoint",
+      "tags": "answer_oracle data_committed force_reorder force_subplans force_subplans_correlated force_subplans_hash join_not join_pseudo num_signed_zero_nan rule_def",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F4 full matrix (reorder x subplans x execute/cursor)",
+      "file": "tests/plan_independence_test.rs",
+      "test": "issue_596_example",
+      "listed_as": "tests/plan_independence_test.rs issue_596_example",
+      "tags": "answer_oracle force_reorder force_subplans force_subplans_correlated force_subplans_hash",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "forced",
+      "cell": "F4 full matrix (reorder x subplans x execute/cursor)",
+      "file": "tests/property_test.rs",
+      "test": "query_matches_reference_in_memory",
+      "listed_as": "tests/property_test.rs query_matches_reference_in_memory",
+      "tags": "data_committed force_reorder force_subplans force_subplans_hash join_not join_or",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F4 full matrix (reorder x subplans x execute/cursor)",
+      "file": "tests/property_test.rs",
+      "test": "query_matches_reference_file_backed",
+      "listed_as": "tests/property_test.rs query_matches_reference_file_backed",
+      "tags": "data_committed force_reorder force_subplans force_subplans_hash join_not join_or",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F4 full matrix (reorder x subplans x execute/cursor)",
+      "file": "tests/model_based_test.rs",
+      "test": "file_backed_db_matches_model",
+      "listed_as": "tests/model_based_test.rs file_backed_db_matches_model",
+      "tags": "force_reorder",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F5 join kind (no forcing hook)",
+      "file": "src/query/engine/order_tests.rs",
+      "test": "value_probe_runtime_fallback_preserves_order_only_when_it_streams_the_outer",
+      "listed_as": "lib query::engine::order_tests::value_probe_runtime_fallback_preserves_order_only_when_it_streams_the_outer",
+      "tags": "data_committed force_reorder",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "forced",
+      "cell": "F5 join kind (no forcing hook)",
+      "file": "src/query/engine/order_tests.rs",
+      "test": "filters_entity_probes_and_anti_joins_preserve_unchanged_order_columns",
+      "listed_as": "lib query::engine::order_tests::filters_entity_probes_and_anti_joins_preserve_unchanged_order_columns",
+      "tags": "data_committed force_reorder join_not",
+      "needs_test_hooks": false
+    }
+  ]
+}

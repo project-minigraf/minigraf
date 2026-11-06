@@ -2,6 +2,14 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Semantic permutations and control limits (#842, unreleased)
+
+The [X07 map](benchmarks/842-semantic-permutations/README.md) assigns
+numeric, bind, cross-kind join and forced-planner permutations to correctness
+tests rather than nightly IDs. Hash-control ratios include a broader scan, and
+literal/dynamic keyword ratios include binding and clone work: neither is an
+isolated optimization measurement.
+
 ## Manual shape sweeps (#841, unreleased)
 
 The [shape and retention report](benchmarks/841-shape-sweeps/README.md) records

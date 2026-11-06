@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Semantic permutation map** (#842): [X07's correctness-target map](docs/benchmarks/842-semantic-permutations/README.md) ties numeric, bind, cross-kind join and forced-planner permutations to 128 named tests at a pinned v3 revision, states what the representative nightly controls do and do not establish, and records the hash-scan and keyword binding/clone confounders. X07 stays excluded. No production, test, public API or nightly-route change.
+
 - **Manual shape sweep** (#841): [native shape and retention experiments](docs/benchmarks/841-shape-sweeps/README.md) cover sort/window, set and UUID cases, matched recursive controls and sustained pins/FactLogs. The report distinguishes query timings from process RSS and query-meter observations, and retains input rejections, capped attempts and attribution limits. No production, public API or nightly-route change.
 
 - **Regression history and reporting verification** (#840): [durable API/run evidence](docs/benchmarks/840-regression/completion.md) establishes numeric comparisons for all 427 native and 26 binding IDs with at least three independent v3 runs each. Separate main/v3 fixes #853/#854 preserve v3 history across measured main advances. Actual scheduled routes, 16 isolated live notification scenarios, four delivered messages and complete synthetic-resource cleanup are verified. This adds no database runtime behavior or Rust tests; further runtime lanes are tracked in #858.
