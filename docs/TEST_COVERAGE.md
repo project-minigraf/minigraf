@@ -27,6 +27,12 @@ cleanup of all 46 synthetic resources. Fresh extraction reproduces the evidence
 reports, and removing delivery/comparison evidence is rejected. No Rust tests
 are added; the inventory above is unchanged. Additional runtime lanes are #858.
 
+**#842 semantic permutation map**: [128 curated correctness tests](benchmarks/842-semantic-permutations/README.md)
+(130 targets in 29 cells; 17 tests exist only in the `test-hooks` build) cover the numeric, bind,
+cross-kind join and forced-planner families excluded from nightly benchmarks.
+A reproducible lexical index tags all 2,079 Rust tests at the pinned revision.
+No test is added; the inventory above is unchanged.
+
 **#841 manual shape verification**: the [standalone audit harness](benchmarks/841-shape-sweeps/README.md)
 checks full query answers before accepting timings and records sustained-reader
 snapshot, quarantine-generation, release/reuse, integrity and reopen checks.

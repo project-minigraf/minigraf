@@ -42,6 +42,11 @@ history, scheduled main/v3 routes and isolated live notification delivery with
 cleanup. Raw evidence and offline verifiers are retained in Git. JVM/WASI and
 qualified mobile nightly expansion are tracked separately in #858.
 
+The [semantic permutation map](docs/benchmarks/842-semantic-permutations/README.md)
+(#842) ties excluded numeric, bind, join and forced-plan permutations to
+correctness tests and states what the natural-plan nightly controls do not
+isolate. It adds no nightly benchmark.
+
 The [manual shape sweep](docs/benchmarks/841-shape-sweeps/README.md) (#841)
 examines native sort/window, set and UUID shapes, recursive controls, and
 sustained reader retention. The report separates query latency, process RSS,

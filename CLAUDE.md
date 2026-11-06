@@ -18,6 +18,11 @@ checksummed evidence outlives Actions retention. This changes no database runtim
 behavior or Rust test counts. Additional JVM/WASI and qualified mobile nightly
 lanes are tracked separately in #858.
 
+The [#842 semantic permutation map](docs/benchmarks/842-semantic-permutations/README.md)
+ties the excluded numeric, bind, join and forced-plan permutations to 128
+correctness tests and documents the nightly controls' attribution limits. It
+changes no code, tests or nightly routes.
+
 The [#841 manual shape sweep](docs/benchmarks/841-shape-sweeps/README.md)
 records native sort/window, set, UUID, recursive-control and sustained-reader
 experiments, including rejected inputs, capped attempts and attribution limits.

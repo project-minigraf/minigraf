@@ -1,0 +1,131 @@
+family,cell,file,test
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_reproduction_returns_float
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_groups_skip_nonnumbers_and_preserve_with_multiplicity
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_matches_sum_results_and_preserves_dropped_groups
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_matches_window_without_removing_nonnumeric_rows
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_recursive_rule_and_transaction_reads
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_cursor_spans_batches_without_dropping_groups
+numeric,N1 ordinary avg,tests/ordinary_avg_test.rs,ordinary_avg_pending_checkpointed_and_reopened_agree
+numeric,N1 ordinary avg,src/query/datalog/aggregate/tests.rs,ordinary_avg_uses_exact_unsaturated_totals_in_every_order
+numeric,N2 exact sums,src/query/datalog/aggregate/tests.rs,exact_sum_is_the_same_in_every_order
+numeric,N2 exact sums,src/query/datalog/aggregate/tests.rs,exact_sum_rounds_once
+numeric,N2 exact sums,src/query/datalog/aggregate/tests.rs,integer_sum_saturates_once
+numeric,N2 exact sums,src/query/datalog/aggregate/tests.rs,sliding_integer_sum_recovers_after_saturation
+numeric,N2 exact sums,src/query/datalog/aggregate/tests.rs,skipped_arguments_preserve_exact_sums_and_special_float_results
+numeric,N3 mixed sums and sum-distinct,tests/aggregate_value_handling_test.rs,sum_skips_nonnumbers_and_distinct_keeps_numeric_identity
+numeric,N3 mixed sums and sum-distinct,tests/aggregate_value_handling_test.rs,existing_nil_and_nonnumeric_groups_differ_from_no_matches
+numeric,N3 mixed sums and sum-distinct,tests/aggregate_value_handling_test.rs,with_groups_and_join_multiplicity_remain_intact
+numeric,N3 mixed sums and sum-distinct,tests/aggregate_value_handling_test.rs,rule_and_temporal_queries_use_the_same_aggregate_contract
+numeric,N4 extrema,tests/aggregate_value_handling_test.rs,extrema_accept_mixed_numbers_and_every_nonnil_class
+numeric,N4 extrema,src/query/datalog/aggregate/tests.rs,min_max_mixed_values_do_not_depend_on_order
+numeric,N4 extrema,src/query/datalog/aggregate/tests.rs,min_max_of_floats_use_the_total_order
+numeric,N4 extrema,src/query/engine/aggregate_order_tests.rs,certified_extrema_accept_mixed_scalars_and_preserve_dropped_groups
+numeric,N5 tuple fallbacks,src/query/engine/aggregate_order_tests.rs,generalized_unproved_tuple_components_stay_materialized
+numeric,N5 tuple fallbacks,src/query/engine/aggregate_order_tests.rs,generalized_constant_and_repeated_group_columns_keep_projection_and_sort_order
+numeric,N5 tuple fallbacks,src/query/engine/aggregate_order_tests.rs,generalized_hidden_groups_stream_but_keep_visible_tie_sorting
+numeric,N5 tuple fallbacks,src/query/engine/aggregate_order_tests.rs,certified_unsupported_argument_origins_and_payloads_keep_full_input
+numeric,N5 tuple fallbacks,src/query/engine/tests.rs,generalized_ordered_operator_uses_the_complete_tuple
+numeric,N6 signed zero and NaN incl. set elements,src/query/datalog/aggregate/tests.rs,exact_sum_signs_of_zero_and_specials
+numeric,N6 signed zero and NaN incl. set elements,tests/aggregate_window_rules_test.rs,min_max_of_signed_zeros_and_nan
+numeric,N6 signed zero and NaN incl. set elements,src/graph/types.rs,value_set_holds_one_nan
+numeric,N6 signed zero and NaN incl. set elements,src/graph/types.rs,value_set_keeps_negative_zero_whatever_the_order
+numeric,N6 signed zero and NaN incl. set elements,tests/set_values_test.rs,sets_with_a_zero_of_either_sign_are_equal
+numeric,N6 signed zero and NaN incl. set elements,tests/set_predicates_test.rs,nan_is_one_element
+numeric,N6 signed zero and NaN incl. set elements,tests/distinct_test.rs,typed_values_nan_and_sets_use_group_equality_and_canonical_output
+numeric,N6 signed zero and NaN incl. set elements,tests/plan_independence_test.rs,unify_negative_zero_equals_zero
+numeric,N6 signed zero and NaN incl. set elements,tests/plan_independence_test.rs,unify_int_never_equals_float
+numeric,N7 numeric answers under every forced plan,tests/ordinary_avg_test.rs,ordinary_avg_is_independent_of_plan_choices
+numeric,N7 numeric answers under every forced plan,tests/aggregate_value_handling_test.rs,value_handling_is_independent_of_join_and_negation_plans
+numeric,N7 numeric answers under every forced plan,tests/input_order_test.rs,ordered_results_are_independent_of_order_modes_and_physical_plans
+bind,B1 value/entity/expression slots,tests/prepared_statements_test.rs,prepare_and_execute_entity_slot
+bind,B1 value/entity/expression slots,tests/prepared_statements_test.rs,prepare_and_execute_value_slot
+bind,B1 value/entity/expression slots,tests/prepared_statements_test.rs,prepare_and_execute_expr_slot
+bind,B1 value/entity/expression slots,tests/prepared_statements_test.rs,prepare_and_execute_combined
+bind,B1 value/entity/expression slots,tests/prepared_statements_test.rs,plan_reused_across_executions
+bind,B1 value/entity/expression slots,src/query/datalog/prepared.rs,test_substitute_entity_slot
+bind,B1 value/entity/expression slots,src/query/datalog/prepared.rs,test_substitute_value_slot
+bind,B1 value/entity/expression slots,src/query/datalog/prepared.rs,test_substitute_expr_slot
+bind,B2 time slots,tests/prepared_statements_test.rs,prepare_and_execute_as_of_counter
+bind,B2 time slots,tests/prepared_statements_test.rs,prepare_and_execute_as_of_timestamp
+bind,B2 time slots,tests/prepared_statements_test.rs,prepare_and_execute_valid_at
+bind,B2 time slots,tests/prepared_statements_test.rs,prepare_and_execute_valid_at_any
+bind,B2 time slots,tests/prepared_statements_test.rs,prepared_literal_as_of_and_valid_at_are_kept
+bind,B2 time slots,src/query/datalog/prepared.rs,test_substitute_as_of_counter
+bind,B2 time slots,src/query/datalog/prepared.rs,test_substitute_as_of_timestamp
+bind,B2 time slots,src/query/datalog/prepared.rs,test_substitute_valid_at_timestamp
+bind,B2 time slots,src/query/datalog/prepared.rs,test_substitute_valid_at_any
+bind,B2 time slots,src/query/datalog/prepared.rs,test_substitute_keeps_literal_as_of_and_valid_at
+bind,B3 count slots,src/query/datalog/prepared.rs,limit_slot_takes_a_non_negative_integer
+bind,B3 count slots,src/query/datalog/prepared.rs,offset_slot_is_collected_and_resolved
+bind,B3 count slots,tests/limit_order_test.rs,limit_slot_errors
+bind,B3 count slots,tests/limit_order_test.rs,offset_slot_errors
+bind,B4 Entity versus Val(Ref) and rule arguments,tests/prepared_statements_test.rs,entity_and_ref_bind_values_fit_each_others_slots
+bind,B5 keyword/ref equality through a slot,tests/join_rules_test.rs,expression_equality_equates_keyword_and_ref
+bind,B5 keyword/ref equality through a slot,tests/join_rules_test.rs,expression_equality_equates_keyword_and_ref_after_checkpoint
+bind,B6 set binds,tests/prepared_statements_test.rs,set_in_operand_slot_reused_across_executions
+bind,B6 set binds,tests/prepared_statements_test.rs,set_in_value_slot_reused_across_executions
+bind,B6 set binds,tests/collect_set_test.rs,predicates_over_the_result_and_prepared_slots
+bind,B7 bind failures,tests/prepared_statements_test.rs,missing_bind_value_is_api_022_in_every_position
+bind,B7 bind failures,tests/prepared_statements_test.rs,attribute_slot_is_api_023_in_every_clause
+bind,B7 bind failures,tests/prepared_statements_test.rs,bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind
+bind,B8 prepared queries over snapshots and committed data,tests/aggregate_value_handling_test.rs,grouped_cursor_and_prepared_queries_survive_checkpoint_and_reopen
+bind,B8 prepared queries over snapshots and committed data,tests/ordinary_avg_test.rs,ordinary_avg_prepared_execute_and_cursor_use_numeric_count
+bind,B8 prepared queries over snapshots and committed data,tests/cursor_test.rs,prepared_cursor_pins_like_a_query_cursor
+bind,B8 prepared queries over snapshots and committed data,src/query/engine/order_tests.rs,prepared_queries_recheck_each_snapshot_and_rules_keep_original_strategy
+bind,B8 prepared queries over snapshots and committed data,src/query/engine/aggregate_order_tests.rs,generalized_prepared_tuple_proofs_follow_bindings_and_pinned_snapshots
+cross_kind,J1 entity probe,src/query/engine/tests.rs,planner_chooses_the_join
+cross_kind,J1 entity probe,src/query/engine/tests.rs,entity_probe_reuses_repeated_entities
+cross_kind,J1 entity probe,src/query/engine/tests.rs,cached_entity_probe_normalizes_keyword_and_ref
+cross_kind,J1 entity probe,src/query/engine/tests.rs,entity_probe_cache_evicts_without_losing_rows
+cross_kind,J2 value probe and hash fallback,src/query/engine/tests.rs,value_probe_reads_only_the_probed_keys
+cross_kind,J2 value probe and hash fallback,src/query/engine/tests.rs,value_probe_matches_as_joins_do
+cross_kind,J2 value probe and hash fallback,src/query/engine/tests.rs,value_probe_falls_back_mid_batch
+cross_kind,J3 hash joins and variable attributes,src/query/engine/tests.rs,engine_matches_executor_in_memory
+cross_kind,J3 hash joins and variable attributes,src/query/engine/tests.rs,engine_matches_executor_across_checkpoints_and_reopen
+cross_kind,J3 hash joins and variable attributes,src/query/engine/tests.rs,planner_builds_a_keyless_join_on_the_smaller_product
+cross_kind,J4 pending/committed/mixed sources,tests/live_reads_test.rs,committed_and_in_memory_histories_answer_alike
+cross_kind,J4 pending/committed/mixed sources,tests/collect_set_test.rs,pending_committed_and_mixed
+cross_kind,J4 pending/committed/mixed sources,src/graph/storage.rs,committed_and_pending_facts_combine_in_every_lookup
+cross_kind,J4 pending/committed/mixed sources,tests/plan_independence_test.rs,matrix_file_backed_after_checkpoint
+cross_kind,J5 per-fact pseudo metadata source,tests/pseudo_source_test.rs,nearest_earlier_pattern_in_the_text_is_the_source
+cross_kind,J5 per-fact pseudo metadata source,tests/pseudo_source_test.rs,every_fact_of_an_entity_through_a_variable_attribute
+cross_kind,J5 per-fact pseudo metadata source,tests/pseudo_source_test.rs,a_not_body_reads_the_outer_fact
+cross_kind,J5 per-fact pseudo metadata source,tests/pseudo_source_test.rs,or_branches_read_the_outer_fact_never_a_sibling
+cross_kind,J5 per-fact pseudo metadata source,tests/pseudo_source_test.rs,rule_bodies_are_closed
+cross_kind,J5 per-fact pseudo metadata source,tests/join_rules_test.rs,pseudo_attribute_pattern_never_replaces_a_value
+cross_kind,J6 keyword/ref join equality,tests/join_rules_test.rs,keyword_or_ref_follows_where_order_not_plan
+cross_kind,J6 keyword/ref join equality,tests/join_rules_test.rs,keyword_or_ref_same_order_both_ways
+cross_kind,J6 keyword/ref join equality,tests/join_rules_test.rs,keyword_or_ref_through_the_attribute_position
+cross_kind,J6 keyword/ref join equality,tests/join_rules_test.rs,keyword_or_ref_in_a_rule_query
+cross_kind,J6 keyword/ref join equality,tests/negation_equality_test.rs,imported_keyword_equals_ref_to_its_entity
+cross_kind,J6 keyword/ref join equality,tests/or_equality_test.rs,branch_ref_meets_outer_keyword
+cross_kind,J6 keyword/ref join equality,tests/or_equality_test.rs,branch_ref_meets_outer_keyword_after_checkpoint
+cross_kind,J7 float join equality,tests/join_rules_test.rs,float_join_pairs_zero_with_negative_zero
+cross_kind,J7 float join equality,tests/join_rules_test.rs,float_constant_matches_equal_floats_only_after_checkpoint
+cross_kind,J7 float join equality,tests/negation_equality_test.rs,imported_float_compares_by_ieee_equality_after_checkpoint
+cross_kind,J7 float join equality,tests/or_equality_test.rs,branch_float_meets_outer_float_by_ieee_equality
+cross_kind,J8 anti and union operators,src/query/engine/tests.rs,negation_matches_executor
+cross_kind,J8 anti and union operators,src/query/engine/tests.rs,disjunction_matches_executor
+cross_kind,J8 anti and union operators,src/query/engine/tests.rs,not_bodies_plan_as_clause_lists
+cross_kind,J8 anti and union operators,src/query/engine/tests.rs,planner_chooses_the_body_form
+cross_kind,J9 correlated rule bodies,tests/plan_independence_test.rs,or_branch_expression_reads_outer_variable_in_rule_body
+cross_kind,J9 correlated rule bodies,tests/plan_independence_test.rs,expression_reads_variable_bound_only_by_or_with_rules
+cross_kind,J9 correlated rule bodies,tests/join_rules_test.rs,expression_equality_in_rule_bodies_and_negation
+forced,F1 clause reordering on/off,src/query/datalog/optimizer.rs,test_reorder_off_keeps_source_order
+forced,F1 clause reordering on/off,src/query/datalog/optimizer.rs,test_reorder_switch_is_per_thread_and_restored
+forced,F1 clause reordering on/off,tests/limit_order_test.rs,order_by_on_committed_and_pending_facts
+forced,F1 clause reordering on/off,tests/window_functions_test.rs,bounded_rows_answer_bag_is_plan_independent
+forced,F1 clause reordering on/off,tests/set_values_test.rs,set_queries_are_plan_independent
+forced,F2 subplans Choose/Hash/Correlated,src/query/datalog/optimizer.rs,subplans_switch_is_per_thread_and_restored
+forced,F2 subplans Choose/Hash/Correlated,src/query/engine/tests.rs,repeated_join_variable_matches_single
+forced,F2 subplans Choose/Hash/Correlated,tests/distinct_test.rs,distinct_is_independent_of_join_and_subplan_choices
+forced,F3 input order on/off,tests/input_order_test.rs,ordered_results_are_independent_of_order_modes_and_physical_plans
+forced,F3 input order on/off,src/query/engine/order_tests.rs,forced_fallback_restores_sort_and_gives_the_same_ordered_list
+forced,F4 full matrix (reorder x subplans x execute/cursor),tests/plan_independence_test.rs,matrix_in_memory
+forced,F4 full matrix (reorder x subplans x execute/cursor),tests/plan_independence_test.rs,matrix_file_backed_after_checkpoint
+forced,F4 full matrix (reorder x subplans x execute/cursor),tests/plan_independence_test.rs,issue_596_example
+forced,F4 full matrix (reorder x subplans x execute/cursor),tests/property_test.rs,query_matches_reference_in_memory
+forced,F4 full matrix (reorder x subplans x execute/cursor),tests/property_test.rs,query_matches_reference_file_backed
+forced,F4 full matrix (reorder x subplans x execute/cursor),tests/model_based_test.rs,file_backed_db_matches_model
+forced,F5 join kind (no forcing hook),src/query/engine/order_tests.rs,value_probe_runtime_fallback_preserves_order_only_when_it_streams_the_outer
+forced,F5 join kind (no forcing hook),src/query/engine/order_tests.rs,filters_entity_probes_and_anti_joins_preserve_unchanged_order_columns
