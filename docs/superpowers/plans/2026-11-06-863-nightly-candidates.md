@@ -228,3 +228,23 @@ diff:
 ## Deviations
 
 (Recorded during implementation.)
+
+1. **Peak reads.** A cursor drops its stream on any pull that reaches past
+   the last row (a `next_batch(n)` larger than the rows left refills, gets
+   `None`, and drops it), not only on the pull after the last rows. Tests read
+   `__memory_peak` after requesting exactly the rows left.
+2. **Event fixtures use UUID refs**, as the #841 fixtures do. With keyword
+   entities the committed tree takes no bound-value AVET probe (#721 needs the
+   keyword naming the entity in the query).
+3. **N5 has no `HashJoin` check.** A rule query evaluates its strata at open;
+   those joins are not in the cursor's operator tree, so `Debug` cannot show
+   them. The events cover the path.
+4. **Bounds.** Charged bytes and file sizes are deterministic, so the
+   step-4 "25% margin" rule does not apply. Measured on the alt bench
+   (2026-11-06): N1 partitioned/full Window peak 0.907 (9,073,864 /
+   10,000,032 B); N3 heap/full total peak 0.51 (2,856,056 / 5,600,000 B); N6
+   growth over the last 128 held rounds 10,280,960 B, over the last 128 after
+   release 0 B. N1's planned `≤ full` would pass a whole-input regression
+   (1.0); it is a band [0.85, 0.95] instead. N3 keeps ≤ 0.6, N6 keeps ≤ 0.5.
+5. **Port check.** `shape_port_matches_the_database` (not ignored) checks
+   every shape against the database at small sizes on every hooks test run.

@@ -32,6 +32,8 @@ mod history;
 mod keyword_equality;
 #[path = "minigraf_bench/memory_meter.rs"]
 mod memory_meter;
+#[path = "minigraf_bench/nightly_candidates.rs"]
+mod nightly_candidates;
 #[path = "minigraf_bench/pagination.rs"]
 mod pagination;
 
@@ -2118,6 +2120,7 @@ criterion_group!(
     pagination::bench_pagination,
     operator_paths::bench_operator_paths,
     cursor_lifecycle::bench_cursor_lifecycle,
+    nightly_candidates::bench_nightly_candidates,
     bench_input_order,
     bench_ordered_groups,
     bench_partition_windows,
