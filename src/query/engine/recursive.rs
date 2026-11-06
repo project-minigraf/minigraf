@@ -267,6 +267,7 @@ fn choose_run<'a>(
         .pending_attribute_count(attribute, None, cost)?
         >= cost
     {
+        super::path_event("ancestor_alternative_selected");
         Ok(alternative)
     } else {
         Ok(run)

@@ -51,6 +51,30 @@ pub(crate) use plan::{Plan, plan, plan_rules, udfs};
 pub(crate) use recursive::Limits;
 use std::sync::Arc;
 
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    /// Path events of queries this thread ran (#863): which of the paths a
+    /// nightly acceptance test guards each query took. Counted only in test
+    /// and `test-hooks` builds; `path_event` is a no-op otherwise.
+    static PATH_EVENTS: std::cell::RefCell<std::collections::BTreeMap<&'static str, u64>> =
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// Count path event `name` on this thread (#863).
+#[inline]
+pub(crate) fn path_event(name: &'static str) {
+    #[cfg(any(test, feature = "test-hooks"))]
+    PATH_EVENTS.with(|m| *m.borrow_mut().entry(name).or_default() += 1);
+    #[cfg(not(any(test, feature = "test-hooks")))]
+    let _ = name;
+}
+
+/// This thread's path events since the last call, which clears them (#863).
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn take_path_events() -> std::collections::BTreeMap<&'static str, u64> {
+    PATH_EVENTS.with(|m| m.take())
+}
+
 #[cfg(test)]
 thread_local! {
     /// Queries this thread ran on the engine (tests check routing with it).
@@ -126,7 +150,7 @@ pub(crate) struct Stream {
     root: Box<dyn Operator>,
     /// The bytes the query's holders count (#549); each holder keeps its
     /// own reference, so the stream keeps one for tests only.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     meter: Arc<Meter>,
     /// The column of each `:find` element in the root's rows.
     find: Vec<usize>,
@@ -293,7 +317,7 @@ fn stream(
         ids,
         functions,
         root,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         meter,
         find,
         vars,
@@ -451,6 +475,16 @@ impl Stream {
     #[cfg(test)]
     pub(crate) fn meter(&self) -> &Arc<Meter> {
         &self.meter
+    }
+
+    /// The most bytes the query's holders counted at once, in total or for
+    /// one tracked op (`Window`, `Aggregate`, `IdSpace`) (#863).
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub(crate) fn memory_peak(&self, op: Option<&str>) -> usize {
+        match op {
+            Some(op) => self.meter.peak_for(op),
+            None => self.meter.peak(),
+        }
     }
 
     pub(crate) fn vars(&self) -> &[String] {
