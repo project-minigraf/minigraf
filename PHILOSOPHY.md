@@ -119,6 +119,10 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
   The approved #723 ancestor-join optimization raises it to 1,234 KiB:
   the measured increase is 2,720 bytes, avoiding a whole-attribute value
   map for selective in-memory recursion without adding a storage index.
+  The #862 limit keywords raise it to 1,240 KiB: `:query-memory-limit`,
+  limit bind slots and the `PreparedQuery` setters (#870) measured +672
+  bytes, 312 over the old gate, and the limit leaves room for
+  `:max-iterations` (#861), which is built the same way.
   The gate builds the x86_64 Linux CLI with cargo-dist's `dist` profile,
   the one releases ship. From v3.0.0 `dist` keeps release's full LTO
   rather than thin LTO, 7–31% smaller per target (#796; sizes per target

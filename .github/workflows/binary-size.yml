@@ -14,7 +14,7 @@ jobs:
     name: Check distribution binary size
     runs-on: ubuntu-latest
     env:
-      SIZE_LIMIT_BYTES: 1263616  # 1234 KiB — #277 error codes, #306 top-k, #723 ancestor join planning; see PHILOSOPHY.md §4
+      SIZE_LIMIT_BYTES: 1269760  # 1240 KiB — #277 error codes, #306 top-k, #723 ancestor join planning, #870/#861 query limit keywords; see PHILOSOPHY.md §4
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
