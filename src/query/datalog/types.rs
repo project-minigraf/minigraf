@@ -587,6 +587,9 @@ pub struct DatalogQuery {
     /// Per-query `:query-memory-limit`: replaces the executor's
     /// `query_memory_limit` for this query (#870).
     pub query_memory_limit: Option<Count>,
+    /// Per-query `:max-iterations`: replaces the executor's rounds per
+    /// stratum for this query (#861).
+    pub max_iterations: Option<Count>,
     /// `:limit`: the most rows the query returns (#306).
     pub limit: Option<Count>,
     /// `:offset`: the rows of the ordered answer skipped before `:limit`'s
@@ -601,7 +604,8 @@ pub struct DatalogQuery {
 }
 
 /// The value of `:limit`, `:offset` (#306), `:max-derived-facts`,
-/// `:max-results` or `:query-memory-limit` (#870): a literal, or a bind slot
+/// `:max-results`, `:query-memory-limit` (#870) or `:max-iterations` (#861):
+/// a literal, or a bind slot
 /// a prepared query fills.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Count {
@@ -634,6 +638,7 @@ impl DatalogQuery {
             max_derived_facts: None,
             max_results: None,
             query_memory_limit: None,
+            max_iterations: None,
             limit: None,
             offset: None,
             order_by: Vec::new(),
@@ -653,6 +658,7 @@ impl DatalogQuery {
             max_derived_facts: None,
             max_results: None,
             query_memory_limit: None,
+            max_iterations: None,
             limit: None,
             offset: None,
             order_by: Vec::new(),

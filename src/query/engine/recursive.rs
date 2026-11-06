@@ -32,12 +32,24 @@ use std::sync::Arc;
 /// The limits of one rule query (spec §3.5).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Limits {
+    /// Rounds of one stratum (#861).
     pub(crate) max_iterations: usize,
     /// Facts the rules may derive in total; stored facts and magic seeds do
     /// not count.
     pub(crate) max_derived_facts: usize,
     /// The most bytes the query may hold (#549).
     pub(crate) query_memory: usize,
+}
+
+impl Default for Limits {
+    /// The defaults of [`OpenOptions`](crate::OpenOptions).
+    fn default() -> Self {
+        Limits {
+            max_iterations: crate::query::datalog::evaluator::DEFAULT_MAX_ITERATIONS,
+            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            query_memory: usize::MAX,
+        }
+    }
 }
 
 /// What every body run reads.

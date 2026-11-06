@@ -20,7 +20,7 @@ code are not gated.
 | `max_derived_facts` | 1,000,000 | query text: `:max-derived-facts N` or `$slot`; code: `PreparedQuery::with_max_derived_facts` | Replaces the database value for that query, up or down; a keyword overrides the setter |
 | `max_results` (deprecated) | no limit of its own | query text: `:max-results N` or `$slot` | Alone, replaces the database value; with `:max-derived-facts`, the lower applies |
 | `query_memory_limit` | no limit | query text: `:query-memory-limit N` or `$slot` (not in `DEFAULTS`); code: `PreparedQuery::with_query_memory_limit` | Replaces the database value for that query, up or down; a keyword overrides the setter |
-| round limit | 1000, fixed | — (`OpenOptions::max_iterations` and `:max-iterations` planned, #861) | — |
+| `max_iterations` | 1,000,000 rounds per stratum | query text: `:max-iterations N` or `$slot`; code: `PreparedQuery::with_max_iterations` | Replaces the database value for that query, up or down; a keyword overrides the setter |
 | `transaction_chunk_facts` | 65,536 | — (per-transaction `TxOptions` planned, #871) | — |
 | `synchronous` | `SyncMode::Full` | — (per-transaction `TxOptions` planned, #871) | — |
 | `wal_checkpoint_threshold` | 1000 | open only | Database-wide checkpoint policy |
@@ -42,6 +42,7 @@ database's settings, as `Overridable` variants:
 | `Overridable::MaxDerivedFacts` | `:max-derived-facts` | yes |
 | `Overridable::MaxResults` | `:max-results` | yes |
 | `Overridable::QueryMemoryLimit` | `:query-memory-limit` | no |
+| `Overridable::MaxIterations` | `:max-iterations` | yes |
 
 The default, `Overridable::DEFAULTS`, allows every keyword that could
 override a setting before the list existed, so existing queries keep
@@ -79,7 +80,8 @@ let opts = OpenOptions::new().allow_overrides(
 ```
 
 `Overridable` is `#[non_exhaustive]`: later releases add variants for new
-keywords, such as `:max-iterations` (#861, in `DEFAULTS`).
+keywords. `MaxIterations` (#861) joined `DEFAULTS` in v3.0.0, so its keyword
+works without configuration.
 
 `QueryMemoryLimit` is left out of `DEFAULTS` because the keyword can raise the
 limit that keeps a query from exhausting memory. List it to let query text
@@ -97,13 +99,13 @@ db.execute("(query [:find ?x :where [?e :v ?x] :query-memory-limit 1048576])")?;
 
 ## Limit keywords
 
-`:max-derived-facts N`, `:max-results N` and `:query-memory-limit N` take an
-integer or a `$slot` that a prepared query fills with
+`:max-derived-facts N`, `:max-results N`, `:max-iterations N` and
+`:query-memory-limit N` take an integer or a `$slot` that a prepared query fills with
 `BindValue::Val(Value::Integer(n))`:
 
 | Keyword | Range | Out of range | Other value |
 |---|---|---|---|
-| `:max-derived-facts`, `:max-results` | `n >= 1` | `INT-014` | `INT-015` (literal), `API-024` (bind value) |
+| `:max-derived-facts`, `:max-results`, `:max-iterations` | `n >= 1` | `INT-014` | `INT-015` (literal), `API-024` (bind value) |
 | `:query-memory-limit` | `n >= 0` (bytes) | `INT-015` | `INT-015` (literal), `API-024` (bind value) |
 
 A missing bind value is `API-022`. `Minigraf::execute` and `Minigraf::query`
@@ -115,9 +117,17 @@ resolve. Uncheckpointed facts and returned entities need ids, so in practice
 only a query over checkpointed facts that returns values runs under 0; any
 other query fails at once with `QRY-012`.
 
+`max_iterations` counts the rounds of each stratum of a rule query
+separately, not their total. A stratum starts another round only after
+deriving a new fact, so its rounds never exceed the facts it derives plus one:
+at the defaults (both 1,000,000) `max_derived_facts` is reached first, and
+`max_iterations` matters only when lowered. `0` fails every rule query with
+`INT-020`.
+
 ## `PreparedQuery` setters
 
-`PreparedQuery::with_max_derived_facts(n)` and
+`PreparedQuery::with_max_derived_facts(n)`,
+`PreparedQuery::with_max_iterations(n)` and
 `PreparedQuery::with_query_memory_limit(bytes)` replace the database values
 that were copied when the query was prepared, for that statement. They are
 application code, so `allow_overrides` does not gate them. An allowed

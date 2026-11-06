@@ -82,9 +82,9 @@ pub struct PreparedQuery {
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<Functions>,
-    /// The database's `max_derived_facts` and `query_memory_limit`, or the
-    /// setters' values (#870).
-    limits: (usize, usize),
+    /// The database's `max_iterations`, `max_derived_facts` and
+    /// `query_memory_limit`, or the setters' values (#870, #861).
+    limits: crate::query::engine::Limits,
 }
 
 impl std::fmt::Debug for PreparedQuery {
@@ -114,7 +114,7 @@ impl PreparedQuery {
     /// assert_eq!(err.code(), "INT-020");
     /// ```
     pub fn with_max_derived_facts(mut self, n: usize) -> Self {
-        self.limits.0 = n;
+        self.limits.max_derived_facts = n;
         self
     }
 
@@ -135,7 +135,29 @@ impl PreparedQuery {
     /// assert_eq!(err.code(), "QRY-012");
     /// ```
     pub fn with_query_memory_limit(mut self, bytes: usize) -> Self {
-        self.limits.1 = bytes;
+        self.limits.query_memory = bytes;
+        self
+    }
+
+    /// Replace the database's
+    /// [`max_iterations`](crate::OpenOptions::max_iterations) for this
+    /// statement (#861). An allowed `:max-iterations` in the query still
+    /// overrides it.
+    ///
+    /// Not gated by [`OpenOptions::allow_overrides`](crate::OpenOptions::allow_overrides).
+    ///
+    /// ```
+    /// # use minigraf::Minigraf;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.execute("(transact [[:a :edge :b] [:b :edge :c]])").unwrap();
+    /// db.execute("(rule [(reach ?x ?y) [?x :edge ?y]])").unwrap();
+    /// db.execute("(rule [(reach ?x ?y) [?x :edge ?z] (reach ?z ?y)])").unwrap();
+    /// let pq = db.prepare("(query [:find ?x ?y :where (reach ?x ?y)])").unwrap();
+    /// let err = pq.with_max_iterations(1).execute(&[]).unwrap_err();
+    /// assert_eq!(err.code(), "INT-020");
+    /// ```
+    pub fn with_max_iterations(mut self, n: usize) -> Self {
+        self.limits.max_iterations = n;
         self
     }
 
@@ -207,7 +229,7 @@ impl PreparedQuery {
             self.rules.clone(),
             self.functions.clone(),
         );
-        executor.set_limits(self.limits.0, self.limits.1);
+        executor.set_limits(self.limits);
         executor.set_snapshot(snapshot);
         Ok((executor, DatalogCommand::Query(filled_query)))
     }
@@ -220,7 +242,7 @@ pub(crate) fn prepare_query(
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<Functions>,
-    limits: (usize, usize),
+    limits: crate::query::engine::Limits,
 ) -> Result<PreparedQuery> {
     validate_no_attribute_slots(&query)?;
     let slot_names = collect_slot_names(&query);
@@ -300,6 +322,7 @@ fn collect_slot_names(query: &DatalogQuery) -> Vec<String> {
         &query.max_derived_facts,
         &query.max_results,
         &query.query_memory_limit,
+        &query.max_iterations,
     ] {
         if let Some(Count::Slot(name)) = count {
             names.insert(name.clone());
@@ -395,6 +418,7 @@ fn substitute(
         (&mut query.max_derived_facts, ":max-derived-facts", 1),
         (&mut query.max_results, ":max-results", 1),
         (&mut query.query_memory_limit, ":query-memory-limit", 0),
+        (&mut query.max_iterations, ":max-iterations", 1),
     ] {
         if let Some(Count::Slot(name)) = target {
             *target = Some(resolve_limit_slot(name, option, min, bindings)?);

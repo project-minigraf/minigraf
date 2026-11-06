@@ -3849,8 +3849,8 @@ clause, `not`/`not-join`/`or`/`or-join`, a rule invocation, or `and`). The
 **Error text**: `duplicate {}`
 
 **Cause**: A query specified `:max-derived-facts`, `:max-results`,
-`:query-memory-limit`, `:limit`, `:offset`, `:order-by` or `:distinct` more
-than once.
+`:query-memory-limit`, `:max-iterations`, `:limit`, `:offset`, `:order-by` or
+`:distinct` more than once.
 
 **Resolution**:
 - Specify each query option at most once.
@@ -3859,8 +3859,9 @@ than once.
 
 **Error text**: `{} requires a value`
 
-**Cause**: A query option keyword (`:max-derived-facts`, `:max-results` or
-`:query-memory-limit`) was present with no following value.
+**Cause**: A query option keyword (`:max-derived-facts`, `:max-results`,
+`:query-memory-limit` or `:max-iterations`) was present with no following
+value.
 
 **Resolution**:
 - Supply an integer value or a `$slot` after the option keyword.
@@ -3869,8 +3870,9 @@ than once.
 
 **Error text**: `{} must be >= 1`
 
-**Cause**: `:max-derived-facts` or `:max-results` was given a value less
-than 1, as a literal or as a prepared query's bind value.
+**Cause**: `:max-derived-facts`, `:max-results` or `:max-iterations` (#861)
+was given a value less than 1, as a literal or as a prepared query's bind
+value.
 
 **Resolution**:
 - Use a value of 1 or greater.
@@ -3879,14 +3881,14 @@ than 1, as a literal or as a prepared query's bind value.
 
 **Error text**: `{} must be a non-negative integer`
 
-**Cause**: `:max-derived-facts` or `:max-results` was given a non-integer
-value, or `:query-memory-limit` was given a negative or non-integer value, as
+**Cause**: `:max-derived-facts`, `:max-results` or `:max-iterations` was
+given a non-integer value, or `:query-memory-limit` was given a negative or non-integer value, as
 a literal or as a prepared query's bind value. (Before #870 the text said
 "positive integer".)
 
 **Resolution**:
 - Supply an integer literal or a `$slot`: at least 1 for
-  `:max-derived-facts` and `:max-results`, at least 0 for
+  `:max-derived-facts`, `:max-results` and `:max-iterations`, at least 0 for
   `:query-memory-limit`.
 
 ### INT-016 (or)/(or-join) nested inside (not)/(not-join)
@@ -3941,8 +3943,9 @@ matches on `INT-019` for those errors must match the new codes.
 
 **Error text**: `evaluator: iteration or derived-fact limit exceeded: {}`
 
-**Cause**: The recursive rule evaluator exceeded its maximum iteration count
-(1,000), or its rules derived more facts in total than `max_derived_facts`
+**Cause**: A stratum of the query's rules was still deriving new facts after
+its round limit (`OpenOptions::max_iterations` or `:max-iterations`, default
+1,000,000, counted per stratum; 1,000 and fixed before v3.0.0, #861), or its rules derived more facts in total than `max_derived_facts`
 allows (`OpenOptions::max_derived_facts` or `:max-derived-facts`, default
 1,000,000; the database's own facts do not count) — guards against infinite
 recursion/cycles or runaway-generating rules. `max_results` / `:max-results`
@@ -3956,8 +3959,10 @@ exceeded`. From v3.0.0 there is one limit, on the total (#553).
 **Resolution**:
 - Check the rule for an unintended cycle (e.g. `(ancestor ?x ?y) [?x
   :parent ?y]` combined with a cyclic `:parent` graph). Raise
-  `max_derived_facts` (or `:max-derived-facts` on the query) if the workload
-  is legitimately large.
+  `max_derived_facts` (or `:max-derived-facts` on the query), or for the
+  round message `max_iterations` (or `:max-iterations`), if the workload is
+  legitimately large. Before #861 the round message read `Possible infinite
+  recursion or cycle in rules.`
 
 ### INT-021 Evaluator: unsupported where-clause in evaluate_rule
 

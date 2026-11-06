@@ -26,14 +26,22 @@ pub enum Overridable {
     /// (#870). Not in [`DEFAULTS`](Self::DEFAULTS): query text can raise the
     /// limit that keeps it from exhausting memory.
     QueryMemoryLimit,
+    /// `:max-iterations N`, which overrides
+    /// [`OpenOptions::max_iterations`](crate::OpenOptions::max_iterations)
+    /// (#861).
+    MaxIterations,
 }
 
 impl Overridable {
     /// The list a database uses when
     /// [`OpenOptions::allow_overrides`](crate::OpenOptions::allow_overrides)
-    /// is not set: every keyword that could override a setting before #862.
-    pub const DEFAULTS: &'static [Overridable] =
-        &[Overridable::MaxDerivedFacts, Overridable::MaxResults];
+    /// is not set: every keyword that could override a setting before #862,
+    /// and `:max-iterations` (#861).
+    pub const DEFAULTS: &'static [Overridable] = &[
+        Overridable::MaxDerivedFacts,
+        Overridable::MaxResults,
+        Overridable::MaxIterations,
+    ];
 
     /// The query keyword this variant gates, e.g. `":max-derived-facts"`.
     pub fn keyword(self) -> &'static str {
@@ -41,6 +49,7 @@ impl Overridable {
             Overridable::MaxDerivedFacts => ":max-derived-facts",
             Overridable::MaxResults => ":max-results",
             Overridable::QueryMemoryLimit => ":query-memory-limit",
+            Overridable::MaxIterations => ":max-iterations",
         }
     }
 
@@ -49,6 +58,7 @@ impl Overridable {
             Overridable::MaxDerivedFacts => "MaxDerivedFacts",
             Overridable::MaxResults => "MaxResults",
             Overridable::QueryMemoryLimit => "QueryMemoryLimit",
+            Overridable::MaxIterations => "MaxIterations",
         }
     }
 }
@@ -64,6 +74,7 @@ pub(crate) fn check_overrides(query: &DatalogQuery, allowed: &[Overridable]) -> 
             query.max_derived_facts.is_some(),
         ),
         (Overridable::MaxResults, query.max_results.is_some()),
+        (Overridable::MaxIterations, query.max_iterations.is_some()),
         (
             Overridable::QueryMemoryLimit,
             query.query_memory_limit.is_some(),
@@ -110,7 +121,7 @@ mod tests {
     fn checks_in_a_fixed_order() {
         let q = query(
             "(query [:find ?e :where [?e :a ?v] :query-memory-limit 9 \
-             :max-results 5 :max-derived-facts 5])",
+             :max-iterations 3 :max-results 5 :max-derived-facts 5])",
         );
         let first = |allowed: &[Overridable]| {
             crate::MinigrafError::from(check_overrides(&q, allowed).expect_err("refused"))
@@ -118,6 +129,10 @@ mod tests {
         };
         assert!(first(&[]).contains(":max-derived-facts"));
         assert!(first(&[Overridable::MaxDerivedFacts]).contains(":max-results"));
+        assert!(
+            first(&[Overridable::MaxDerivedFacts, Overridable::MaxResults])
+                .contains(":max-iterations")
+        );
         let last = first(Overridable::DEFAULTS);
         assert!(last.contains(":query-memory-limit"));
         assert!(last.contains("Overridable::QueryMemoryLimit"));

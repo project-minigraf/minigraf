@@ -21,7 +21,7 @@ use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
 use crate::overrides::{Overridable, check_overrides};
-use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
+use crate::query::datalog::evaluator::{DEFAULT_MAX_DERIVED_FACTS, DEFAULT_MAX_ITERATIONS};
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::{Functions, UdfError, udf_aggregate, udf_predicate};
@@ -149,6 +149,14 @@ pub struct OpenOptions {
         note = "use `max_derived_facts`; the lower of the two applies"
     )]
     pub max_results: usize,
+    /// The most rounds one stratum of a rule query may run (#861). Defaults
+    /// to 1,000,000, the same as [`max_derived_facts`](Self::max_derived_facts):
+    /// a stratum only starts another round after deriving a new fact, so at
+    /// the defaults the derived-facts limit is reached first. A stratum
+    /// still deriving facts after this many rounds fails with `INT-020`;
+    /// `0` fails every rule query. Overridden per query by
+    /// `:max-iterations N`.
+    pub max_iterations: usize,
     /// Open even when the filesystem cannot lock files at all.
     ///
     /// Defaults to `false`, which refuses to open rather than run without the
@@ -234,6 +242,7 @@ impl Default for OpenOptions {
             page_cache_size: 256,
             max_derived_facts: DEFAULT_MAX_DERIVED_FACTS,
             max_results: usize::MAX,
+            max_iterations: DEFAULT_MAX_ITERATIONS,
             allow_unlocked: false,
             synchronous: SyncMode::Full,
             read_only: false,
@@ -294,6 +303,14 @@ impl OpenOptions {
         self
     }
 
+    /// Set the most rounds one stratum of a rule query may run. See
+    /// [`OpenOptions::max_iterations`].
+    #[must_use]
+    pub fn max_iterations(mut self, n: usize) -> Self {
+        self.max_iterations = n;
+        self
+    }
+
     /// Set the most bytes one query may hold. See
     /// [`OpenOptions::query_memory_limit`].
     #[must_use]
@@ -310,11 +327,15 @@ impl OpenOptions {
         self
     }
 
-    /// The limit rule queries run with: the lower of `max_derived_facts` and
-    /// its deprecated alias `max_results` (#553).
+    /// The limits queries run with; the derived-facts limit is the lower of
+    /// `max_derived_facts` and its deprecated alias `max_results` (#553).
     #[allow(deprecated)]
-    fn derived_fact_limit(&self) -> usize {
-        self.max_derived_facts.min(self.max_results)
+    fn limits(&self) -> crate::query::engine::Limits {
+        crate::query::engine::Limits {
+            max_iterations: self.max_iterations,
+            max_derived_facts: self.max_derived_facts.min(self.max_results),
+            query_memory: self.query_memory_limit,
+        }
     }
 
     /// Set the query keywords that may override this database's settings.
@@ -985,10 +1006,7 @@ impl Minigraf {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(
-            self.inner.options.derived_fact_limit(),
-            self.inner.options.query_memory_limit,
-        );
+        executor.set_limits(self.inner.options.limits());
         executor.set_snapshot(snapshot);
         executor
     }
@@ -1410,10 +1428,7 @@ impl Minigraf {
             self.inner.fact_storage.clone(),
             self.inner.rules.clone(),
             self.inner.functions.clone(),
-            (
-                self.inner.options.derived_fact_limit(),
-                self.inner.options.query_memory_limit,
-            ),
+            self.inner.options.limits(),
         )
     }
 
@@ -1828,10 +1843,7 @@ impl<'a> WriteTransaction<'a> {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(
-            self.inner.options.derived_fact_limit(),
-            self.inner.options.query_memory_limit,
-        );
+        executor.set_limits(self.inner.options.limits());
         executor.set_snapshot(self.read_snapshot()?);
         executor.execute(cmd)
     }
@@ -1967,10 +1979,7 @@ impl<'a> WriteTransaction<'a> {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(
-            self.inner.options.derived_fact_limit(),
-            self.inner.options.query_memory_limit,
-        );
+        executor.set_limits(self.inner.options.limits());
         executor.execute(DatalogCommand::Rule(rule))
     }
 
@@ -2729,6 +2738,7 @@ mod tests {
             page_cache_size: 256,
             max_derived_facts: 100_000,
             max_results: 1_000_000,
+            max_iterations: 1_000,
             allow_unlocked: false,
             synchronous: SyncMode::Full,
             read_only: false,
@@ -3355,12 +3365,13 @@ mod tests {
     fn max_derived_facts_alone_raises_the_limit_above_the_default() {
         // The alias has no limit of its own unless set (#553).
         let opts = OpenOptions::default().max_derived_facts(2_000_000);
-        assert_eq!(opts.derived_fact_limit(), 2_000_000);
-        assert_eq!(OpenOptions::default().derived_fact_limit(), 1_000_000);
+        assert_eq!(opts.limits().max_derived_facts, 2_000_000);
+        assert_eq!(OpenOptions::default().limits().max_derived_facts, 1_000_000);
         assert_eq!(
             OpenOptions::default()
                 .max_results(2_000_000)
-                .derived_fact_limit(),
+                .limits()
+                .max_derived_facts,
             1_000_000,
             "the alias does not raise the limit"
         );
