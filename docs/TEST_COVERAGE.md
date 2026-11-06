@@ -641,14 +641,15 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
   - The forms next to them still run: an option followed by a keyword, `(- ?n 1)`, a zero-argument rule.
   - Thirteen new `tests/grammar/invalid/syntax/` fixtures.
 - **Grammar page** (`tests/grammar_doc.rs`, 10 tests; #643): `docs/GRAMMAR.md` matches the EBNF rendered from `tests/grammar/grammar.pest`. Each rendering rule is checked on a small grammar: sequence, choice and grouping, names and builtins, `SOI`/`EOI` dropped, lookaheads as comments, bounded repetition, quoting, token marks, section titles, line breaking, the whitespace note and the comment note it joins.
+- **`OpenOptions::allow_overrides`** (#869; `tests/allow_overrides_test.rs`, 6 tests; `src/overrides.rs`, 2 unit tests; 1 doc test on `OpenOptions::allow_overrides`): the defaults allow `:max-derived-facts` and `:max-results`; an empty list refuses each with `API-025` from `execute`, `query`, `prepare` and `WriteTransaction::execute`, and queries without them still run; a list replaces the defaults; a refused statement leaves the write transaction usable; `DEFAULTS` read back, chained and with duplicates; the list holds on a file database and is not persisted; `:max-derived-facts` is reported first when both keywords are refused. API-025's registration and documentation are checked by the registry tests.
 
 ## Browser and WASI
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 61 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 62 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
   - Three committed-memory-backend input-order fixtures: scalar Sort omission, streaming counts with Boolean/float representatives and mixed numeric group order, and partition windows preserving float edges and numeric group classes (#641).
-  - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
+  - Twenty-six for `BrowserDb`, including IndexedDB persistence, the default `allow_overrides` list (#869), the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
   - Fifteen for `BrowserDb` user functions (#180), below.

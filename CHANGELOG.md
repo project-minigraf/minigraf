@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`OpenOptions::allow_overrides`** (#869, part of #862): the embedder lists, as `Overridable` variants, the query keywords that may override the database's settings. The default, `Overridable::DEFAULTS` (`MaxDerivedFacts`, `MaxResults`), allows every keyword that could do so before, so no query changes. A query using a keyword the list leaves out is refused with the new **API-025** before it runs, from `execute`, `query`, `prepare` and `WriteTransaction::execute`; the list replaces the defaults rather than adding to them, and is not stored in the file. `BrowserDb` takes no options and uses the defaults. `Overridable` is `#[non_exhaustive]`.
+
 ### Changed
 
 - **Ordinary average** (#777): `(avg ?v)` no longer raises PRS-027. Grouped and ungrouped queries use the same numeric population and arithmetic as window `avg`: skip nil and nonnumeric values, sum exactly, round the total once to Float, then divide by the numeric count. Integer totals are not saturated. Results are Float, or nil for an existing group without numbers; no matching rows yields no rows. The total can overflow before division, and division rounds separately. Existing window behavior is unchanged. Retained exact-sum allocations for ordinary `sum` and `avg` are now charged to the query memory limit.
@@ -30,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Configuration reference** (#869): [docs/CONFIGURATION.md](docs/CONFIGURATION.md) lists every `OpenOptions` setting, where else it can be changed, and how `allow_overrides` gates query text.
 - **Heavy WAL entry replay test** (#865): a nightly acceptance test writes one WAL entry of 1,000,000 facts, reopens without a checkpoint and checks every replayed fact through entity, attribute and attribute-value lookups, then checkpoints, verifies and reopens. It passes; no production change.
 - **Failure-path correctness map** (#843): [X08's correctness-target map](docs/benchmarks/843-failure-correctness/README.md) ties invalid bounds, windows and binds, callback errors, exhaustion, corrupt pages, failed-handle retry, v1–v6 refusal and heavy single-entry WAL replay to 138 named tests at a pinned v3 revision, with their error and data invariants, and limits the C08 repair and C30 rollback claims to their fixtures. Gaps found: heavy WAL replay through `Minigraf::open` (#865) and the recursion round bound (#861). X08 stays excluded. No production, test, public API or nightly-route change.
 

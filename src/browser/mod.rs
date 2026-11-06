@@ -121,6 +121,11 @@ impl BrowserDb {
     #[wasm_bindgen(js_name = execute)]
     pub async fn execute(&self, datalog: String) -> Result<String, JsValue> {
         let cmd = parse_datalog_command(&datalog).map_err(to_js_error)?;
+        // BrowserDb takes no options: the default override list (#869).
+        if let DatalogCommand::Query(q) = &cmd {
+            crate::overrides::check_overrides(q, crate::Overridable::DEFAULTS)
+                .map_err(to_js_error)?;
+        }
 
         // Peek at the discriminant before consuming `cmd`.
         let is_read = matches!(cmd, DatalogCommand::Query(_) | DatalogCommand::Rule(_));
@@ -318,6 +323,7 @@ impl BrowserDb {
             DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api006),
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api007),
         };
+        crate::overrides::check_overrides(&query, crate::Overridable::DEFAULTS)?;
         let inner = self.inner.borrow();
         // The limits `query` runs with (`DatalogExecutor`'s defaults).
         crate::query::datalog::prepared::prepare_query(
@@ -337,7 +343,10 @@ impl BrowserDb {
 
         let cmd = parse_datalog_command(datalog)?;
         match &cmd {
-            DatalogCommand::Query(q) => crate::query::datalog::prepared::reject_unbound_slots(q)?,
+            DatalogCommand::Query(q) => {
+                crate::overrides::check_overrides(q, crate::Overridable::DEFAULTS)?;
+                crate::query::datalog::prepared::reject_unbound_slots(q)?
+            }
             DatalogCommand::Transact(_) => bail_coded!(ErrorCode::Api012, "transact"),
             DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
@@ -707,6 +716,26 @@ mod tests {
                 text.starts_with(code),
                 "rejection does not start with {code}"
             );
+        }
+    }
+
+    // #869: BrowserDb takes no options, so the default override list applies.
+    #[wasm_bindgen_test]
+    async fn default_override_keywords_still_run() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        db.execute("(transact [[:a :edge :b]])".to_string())
+            .await
+            .expect("transact");
+        db.execute("(rule [(reach ?x ?y) [?x :edge ?y]])".to_string())
+            .await
+            .expect("rule");
+        for q in [
+            "(query [:find ?x ?y :where (reach ?x ?y) :max-derived-facts 10])",
+            "(query [:find ?x ?y :where (reach ?x ?y) :max-results 10])",
+        ] {
+            let r = db.execute(q.to_string()).await.expect("query");
+            let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+            assert_eq!(v["results"].as_array().unwrap().len(), 1);
         }
     }
 

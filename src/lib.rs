@@ -90,6 +90,7 @@ pub(crate) mod graph;
 /// Build a new database from explicit fact records: [`LogWriter`].
 #[cfg(not(target_arch = "wasm32"))]
 pub mod log_writer;
+mod overrides;
 pub(crate) mod query;
 /// Interactive REPL for exploring a [`Minigraf`] database from the command line.
 pub mod repl;
@@ -107,6 +108,7 @@ pub mod browser;
 pub use db::OpenOptionsWithPath;
 pub use db::{IntegrityReport, Minigraf, OpenOptions, SyncMode, WriteTransaction};
 pub use error::{ErrorCategory, MinigrafError};
+pub use overrides::Overridable;
 pub use query::datalog::functions::UdfError;
 pub use repl::Repl;
 

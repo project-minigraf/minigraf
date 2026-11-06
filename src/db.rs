@@ -20,6 +20,7 @@ use crate::error::{ErrorCode, MinigrafError, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
+use crate::overrides::{Overridable, check_overrides};
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
@@ -213,6 +214,16 @@ pub struct OpenOptions {
     /// databases never write chunks; a statement is still read a chunk at a
     /// time.
     pub transaction_chunk_facts: usize,
+    /// The query keywords that may override this database's settings (#862).
+    /// Defaults to [`Overridable::DEFAULTS`], every keyword that could
+    /// override a setting before the list existed.
+    ///
+    /// A query using a keyword the list leaves out fails with `API-025`
+    /// before it runs, from [`Minigraf::execute`], [`Minigraf::query`],
+    /// [`Minigraf::prepare`] and [`WriteTransaction::execute`]. The list is
+    /// not stored in the file: each open sets it. See
+    /// [`OpenOptions::allow_overrides`](Self::allow_overrides) for setting it.
+    pub allow_overrides: Vec<Overridable>,
 }
 
 #[allow(deprecated)] // `max_results`, kept as an alias until it is removed
@@ -228,6 +239,7 @@ impl Default for OpenOptions {
             read_only: false,
             query_memory_limit: usize::MAX,
             transaction_chunk_facts: statement::DEFAULT_TX_CHUNK_FACTS,
+            allow_overrides: Overridable::DEFAULTS.to_vec(),
         }
     }
 }
@@ -303,6 +315,36 @@ impl OpenOptions {
     #[allow(deprecated)]
     fn derived_fact_limit(&self) -> usize {
         self.max_derived_facts.min(self.max_results)
+    }
+
+    /// Set the query keywords that may override this database's settings.
+    /// See [`OpenOptions::allow_overrides`](Self::allow_overrides) (the field).
+    ///
+    /// The list **replaces** the defaults rather than adding to them: an
+    /// empty list refuses every override keyword with `API-025`, and listing
+    /// only one refuses the others. To add to the defaults, chain them:
+    ///
+    /// ```
+    /// use minigraf::{OpenOptions, Overridable};
+    ///
+    /// // Refuse every query keyword that overrides a limit.
+    /// let locked = OpenOptions::new().allow_overrides([]).open_memory().unwrap();
+    /// locked.execute("(rule [(r ?x) [?x :a 1]])").unwrap();
+    /// let err = locked
+    ///     .execute("(query [:find ?x :where (r ?x) :max-derived-facts 10])")
+    ///     .unwrap_err();
+    /// assert_eq!(err.code(), "API-025");
+    ///
+    /// // The defaults plus anything else (duplicates have no effect).
+    /// let opts = OpenOptions::new().allow_overrides(
+    ///     Overridable::DEFAULTS.iter().copied().chain([Overridable::MaxResults]),
+    /// );
+    /// assert!(opts.allow_overrides.contains(&Overridable::MaxDerivedFacts));
+    /// ```
+    #[must_use]
+    pub fn allow_overrides(mut self, list: impl IntoIterator<Item = Overridable>) -> Self {
+        self.allow_overrides = list.into_iter().collect();
+        self
     }
 
     /// Open even when the filesystem cannot lock files. See
@@ -758,6 +800,7 @@ impl Minigraf {
         let cmd = parse_datalog_command(input)?;
         match cmd {
             DatalogCommand::Query(ref q) => {
+                check_overrides(q, &self.inner.options.allow_overrides)?;
                 reject_unbound_slots(q)?;
                 // Read-only: no lock needed
                 let snapshot = self.inner.fact_storage.snapshot()?;
@@ -979,7 +1022,10 @@ impl Minigraf {
         }
         let cmd = parse_datalog_command(input)?;
         match &cmd {
-            DatalogCommand::Query(q) => reject_unbound_slots(q)?,
+            DatalogCommand::Query(q) => {
+                check_overrides(q, &self.inner.options.allow_overrides)?;
+                reject_unbound_slots(q)?
+            }
             DatalogCommand::Transact(_) => bail_coded!(ErrorCode::Api012, "transact"),
             DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
@@ -1357,6 +1403,7 @@ impl Minigraf {
                 bail_coded!(ErrorCode::Api007);
             }
         };
+        check_overrides(&query, &self.inner.options.allow_overrides)?;
 
         prepare_query(
             query,
@@ -1767,6 +1814,7 @@ impl<'a> WriteTransaction<'a> {
                 Err(err_coded!(ErrorCode::Api002))
             }
             DatalogCommand::Query(ref q) => {
+                check_overrides(q, &self.inner.options.allow_overrides)?;
                 reject_unbound_slots(q)?;
                 self.execute_read_command(cmd)
             }
@@ -2686,6 +2734,7 @@ mod tests {
             read_only: false,
             query_memory_limit: usize::MAX,
             transaction_chunk_facts: 65_536,
+            allow_overrides: Overridable::DEFAULTS.to_vec(),
         };
         let db = Minigraf::open_with_options(&path, opts).unwrap();
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);

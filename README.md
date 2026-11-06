@@ -318,6 +318,8 @@ File-backed databases limit string values to 4,068 bytes (`WAL-003`). In-memory 
 
 **Durability tuning:** every write is `fsync`'d immediately by default (`SyncMode::Full`). Bulk loaders/migrations that can safely re-run from a checkpoint watermark on failure can trade that for throughput with `OpenOptions::new().synchronous(SyncMode::Normal)` — `checkpoint()` still fsyncs unconditionally in both modes. See the [Performance Tuning](https://project-minigraf.github.io/minigraf-docs/latest/performance-tuning/#configuration-knobs) for the full tradeoff and the write-batching pattern that pairs with it.
 
+**Configuration:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md) lists every `OpenOptions` setting, which ones query text can override, and how `OpenOptions::allow_overrides` lets the embedder refuse those keywords (`API-025`, #869).
+
 **Running Minigraf where data loss matters:** [docs/DURABILITY.md](docs/DURABILITY.md) covers what survives a process crash and a power loss, recovery on open, supported filesystems and containers, backups and restores, `verify()` and `rebuild_indexes()`, upgrading from v2.x, and which errors mean retry, reopen or restore.
 
 ## Contributing

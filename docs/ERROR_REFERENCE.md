@@ -239,6 +239,7 @@ with no `CodedError` anywhere in its chain.
 | API-022 | Missing bind value for slot | Database API |
 | API-023 | Bind slot not permitted in attribute position | Database API |
 | API-024 | Bind slot type mismatch | Database API |
+| API-025 | Query option override not allowed | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -3650,6 +3651,18 @@ ValueSet::new(vec![inner]) // API-021
 - Pass the kind the position takes. `TxCount` and `Timestamp` are only for `:as-of`/`:valid-at`; a number compared in a pattern or expression is a `Val`.
 
 **Scenario**: `:as-of $tx` is bound to `Val(Integer(5))` instead of `TxCount(5)`.
+
+### API-025 Query option override not allowed
+
+**Error text**: `query option {} is not allowed on this database; OpenOptions::allow_overrides does not list Overridable::{}`
+
+**Cause**: The query used a keyword that overrides one of the database's settings, such as `:max-derived-facts` or `:max-results`, and the embedder's `OpenOptions::allow_overrides` list leaves that keyword out. The query is refused before it runs, by `execute`, `query`, `prepare` and `WriteTransaction::execute`; a refused statement in a `WriteTransaction` leaves the transaction usable. When a query uses several refused keywords, the message names the first in the order `:max-derived-facts`, `:max-results`. The list is not stored in the file: each open sets it, and the default (`Overridable::DEFAULTS`) allows both keywords.
+
+**Resolution**:
+- Remove the keyword from the query and rely on the database's own setting.
+- Or, if the embedder means to let queries override it, add the `Overridable` variant to `OpenOptions::allow_overrides`. The list replaces the defaults; chain `Overridable::DEFAULTS` to add to them.
+
+**Scenario**: An application opens its database with `OpenOptions::new().allow_overrides([])` so that query text from its users cannot raise `max_derived_facts`; a user query ending in `:max-derived-facts 100000000` is refused with API-025.
 
 ---
 

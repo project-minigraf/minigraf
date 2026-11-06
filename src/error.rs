@@ -278,6 +278,7 @@ pub(crate) enum ErrorCode {
     Api022,
     Api023,
     Api024,
+    Api025,
     Int001,
     Int002,
     Int003,
@@ -1662,6 +1663,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api025,
+        "API-025",
+        "query option {} is not allowed on this database; OpenOptions::allow_overrides does not list Overridable::{}",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -2502,6 +2509,7 @@ mod tests {
                 | ErrorCode::Api022
                 | ErrorCode::Api023
                 | ErrorCode::Api024
+                | ErrorCode::Api025
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2781,6 +2789,7 @@ mod tests {
             ErrorCode::Api022,
             ErrorCode::Api023,
             ErrorCode::Api024,
+            ErrorCode::Api025,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,
