@@ -1,0 +1,1390 @@
+{
+  "targets": 138,
+  "missing": [],
+  "cells": {
+    "bind: B1 bind slots outside prepare (API-010)": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "bind: B2 missing, attribute-position and wrong-kind binds (API-022/023/024)": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "bind: B3 count slot values": {
+      "tests": 4,
+      "needs_test_hooks": 2
+    },
+    "callback: U1 failing predicate (QRY-014)": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "callback: U2 failing aggregate (QRY-014)": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "callback: U3 late callback errors not hidden by limits or ordered plans": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "callback: U4 error names the function and its message": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "corrupt: C1 page checksum, id and generation (STG-029/030/031)": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "corrupt: C2 meta pages and short files (STG-032/033/044/045)": {
+      "tests": 7,
+      "needs_test_hooks": 0
+    },
+    "corrupt: C3 trees, dictionary and free list (STG-035/036, INT-049)": {
+      "tests": 5,
+      "needs_test_hooks": 0
+    },
+    "corrupt: C4 verify and repair of arbitrary damage": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "legacy: V1 v1-v6 files refused (STG-028)": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "legacy: V2 unknown versions (STG-006)": {
+      "tests": 2,
+      "needs_test_hooks": 0
+    },
+    "limits: L1 query memory exhaustion (QRY-012)": {
+      "tests": 8,
+      "needs_test_hooks": 1
+    },
+    "limits: L2 rule exhaustion (INT-020)": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "limits: L3 invalid query options": {
+      "tests": 7,
+      "needs_test_hooks": 0
+    },
+    "limits: L4 query validation codes (QRY-007/010/011/013/015)": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "limits: L5 parser codes and grammar": {
+      "tests": 7,
+      "needs_test_hooks": 0
+    },
+    "limits: L6 API codes on handles (API-014)": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "limits: L7 code registry matches ERROR_REFERENCE.md": {
+      "tests": 2,
+      "needs_test_hooks": 0
+    },
+    "retry: R1 failed checkpoint refuses retry (STG-046)": {
+      "tests": 7,
+      "needs_test_hooks": 0
+    },
+    "retry: R2 failed WAL append refuses writes (WAL-007)": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "size: S1 over-bound value, ident and set rejected (WAL-003)": {
+      "tests": 7,
+      "needs_test_hooks": 0
+    },
+    "size: S2 exact bound accepted and read back": {
+      "tests": 2,
+      "needs_test_hooks": 0
+    },
+    "size: S3 a rejected write changes nothing": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "size: S4 parser length caps (PRS-007/008/009/074)": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "size: S5 in-memory databases have no file bound": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "wal_heavy: H1 WAL entry of more than 1,000,000 facts (reader)": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "wal_heavy: H2 damaged entry bounds end replay": {
+      "tests": 2,
+      "needs_test_hooks": 0
+    },
+    "wal_heavy: H3 million-fact statements commit as checkpoints (ignored; nightly smoke.yml)": {
+      "tests": 2,
+      "needs_test_hooks": 2
+    },
+    "window: W1 empty or inverted window (API-019)": {
+      "tests": 6,
+      "needs_test_hooks": 0
+    },
+    "window: W2 two windows for one fact in one transaction (API-011)": {
+      "tests": 4,
+      "needs_test_hooks": 0
+    },
+    "window: W3 write ordering: last statement wins": {
+      "tests": 3,
+      "needs_test_hooks": 0
+    },
+    "window: W4 log-writer order and ambiguity (API-015/016/019/020)": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    },
+    "window: W5 error phase order within a statement": {
+      "tests": 1,
+      "needs_test_hooks": 0
+    }
+  },
+  "checked": [
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "tests/error_codes_wal_test.rs",
+      "test": "wal_size_limit_oversized_fact_returns_wal_003",
+      "listed_as": "tests/error_codes_wal_test.rs wal_size_limit_oversized_fact_returns_wal_003",
+      "tags": "size_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "tests/edge_cases_test.rs",
+      "test": "test_oversized_fact_rejected_at_insertion_file_backed",
+      "listed_as": "tests/edge_cases_test.rs test_oversized_fact_rejected_at_insertion_file_backed",
+      "tags": "size_bound",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "tests/edge_cases_test.rs",
+      "test": "test_oversized_fact_rejected_via_write_transaction",
+      "listed_as": "tests/edge_cases_test.rs test_oversized_fact_rejected_via_write_transaction",
+      "tags": "size_bound",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "tests/set_values_test.rs",
+      "test": "an_oversized_set_is_wal_003",
+      "listed_as": "tests/set_values_test.rs an_oversized_set_is_wal_003",
+      "tags": "size_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "src/wal.rs",
+      "test": "test_wal_fact_size_limit_error_code_is_wal_003",
+      "listed_as": "lib wal::tests::test_wal_fact_size_limit_error_code_is_wal_003",
+      "tags": "retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "src/wal.rs",
+      "test": "test_wal_ident_size_limit_is_wal_003",
+      "listed_as": "lib wal::tests::test_wal_ident_size_limit_is_wal_003",
+      "tags": "retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S1 over-bound value, ident and set rejected (WAL-003)",
+      "file": "src/wal.rs",
+      "test": "check_fact_size_checks_sets",
+      "listed_as": "lib wal::tests::check_fact_size_checks_sets",
+      "tags": "size_bound size_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S2 exact bound accepted and read back",
+      "file": "tests/multi_value_test.rs",
+      "test": "max_size_value_at_exact_boundary_checkpoint_and_read_back",
+      "listed_as": "tests/multi_value_test.rs max_size_value_at_exact_boundary_checkpoint_and_read_back",
+      "tags": "size_bound",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S2 exact bound accepted and read back",
+      "file": "src/wal.rs",
+      "test": "test_wal_fact_size_limit",
+      "listed_as": "lib wal::tests::test_wal_fact_size_limit",
+      "tags": "retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S3 a rejected write changes nothing",
+      "file": "src/wal.rs",
+      "test": "test_wal_rejected_entry_does_not_poison_the_writer",
+      "listed_as": "lib wal::tests::test_wal_rejected_entry_does_not_poison_the_writer",
+      "tags": "retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S3 a rejected write changes nothing",
+      "file": "src/storage/persistent_facts/large_tx.rs",
+      "test": "a_rejected_large_statement_writes_nothing_and_takes_no_tx_count",
+      "listed_as": "lib storage::persistent_facts::large_tx::tests::a_rejected_large_statement_writes_nothing_and_takes_no_tx_count",
+      "tags": "corrupt_repair size_bound size_code write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S3 a rejected write changes nothing",
+      "file": "tests/log_writer_test.rs",
+      "test": "rejected_records_change_nothing",
+      "listed_as": "tests/log_writer_test.rs rejected_records_change_nothing",
+      "tags": "corrupt_repair size_code write_log_order write_same_tx write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S4 parser length caps (PRS-007/008/009/074)",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_007_string_exceeds_maximum_length",
+      "listed_as": "tests/error_codes_prs_test.rs prs_007_string_exceeds_maximum_length",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S4 parser length caps (PRS-007/008/009/074)",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_008_keyword_exceeds_maximum_length",
+      "listed_as": "tests/error_codes_prs_test.rs prs_008_keyword_exceeds_maximum_length",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S4 parser length caps (PRS-007/008/009/074)",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_009_tagged_literal_exceeds_maximum_length",
+      "listed_as": "tests/error_codes_prs_test.rs prs_009_tagged_literal_exceeds_maximum_length",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S4 parser length caps (PRS-007/008/009/074)",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_074_bind_slot_name_exceeds_maximum_length",
+      "listed_as": "tests/error_codes_prs_test.rs prs_074_bind_slot_name_exceeds_maximum_length",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "size",
+      "cell": "S5 in-memory databases have no file bound",
+      "file": "tests/edge_cases_test.rs",
+      "test": "test_oversized_fact_accepted_in_memory",
+      "listed_as": "tests/edge_cases_test.rs test_oversized_fact_accepted_in_memory",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W1 empty or inverted window (API-019)",
+      "file": "tests/valid_time_window_test.rs",
+      "test": "inverted_window_rejected_by_execute",
+      "listed_as": "tests/valid_time_window_test.rs inverted_window_rejected_by_execute",
+      "tags": "write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W1 empty or inverted window (API-019)",
+      "file": "tests/valid_time_window_test.rs",
+      "test": "inverted_window_rejected_by_tx_execute",
+      "listed_as": "tests/valid_time_window_test.rs inverted_window_rejected_by_tx_execute",
+      "tags": "write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W1 empty or inverted window (API-019)",
+      "file": "src/graph/storage.rs",
+      "test": "check_valid_windows_rejects_empty_and_inverted_windows",
+      "listed_as": "lib graph::storage::tests::check_valid_windows_rejects_empty_and_inverted_windows",
+      "tags": "write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W1 empty or inverted window (API-019)",
+      "file": "src/graph/storage.rs",
+      "test": "transact_batch_rejects_inverted_window_without_taking_a_tx",
+      "listed_as": "lib graph::storage::tests::transact_batch_rejects_inverted_window_without_taking_a_tx",
+      "tags": "write_same_tx write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W1 empty or inverted window (API-019)",
+      "file": "src/db.rs",
+      "test": "commit_rejects_window_that_ended_before_commit_time",
+      "listed_as": "lib db::tests::commit_rejects_window_that_ended_before_commit_time",
+      "tags": "limit_rules write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W1 empty or inverted window (API-019)",
+      "file": "src/storage/persistent_facts/large_tx.rs",
+      "test": "a_staged_window_ended_at_the_switch_rejects_the_statement",
+      "listed_as": "lib storage::persistent_facts::large_tx::tests::a_staged_window_ended_at_the_switch_rejects_the_statement",
+      "tags": "write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W2 two windows for one fact in one transaction (API-011)",
+      "file": "tests/valid_time_window_test.rs",
+      "test": "same_transaction_two_windows_rejected",
+      "listed_as": "tests/valid_time_window_test.rs same_transaction_two_windows_rejected",
+      "tags": "write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W2 two windows for one fact in one transaction (API-011)",
+      "file": "tests/statement_order_test.rs",
+      "test": "two_windows_in_one_statement_rejected_by_tx_execute",
+      "listed_as": "tests/statement_order_test.rs two_windows_in_one_statement_rejected_by_tx_execute",
+      "tags": "write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W2 two windows for one fact in one transaction (API-011)",
+      "file": "src/graph/storage.rs",
+      "test": "check_one_window_per_triple_rejects_two_windows",
+      "listed_as": "lib graph::storage::tests::check_one_window_per_triple_rejects_two_windows",
+      "tags": "write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W2 two windows for one fact in one transaction (API-011)",
+      "file": "src/graph/storage.rs",
+      "test": "transact_batch_rejects_two_windows_without_taking_a_tx",
+      "listed_as": "lib graph::storage::tests::transact_batch_rejects_two_windows_without_taking_a_tx",
+      "tags": "write_same_tx write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W3 write ordering: last statement wins",
+      "file": "tests/statement_order_test.rs",
+      "test": "last_statement_decides_triple",
+      "listed_as": "tests/statement_order_test.rs last_statement_decides_triple",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W3 write ordering: last statement wins",
+      "file": "tests/statement_order_test.rs",
+      "test": "other_triples_of_overridden_statement_survive",
+      "listed_as": "tests/statement_order_test.rs other_triples_of_overridden_statement_survive",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W3 write ordering: last statement wins",
+      "file": "tests/statement_order_test.rs",
+      "test": "commit_writes_one_transaction_without_overridden_records",
+      "listed_as": "tests/statement_order_test.rs commit_writes_one_transaction_without_overridden_records",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W4 log-writer order and ambiguity (API-015/016/019/020)",
+      "file": "tests/log_writer_test.rs",
+      "test": "records_that_break_write_rules_are_rejected",
+      "listed_as": "tests/log_writer_test.rs records_that_break_write_rules_are_rejected",
+      "tags": "corrupt_repair write_log_order write_same_tx write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "window",
+      "cell": "W5 error phase order within a statement",
+      "file": "src/query/datalog/parser/statement.rs",
+      "test": "materialisation_and_window_errors_come_with_the_facts",
+      "listed_as": "lib query::datalog::parser::statement::tests::materialisation_and_window_errors_come_with_the_facts",
+      "tags": "validation_prs write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 bind slots outside prepare (API-010)",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "execute_rejects_bind_slot_in_every_position",
+      "listed_as": "tests/prepared_statements_test.rs execute_rejects_bind_slot_in_every_position",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 bind slots outside prepare (API-010)",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "execute_rejects_bind_slots_with_api_error",
+      "listed_as": "tests/prepared_statements_test.rs execute_rejects_bind_slots_with_api_error",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 bind slots outside prepare (API-010)",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "write_transaction_execute_rejects_bind_slots",
+      "listed_as": "tests/prepared_statements_test.rs write_transaction_execute_rejects_bind_slots",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B1 bind slots outside prepare (API-010)",
+      "file": "tests/cursor_test.rs",
+      "test": "bind_slots_are_api_010",
+      "listed_as": "tests/cursor_test.rs bind_slots_are_api_010",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 missing, attribute-position and wrong-kind binds (API-022/023/024)",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "missing_bind_value_is_api_022_in_every_position",
+      "listed_as": "tests/prepared_statements_test.rs missing_bind_value_is_api_022_in_every_position",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 missing, attribute-position and wrong-kind binds (API-022/023/024)",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "attribute_slot_is_api_023_in_every_clause",
+      "listed_as": "tests/prepared_statements_test.rs attribute_slot_is_api_023_in_every_clause",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B2 missing, attribute-position and wrong-kind binds (API-022/023/024)",
+      "file": "tests/prepared_statements_test.rs",
+      "test": "bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind",
+      "listed_as": "tests/prepared_statements_test.rs bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slot values",
+      "file": "tests/limit_order_test.rs",
+      "test": "limit_slot_errors",
+      "listed_as": "tests/limit_order_test.rs limit_slot_errors",
+      "tags": "bind_code validation_prs",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slot values",
+      "file": "tests/limit_order_test.rs",
+      "test": "offset_slot_errors",
+      "listed_as": "tests/limit_order_test.rs offset_slot_errors",
+      "tags": "bind_code validation_prs",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slot values",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "limit_slot_errors",
+      "listed_as": "lib query::datalog::prepared::tests::limit_slot_errors",
+      "tags": "bind_code validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "bind",
+      "cell": "B3 count slot values",
+      "file": "src/query/datalog/prepared.rs",
+      "test": "limit_slot_is_collected_and_rejected_unbound",
+      "listed_as": "lib query::datalog::prepared::tests::limit_slot_is_collected_and_rejected_unbound",
+      "tags": "bind_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U1 failing predicate (QRY-014)",
+      "file": "tests/udf_test.rs",
+      "test": "failing_predicate_fails_the_query_in_every_position",
+      "listed_as": "tests/udf_test.rs failing_predicate_fails_the_query_in_every_position",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U1 failing predicate (QRY-014)",
+      "file": "tests/udf_test.rs",
+      "test": "failing_predicate_fails_a_prepared_query",
+      "listed_as": "tests/udf_test.rs failing_predicate_fails_a_prepared_query",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U1 failing predicate (QRY-014)",
+      "file": "tests/udf_test.rs",
+      "test": "failing_predicate_through_a_cursor_returns_earlier_rows_then_the_error",
+      "listed_as": "tests/udf_test.rs failing_predicate_through_a_cursor_returns_earlier_rows_then_the_error",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U2 failing aggregate (QRY-014)",
+      "file": "tests/udf_test.rs",
+      "test": "failing_aggregate_fails_the_query_in_every_phase",
+      "listed_as": "tests/udf_test.rs failing_aggregate_fails_the_query_in_every_phase",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U3 late callback errors not hidden by limits or ordered plans",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "late_callbacks_and_collect_set_failures_cannot_be_hidden_by_group_limit",
+      "listed_as": "lib query::engine::aggregate_order_tests::late_callbacks_and_collect_set_failures_cannot_be_hidden_by_group_limit",
+      "tags": "callback_code callback_udf_error validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U3 late callback errors not hidden by limits or ordered plans",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "fallible_finishes_keep_later_group_errors_and_dropped_group_precedence",
+      "listed_as": "lib query::engine::aggregate_order_tests::fallible_finishes_keep_later_group_errors_and_dropped_group_precedence",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U3 late callback errors not hidden by limits or ordered plans",
+      "file": "src/query/engine/aggregate_order_tests.rs",
+      "test": "registered_aggregate_keeps_full_drain_under_group_limit",
+      "listed_as": "lib query::engine::aggregate_order_tests::registered_aggregate_keeps_full_drain_under_group_limit",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U3 late callback errors not hidden by limits or ordered plans",
+      "file": "src/query/engine/order_tests.rs",
+      "test": "nested_and_binding_callbacks_keep_sort_and_late_errors_under_limit",
+      "listed_as": "lib query::engine::order_tests::nested_and_binding_callbacks_keep_sort_and_late_errors_under_limit",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U3 late callback errors not hidden by limits or ordered plans",
+      "file": "src/query/engine/window_order_tests.rs",
+      "test": "late_callbacks_and_collect_set_errors_still_fail_before_answers",
+      "listed_as": "lib query::engine::window_order_tests::late_callbacks_and_collect_set_errors_still_fail_before_answers",
+      "tags": "callback_code callback_udf_error validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U3 late callback errors not hidden by limits or ordered plans",
+      "file": "src/query/engine/window_order_tests.rs",
+      "test": "registered_window_callbacks_keep_full_evaluation_under_limit",
+      "listed_as": "lib query::engine::window_order_tests::registered_window_callbacks_keep_full_evaluation_under_limit",
+      "tags": "callback_code callback_udf_error",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "callback",
+      "cell": "U4 error names the function and its message",
+      "file": "src/error.rs",
+      "test": "qry014_names_the_failing_function_and_its_message",
+      "listed_as": "lib error::tests::qry014_names_the_failing_function_and_its_message",
+      "tags": "callback_code",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "tests/memory_limit_test.rs",
+      "test": "execute_and_query_fail_with_qry_012",
+      "listed_as": "tests/memory_limit_test.rs execute_and_query_fail_with_qry_012",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "tests/memory_limit_test.rs",
+      "test": "the_database_answers_after_qry_012",
+      "listed_as": "tests/memory_limit_test.rs the_database_answers_after_qry_012",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "tests/memory_limit_test.rs",
+      "test": "prepared_queries_are_limited",
+      "listed_as": "tests/memory_limit_test.rs prepared_queries_are_limited",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "tests/memory_limit_test.rs",
+      "test": "rule_queries_are_limited",
+      "listed_as": "tests/memory_limit_test.rs rule_queries_are_limited",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "tests/memory_limit_test.rs",
+      "test": "write_transaction_queries_are_counted",
+      "listed_as": "tests/memory_limit_test.rs write_transaction_queries_are_counted",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "tests/limit_order_test.rs",
+      "test": "sort_memory_limit",
+      "listed_as": "tests/limit_order_test.rs sort_memory_limit",
+      "tags": "limit_memory",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "src/query/engine/tests.rs",
+      "test": "cursor_returns_rows_then_qry_012",
+      "listed_as": "lib query::engine::tests::cursor_returns_rows_then_qry_012",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L1 query memory exhaustion (QRY-012)",
+      "file": "src/query/engine/tests.rs",
+      "test": "qry_012_allocator_form",
+      "listed_as": "lib query::engine::tests::qry_012_allocator_form",
+      "tags": "limit_memory",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L2 rule exhaustion (INT-020)",
+      "file": "tests/error_codes_qry_test.rs",
+      "test": "recursive_rule_derived_facts_limit_returns_int020",
+      "listed_as": "tests/error_codes_qry_test.rs recursive_rule_derived_facts_limit_returns_int020",
+      "tags": "limit_rules",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L2 rule exhaustion (INT-020)",
+      "file": "tests/recursive_engine_test.rs",
+      "test": "limits",
+      "listed_as": "tests/recursive_engine_test.rs limits",
+      "tags": "limit_rules",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L2 rule exhaustion (INT-020)",
+      "file": "tests/recursive_engine_test.rs",
+      "test": "limit_counts_every_fact_through_a_not_rule",
+      "listed_as": "tests/recursive_engine_test.rs limit_counts_every_fact_through_a_not_rule",
+      "tags": "limit_rules",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L2 rule exhaustion (INT-020)",
+      "file": "tests/memory_limit_test.rs",
+      "test": "prepared_rule_queries_use_the_database_limits",
+      "listed_as": "tests/memory_limit_test.rs prepared_rule_queries_use_the_database_limits",
+      "tags": "limit_rules",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L2 rule exhaustion (INT-020)",
+      "file": "tests/cursor_test.rs",
+      "test": "rule_limits_apply_while_the_engine_materialises",
+      "listed_as": "tests/cursor_test.rs rule_limits_apply_while_the_engine_materialises",
+      "tags": "limit_rules",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L2 rule exhaustion (INT-020)",
+      "file": "src/db.rs",
+      "test": "max_derived_facts_limits_the_total_not_one_iteration",
+      "listed_as": "lib db::tests::max_derived_facts_limits_the_total_not_one_iteration",
+      "tags": "limit_rules",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_115_limit_not_a_non_negative_integer",
+      "listed_as": "tests/error_codes_prs_test.rs prs_115_limit_not_a_non_negative_integer",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_116_offset_without_order_by",
+      "listed_as": "tests/error_codes_prs_test.rs prs_116_offset_without_order_by",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_117_order_by_entry_not_in_find",
+      "listed_as": "tests/error_codes_prs_test.rs prs_117_order_by_entry_not_in_find",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_118_malformed_order_by",
+      "listed_as": "tests/error_codes_prs_test.rs prs_118_malformed_order_by",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_084_over_without_order_by",
+      "listed_as": "tests/error_codes_prs_test.rs prs_084_over_without_order_by",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "src/query/datalog/parser.rs",
+      "test": "test_parse_max_derived_facts_zero_rejected",
+      "listed_as": "lib query::datalog::parser::tests::test_parse_max_derived_facts_zero_rejected",
+      "tags": "limit_rules validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L3 invalid query options",
+      "file": "src/query/datalog/parser.rs",
+      "test": "test_parse_max_derived_facts_duplicate_rejected",
+      "listed_as": "lib query::datalog::parser::tests::test_parse_max_derived_facts_duplicate_rejected",
+      "tags": "limit_rules validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L4 query validation codes (QRY-007/010/011/013/015)",
+      "file": "tests/error_codes_qry_test.rs",
+      "test": "query_unknown_predicate_returns_qry_007",
+      "listed_as": "tests/error_codes_qry_test.rs query_unknown_predicate_returns_qry_007",
+      "tags": "validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L4 query validation codes (QRY-007/010/011/013/015)",
+      "file": "tests/error_codes_qry_test.rs",
+      "test": "unknown_aggregate_with_matching_rows_returns_qry_010",
+      "listed_as": "tests/error_codes_qry_test.rs unknown_aggregate_with_matching_rows_returns_qry_010",
+      "tags": "validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L4 query validation codes (QRY-007/010/011/013/015)",
+      "file": "tests/error_codes_qry_test.rs",
+      "test": "unknown_window_function_with_matching_rows_returns_qry_011",
+      "listed_as": "tests/error_codes_qry_test.rs unknown_window_function_with_matching_rows_returns_qry_011",
+      "tags": "validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L4 query validation codes (QRY-007/010/011/013/015)",
+      "file": "tests/recursive_rules_test.rs",
+      "test": "test_rule_head_entity_not_an_entity_is_qry013",
+      "listed_as": "tests/recursive_rules_test.rs test_rule_head_entity_not_an_entity_is_qry013",
+      "tags": "validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L4 query validation codes (QRY-007/010/011/013/015)",
+      "file": "tests/collect_set_test.rs",
+      "test": "set_valued_attribute_is_qry_015",
+      "listed_as": "tests/collect_set_test.rs set_valued_attribute_is_qry_015",
+      "tags": "validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L4 query validation codes (QRY-007/010/011/013/015)",
+      "file": "src/query/engine/tests.rs",
+      "test": "planner_errors_keep_their_codes",
+      "listed_as": "lib query::engine::tests::planner_errors_keep_their_codes",
+      "tags": "validation_prs validation_qry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_codes_reach_through_prepare",
+      "listed_as": "tests/error_codes_prs_test.rs prs_codes_reach_through_prepare",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_codes_cover_tokenizer_and_edn_errors",
+      "listed_as": "tests/error_codes_prs_test.rs prs_codes_cover_tokenizer_and_edn_errors",
+      "tags": "validation_prs",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "tests/error_codes_prs_test.rs",
+      "test": "prs_108_rejects_the_whole_transaction",
+      "listed_as": "tests/error_codes_prs_test.rs prs_108_rejects_the_whole_transaction",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "tests/grammar_conformance.rs",
+      "test": "invalid_syntax_corpus",
+      "listed_as": "tests/grammar_conformance.rs invalid_syntax_corpus",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "tests/grammar_conformance.rs",
+      "test": "invalid_semantic_corpus",
+      "listed_as": "tests/grammar_conformance.rs invalid_semantic_corpus",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "src/query/datalog/parser/verifier.rs",
+      "test": "structural_level",
+      "listed_as": "lib query::datalog::parser::verifier::structural_level",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L5 parser codes and grammar",
+      "file": "src/query/datalog/parser/verifier.rs",
+      "test": "semantic_witnesses_raise_their_code",
+      "listed_as": "lib query::datalog::parser::verifier::semantic_witnesses_raise_their_code",
+      "tags": "",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L6 API codes on handles (API-014)",
+      "file": "tests/read_only_open_test.rs",
+      "test": "writes_are_api_014_and_change_nothing",
+      "listed_as": "tests/read_only_open_test.rs writes_are_api_014_and_change_nothing",
+      "tags": "corrupt_repair",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L7 code registry matches ERROR_REFERENCE.md",
+      "file": "src/error.rs",
+      "test": "registry_matches_error_reference_doc_bidirectionally",
+      "listed_as": "lib error::tests::registry_matches_error_reference_doc_bidirectionally",
+      "tags": "validation_registry",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "limits",
+      "cell": "L7 code registry matches ERROR_REFERENCE.md",
+      "file": "src/error.rs",
+      "test": "every_error_code_variant_has_a_registry_entry",
+      "listed_as": "lib error::tests::every_error_code_variant_has_a_registry_entry",
+      "tags": "bind_code callback_code corrupt_meta corrupt_page corrupt_repair corrupt_tree legacy_refusal limit_memory limit_rules retry_checkpoint retry_wal size_code validation_prs validation_qry validation_registry write_log_order write_same_tx write_window",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C1 page checksum, id and generation (STG-029/030/031)",
+      "file": "src/storage/page.rs",
+      "test": "flipped_body_bit_is_stg_029",
+      "listed_as": "lib storage::page::tests::flipped_body_bit_is_stg_029",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C1 page checksum, id and generation (STG-029/030/031)",
+      "file": "src/storage/page.rs",
+      "test": "wrong_page_id_is_stg_030",
+      "listed_as": "lib storage::page::tests::wrong_page_id_is_stg_030",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C1 page checksum, id and generation (STG-029/030/031)",
+      "file": "src/storage/page.rs",
+      "test": "future_generation_is_stg_031",
+      "listed_as": "lib storage::page::tests::future_generation_is_stg_031",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C1 page checksum, id and generation (STG-029/030/031)",
+      "file": "src/storage/cache.rs",
+      "test": "corrupt_page_is_rejected_and_not_cached",
+      "listed_as": "lib storage::cache::tests::corrupt_page_is_rejected_and_not_cached",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C1 page checksum, id and generation (STG-029/030/031)",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "damaged_pages_surface_as_stg_029_on_read",
+      "listed_as": "lib storage::persistent_facts::tests::damaged_pages_surface_as_stg_029_on_read",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C1 page checksum, id and generation (STG-029/030/031)",
+      "file": "tests/index_corruption_test.rs",
+      "test": "query_over_damaged_leaves_fails_with_stg_029",
+      "listed_as": "tests/index_corruption_test.rs query_over_damaged_leaves_fails_with_stg_029",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "torn_initial_meta_with_data_in_page_1_is_stg_032",
+      "listed_as": "lib storage::persistent_facts::tests::torn_initial_meta_with_data_in_page_1_is_stg_032",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "wal_newer_than_the_valid_meta_is_stg_033",
+      "listed_as": "lib storage::persistent_facts::tests::wal_newer_than_the_valid_meta_is_stg_033",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "truncated_file_is_stg_044",
+      "listed_as": "lib storage::persistent_facts::tests::truncated_file_is_stg_044",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "tests/btree_v6_test.rs",
+      "test": "newest_meta_damaged_after_commit_is_refused",
+      "listed_as": "tests/btree_v6_test.rs newest_meta_damaged_after_commit_is_refused",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "tests/integrity_test.rs",
+      "test": "truncated_file_is_refused_at_open",
+      "listed_as": "tests/integrity_test.rs truncated_file_is_refused_at_open",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "tests/integrity_test.rs",
+      "test": "sub_page_file_is_refused_unless_a_torn_first_write",
+      "listed_as": "tests/integrity_test.rs sub_page_file_is_refused_unless_a_torn_first_write",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C2 meta pages and short files (STG-032/033/044/045)",
+      "file": "tests/integrity_test.rs",
+      "test": "meta_page_count_past_end_is_refused_and_file_never_grows",
+      "listed_as": "tests/integrity_test.rs meta_page_count_past_end_is_refused_and_file_never_grows",
+      "tags": "corrupt_meta",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C3 trees, dictionary and free list (STG-035/036, INT-049)",
+      "file": "src/storage/freelist.rs",
+      "test": "wrong_count_or_looping_chain_is_stg_035",
+      "listed_as": "lib storage::freelist::tests::wrong_count_or_looping_chain_is_stg_035",
+      "tags": "corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C3 trees, dictionary and free list (STG-035/036, INT-049)",
+      "file": "src/storage/dict.rs",
+      "test": "missing_dictionary_entry_is_stg_036",
+      "listed_as": "lib storage::dict::tests::missing_dictionary_entry_is_stg_036",
+      "tags": "corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C3 trees, dictionary and free list (STG-035/036, INT-049)",
+      "file": "src/storage/node.rs",
+      "test": "corrupt_leaf_is_rejected",
+      "listed_as": "lib storage::node::tests::corrupt_leaf_is_rejected",
+      "tags": "corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C3 trees, dictionary and free list (STG-035/036, INT-049)",
+      "file": "src/storage/btree.rs",
+      "test": "cursor_through_a_cycle_is_int_049_without_repeating_a_key",
+      "listed_as": "lib storage::btree::tests::cursor_through_a_cycle_is_int_049_without_repeating_a_key",
+      "tags": "corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C3 trees, dictionary and free list (STG-035/036, INT-049)",
+      "file": "tests/integrity_test.rs",
+      "test": "internal_node_pointing_at_itself_fails_the_scan_instead_of_looping",
+      "listed_as": "tests/integrity_test.rs internal_node_pointing_at_itself_fails_the_scan_instead_of_looping",
+      "tags": "corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C4 verify and repair of arbitrary damage",
+      "file": "tests/integrity_test.rs",
+      "test": "damaged_leaves_are_reported_and_index_damage_is_repaired",
+      "listed_as": "tests/integrity_test.rs damaged_leaves_are_reported_and_index_damage_is_repaired",
+      "tags": "corrupt_page corrupt_repair",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C4 verify and repair of arbitrary damage",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "each_index_damage_is_found_and_repaired",
+      "listed_as": "lib storage::persistent_facts::tests::each_index_damage_is_found_and_repaired",
+      "tags": "corrupt_page corrupt_repair corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C4 verify and repair of arbitrary damage",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "dictionary_damage_is_reported_and_not_rebuilt",
+      "listed_as": "lib storage::persistent_facts::tests::dictionary_damage_is_reported_and_not_rebuilt",
+      "tags": "corrupt_page corrupt_repair corrupt_tree",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C4 verify and repair of arbitrary damage",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "damaged_free_list_page_fails_the_checkpoint_not_the_file",
+      "listed_as": "lib storage::persistent_facts::tests::damaged_free_list_page_fails_the_checkpoint_not_the_file",
+      "tags": "corrupt_page",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C4 verify and repair of arbitrary damage",
+      "file": "src/storage/persistent_facts.rs",
+      "test": "crash_at_every_point_of_rebuild_keeps_every_fact",
+      "listed_as": "lib storage::persistent_facts::tests::crash_at_every_point_of_rebuild_keeps_every_fact",
+      "tags": "corrupt_repair corrupt_tree retry_fault",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "corrupt",
+      "cell": "C4 verify and repair of arbitrary damage",
+      "file": "src/fault_matrix.rs",
+      "test": "faults_during_rebuild_indexes",
+      "listed_as": "lib fault_matrix::faults_during_rebuild_indexes",
+      "tags": "corrupt_repair retry_checkpoint retry_fault retry_wal write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/fault_matrix.rs",
+      "test": "faults_during_checkpoint",
+      "listed_as": "lib fault_matrix::faults_during_checkpoint",
+      "tags": "corrupt_repair retry_checkpoint retry_fault retry_wal write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/fault_matrix.rs",
+      "test": "faults_during_auto_checkpoint",
+      "listed_as": "lib fault_matrix::faults_during_auto_checkpoint",
+      "tags": "corrupt_repair retry_checkpoint retry_fault retry_wal write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/fault_matrix.rs",
+      "test": "disk_full_halfway_through_a_checkpoint",
+      "listed_as": "lib fault_matrix::disk_full_halfway_through_a_checkpoint",
+      "tags": "corrupt_repair retry_checkpoint retry_fault",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/fault_matrix.rs",
+      "test": "no_commit_after_a_failed_meta_fsync",
+      "listed_as": "lib fault_matrix::no_commit_after_a_failed_meta_fsync",
+      "tags": "corrupt_repair retry_checkpoint retry_fault",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/fault_matrix.rs",
+      "test": "faults_during_a_large_transaction",
+      "listed_as": "lib fault_matrix::faults_during_a_large_transaction",
+      "tags": "corrupt_repair retry_checkpoint retry_fault retry_wal write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/storage/persistent_facts/large_tx.rs",
+      "test": "a_failed_handle_is_refused_when_a_transaction_would_become_large",
+      "listed_as": "lib storage::persistent_facts::large_tx::tests::a_failed_handle_is_refused_when_a_transaction_would_become_large",
+      "tags": "retry_checkpoint retry_fault",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R1 failed checkpoint refuses retry (STG-046)",
+      "file": "src/storage/persistent_facts/large_tx.rs",
+      "test": "a_failure_in_a_large_write_transaction_fails_its_commit",
+      "listed_as": "lib storage::persistent_facts::large_tx::tests::a_failure_in_a_large_write_transaction_fails_its_commit",
+      "tags": "corrupt_repair retry_checkpoint retry_fault",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R2 failed WAL append refuses writes (WAL-007)",
+      "file": "src/wal.rs",
+      "test": "test_wal_failed_append_refuses_later_appends_with_wal_007",
+      "listed_as": "lib wal::tests::test_wal_failed_append_refuses_later_appends_with_wal_007",
+      "tags": "retry_fault retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R2 failed WAL append refuses writes (WAL-007)",
+      "file": "src/db.rs",
+      "test": "test_failed_wal_append_refuses_writes_until_checkpoint",
+      "listed_as": "lib db::tests::test_failed_wal_append_refuses_writes_until_checkpoint",
+      "tags": "limit_rules retry_fault retry_wal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "retry",
+      "cell": "R2 failed WAL append refuses writes (WAL-007)",
+      "file": "src/fault_matrix.rs",
+      "test": "faults_during_transact",
+      "listed_as": "lib fault_matrix::faults_during_transact",
+      "tags": "corrupt_repair retry_checkpoint retry_fault retry_wal write_same_tx",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V1 v1-v6 files refused (STG-028)",
+      "file": "tests/migration_matrix_test.rs",
+      "test": "pre_v7_versions_are_rejected_with_stg_028",
+      "listed_as": "tests/migration_matrix_test.rs pre_v7_versions_are_rejected_with_stg_028",
+      "tags": "legacy_migration legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V1 v1-v6 files refused (STG-028)",
+      "file": "tests/error_codes_storage_test.rs",
+      "test": "open_pre_v7_version_returns_stg_028",
+      "listed_as": "tests/error_codes_storage_test.rs open_pre_v7_version_returns_stg_028",
+      "tags": "legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V1 v1-v6 files refused (STG-028)",
+      "file": "tests/btree_v6_test.rs",
+      "test": "test_v5_file_is_rejected",
+      "listed_as": "tests/btree_v6_test.rs test_v5_file_is_rejected",
+      "tags": "legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V1 v1-v6 files refused (STG-028)",
+      "file": "tests/wal_test.rs",
+      "test": "test_v2_file_is_rejected",
+      "listed_as": "tests/wal_test.rs test_v2_file_is_rejected",
+      "tags": "legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V1 v1-v6 files refused (STG-028)",
+      "file": "src/storage/mod.rs",
+      "test": "from_bytes_pre_v7_returns_stg_028",
+      "listed_as": "lib storage::tests::from_bytes_pre_v7_returns_stg_028",
+      "tags": "legacy_migration legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V1 v1-v6 files refused (STG-028)",
+      "file": "src/storage/mod.rs",
+      "test": "validate_pre_v7_returns_stg_028",
+      "listed_as": "lib storage::tests::validate_pre_v7_returns_stg_028",
+      "tags": "legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V2 unknown versions (STG-006)",
+      "file": "tests/error_codes_storage_test.rs",
+      "test": "open_unsupported_version_returns_stg_006",
+      "listed_as": "tests/error_codes_storage_test.rs open_unsupported_version_returns_stg_006",
+      "tags": "legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "legacy",
+      "cell": "V2 unknown versions (STG-006)",
+      "file": "tests/migration_matrix_test.rs",
+      "test": "unsupported_version_fails_loudly",
+      "listed_as": "tests/migration_matrix_test.rs unsupported_version_fails_loudly",
+      "tags": "legacy_refusal",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "wal_heavy",
+      "cell": "H1 WAL entry of more than 1,000,000 facts (reader)",
+      "file": "src/wal.rs",
+      "test": "test_wal_entry_of_more_than_a_million_facts_replays",
+      "listed_as": "lib wal::tests::test_wal_entry_of_more_than_a_million_facts_replays",
+      "tags": "retry_wal size_bound size_code wal_heavy wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "wal_heavy",
+      "cell": "H2 damaged entry bounds end replay",
+      "file": "src/wal.rs",
+      "test": "test_wal_entry_with_more_facts_than_bytes_left_ends_replay",
+      "listed_as": "lib wal::tests::test_wal_entry_with_more_facts_than_bytes_left_ends_replay",
+      "tags": "retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "wal_heavy",
+      "cell": "H2 damaged entry bounds end replay",
+      "file": "src/wal.rs",
+      "test": "test_wal_entry_with_facts_cut_short_ends_replay",
+      "listed_as": "lib wal::tests::test_wal_entry_with_facts_cut_short_ends_replay",
+      "tags": "retry_wal size_bound size_code wal_replay",
+      "needs_test_hooks": false
+    },
+    {
+      "family": "wal_heavy",
+      "cell": "H3 million-fact statements commit as checkpoints (ignored; nightly smoke.yml)",
+      "file": "tests/large_transaction_acceptance_test.rs",
+      "test": "one_million_fact_transact_holds_one_chunk",
+      "listed_as": "tests/large_transaction_acceptance_test.rs one_million_fact_transact_holds_one_chunk",
+      "tags": "corrupt_repair",
+      "needs_test_hooks": true
+    },
+    {
+      "family": "wal_heavy",
+      "cell": "H3 million-fact statements commit as checkpoints (ignored; nightly smoke.yml)",
+      "file": "tests/large_transaction_acceptance_test.rs",
+      "test": "custom_chunk_bounds",
+      "listed_as": "tests/large_transaction_acceptance_test.rs custom_chunk_bounds",
+      "tags": "corrupt_repair wal_heavy",
+      "needs_test_hooks": true
+    }
+  ]
+}

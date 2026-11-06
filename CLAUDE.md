@@ -23,6 +23,11 @@ ties the excluded numeric, bind, join and forced-plan permutations to 128
 correctness tests and documents the nightly controls' attribution limits. It
 changes no code, tests or nightly routes.
 
+The [#843 failure-path map](docs/benchmarks/843-failure-correctness/README.md)
+ties the failure paths excluded from nightly timing to 138 correctness tests
+with their error and data invariants. It changes no code, tests or nightly
+routes; the heavy WAL replay test gap is #865.
+
 The [#841 manual shape sweep](docs/benchmarks/841-shape-sweeps/README.md)
 records native sort/window, set, UUID, recursive-control and sustained-reader
 experiments, including rejected inputs, capped attempts and attribution limits.

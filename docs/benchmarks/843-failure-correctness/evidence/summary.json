@@ -1,0 +1,185 @@
+{
+  "families": {
+    "bind": {
+      "files": {
+        "src/error.rs": 1,
+        "src/query/datalog/prepared.rs": 3,
+        "tests/cursor_test.rs": 2,
+        "tests/limit_order_test.rs": 2,
+        "tests/prepared_statements_test.rs": 7
+      },
+      "tests": 15
+    },
+    "callback": {
+      "files": {
+        "src/error.rs": 2,
+        "src/query/datalog/executor.rs": 26,
+        "src/query/engine/aggregate_order_tests.rs": 3,
+        "src/query/engine/order_tests.rs": 1,
+        "src/query/engine/window_order_tests.rs": 2,
+        "tests/udf_test.rs": 4
+      },
+      "tests": 38
+    },
+    "corrupt": {
+      "files": {
+        "src/error.rs": 1,
+        "src/query/engine/ids.rs": 2,
+        "src/query/engine/project.rs": 1,
+        "src/storage/backend/file.rs": 7,
+        "src/storage/btree.rs": 37,
+        "src/storage/cache.rs": 2,
+        "src/storage/dict.rs": 11,
+        "src/storage/freelist.rs": 3,
+        "src/storage/keys.rs": 2,
+        "src/storage/keys/legacy_verification.rs": 1,
+        "src/storage/node.rs": 8,
+        "src/storage/page.rs": 9,
+        "src/storage/persistent_facts.rs": 15,
+        "src/storage/persistent_facts/large_tx.rs": 1,
+        "src/storage/value_pages.rs": 1,
+        "tests/btree_v6_test.rs": 1,
+        "tests/edge_cases_test.rs": 1,
+        "tests/index_corruption_test.rs": 1,
+        "tests/integrity_test.rs": 5
+      },
+      "tests": 109
+    },
+    "legacy": {
+      "files": {
+        "src/error.rs": 1,
+        "src/storage/mod.rs": 14,
+        "tests/btree_v6_test.rs": 1,
+        "tests/error_codes_storage_test.rs": 2,
+        "tests/migration_matrix_test.rs": 2,
+        "tests/wal_test.rs": 1
+      },
+      "tests": 21
+    },
+    "limits": {
+      "files": {
+        "src/db.rs": 33,
+        "src/error.rs": 1,
+        "src/query/datalog/executor.rs": 4,
+        "src/query/datalog/parser.rs": 145,
+        "src/query/datalog/parser/statement.rs": 3,
+        "src/query/datalog/prepared.rs": 2,
+        "src/query/datalog/types.rs": 23,
+        "src/query/engine/aggregate.rs": 1,
+        "src/query/engine/aggregate_order_tests.rs": 3,
+        "src/query/engine/meter.rs": 5,
+        "src/query/engine/order_tests.rs": 1,
+        "src/query/engine/project.rs": 1,
+        "src/query/engine/sort.rs": 1,
+        "src/query/engine/tests.rs": 19,
+        "src/query/engine/window_order_tests.rs": 3,
+        "tests/collect_set_test.rs": 3,
+        "tests/cursor_test.rs": 1,
+        "tests/distinct_test.rs": 3,
+        "tests/error_codes_foundation_test.rs": 1,
+        "tests/error_codes_prs_test.rs": 57,
+        "tests/error_codes_qry_test.rs": 11,
+        "tests/limit_order_test.rs": 3,
+        "tests/memory_limit_acceptance_test.rs": 2,
+        "tests/memory_limit_test.rs": 6,
+        "tests/pseudo_source_test.rs": 6,
+        "tests/read_only_open_test.rs": 1,
+        "tests/recursive_acceptance_test.rs": 3,
+        "tests/recursive_engine_test.rs": 3,
+        "tests/recursive_rules_test.rs": 2,
+        "tests/set_predicates_test.rs": 1,
+        "tests/set_values_test.rs": 1,
+        "tests/temporal_metadata_test.rs": 1,
+        "tests/udf_reentry_test.rs": 1,
+        "tests/window_functions_test.rs": 1
+      },
+      "tests": 352
+    },
+    "retry": {
+      "files": {
+        "src/db.rs": 1,
+        "src/error.rs": 1,
+        "src/fault_matrix.rs": 16,
+        "src/storage/persistent_facts/large_tx.rs": 2,
+        "src/wal.rs": 20
+      },
+      "tests": 40
+    },
+    "size": {
+      "files": {
+        "src/error.rs": 1,
+        "src/storage/dict.rs": 8,
+        "src/storage/persistent_facts/large_tx.rs": 1,
+        "src/wal.rs": 21,
+        "tests/error_codes_wal_test.rs": 1,
+        "tests/log_writer_test.rs": 1,
+        "tests/set_values_test.rs": 1
+      },
+      "tests": 34
+    },
+    "wal_heavy": {
+      "files": {
+        "src/db.rs": 3,
+        "src/query/datalog/executor.rs": 1,
+        "src/query/datalog/parser.rs": 1,
+        "src/query/engine/tests.rs": 1,
+        "src/storage/btree.rs": 2,
+        "src/storage/persistent_facts.rs": 1,
+        "src/wal.rs": 1,
+        "tests/large_transaction_acceptance_test.rs": 1,
+        "tests/multi_value_test.rs": 1,
+        "tests/prepared_statements_test.rs": 1,
+        "tests/wal_test.rs": 1
+      },
+      "tests": 14
+    },
+    "window": {
+      "files": {
+        "src/db.rs": 1,
+        "src/error.rs": 1,
+        "src/fault_matrix.rs": 14,
+        "src/graph/storage.rs": 27,
+        "src/query/datalog/parser/statement.rs": 2,
+        "src/query/engine/aggregate_order_tests.rs": 1,
+        "src/query/engine/order_tests.rs": 1,
+        "src/query/engine/window_order_tests.rs": 1,
+        "src/storage/persistent_facts/large_tx.rs": 6,
+        "tests/crash_kill_test.rs": 1,
+        "tests/log_writer_test.rs": 2,
+        "tests/multi_value_test.rs": 1,
+        "tests/statement_order_test.rs": 1,
+        "tests/valid_time_window_test.rs": 3
+      },
+      "tests": 62
+    }
+  },
+  "listed_rust_tests": 2079,
+  "matched": 2079,
+  "tags": {
+    "bind_code": 15,
+    "callback_code": 38,
+    "callback_udf_error": 22,
+    "corrupt_meta": 16,
+    "corrupt_page": 12,
+    "corrupt_repair": 85,
+    "corrupt_tree": 85,
+    "legacy_migration": 18,
+    "legacy_refusal": 21,
+    "limit_memory": 35,
+    "limit_rules": 215,
+    "retry_checkpoint": 19,
+    "retry_fault": 38,
+    "retry_wal": 36,
+    "size_bound": 36,
+    "size_code": 34,
+    "validation_prs": 228,
+    "validation_qry": 23,
+    "validation_registry": 2,
+    "wal_heavy": 14,
+    "wal_replay": 56,
+    "write_log_order": 3,
+    "write_same_tx": 56,
+    "write_window": 35
+  },
+  "unmatched": []
+}

@@ -27,6 +27,12 @@ cleanup of all 46 synthetic resources. Fresh extraction reproduces the evidence
 reports, and removing delivery/comparison evidence is rejected. No Rust tests
 are added; the inventory above is unchanged. Additional runtime lanes are #858.
 
+**#843 failure-path map**: [138 curated correctness tests](benchmarks/843-failure-correctness/README.md)
+(35 cells; 5 tests exist only in the `test-hooks` build) cover the failure paths excluded from
+nightly timing, with their error-code and data invariants. Gaps: no `Minigraf::open` replay of
+one heavy WAL entry (#865) and no test of the fixed recursion round bound (planned in #861).
+No test is added; the inventory above is unchanged.
+
 **#842 semantic permutation map**: [128 curated correctness tests](benchmarks/842-semantic-permutations/README.md)
 (130 targets in 29 cells; 17 tests exist only in the `test-hooks` build) cover the numeric, bind,
 cross-kind join and forced-planner families excluded from nightly benchmarks.

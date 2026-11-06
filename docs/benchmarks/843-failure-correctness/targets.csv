@@ -1,0 +1,139 @@
+family,cell,file,test
+size,"S1 over-bound value, ident and set rejected (WAL-003)",tests/error_codes_wal_test.rs,wal_size_limit_oversized_fact_returns_wal_003
+size,"S1 over-bound value, ident and set rejected (WAL-003)",tests/edge_cases_test.rs,test_oversized_fact_rejected_at_insertion_file_backed
+size,"S1 over-bound value, ident and set rejected (WAL-003)",tests/edge_cases_test.rs,test_oversized_fact_rejected_via_write_transaction
+size,"S1 over-bound value, ident and set rejected (WAL-003)",tests/set_values_test.rs,an_oversized_set_is_wal_003
+size,"S1 over-bound value, ident and set rejected (WAL-003)",src/wal.rs,test_wal_fact_size_limit_error_code_is_wal_003
+size,"S1 over-bound value, ident and set rejected (WAL-003)",src/wal.rs,test_wal_ident_size_limit_is_wal_003
+size,"S1 over-bound value, ident and set rejected (WAL-003)",src/wal.rs,check_fact_size_checks_sets
+size,S2 exact bound accepted and read back,tests/multi_value_test.rs,max_size_value_at_exact_boundary_checkpoint_and_read_back
+size,S2 exact bound accepted and read back,src/wal.rs,test_wal_fact_size_limit
+size,S3 a rejected write changes nothing,src/wal.rs,test_wal_rejected_entry_does_not_poison_the_writer
+size,S3 a rejected write changes nothing,src/storage/persistent_facts/large_tx.rs,a_rejected_large_statement_writes_nothing_and_takes_no_tx_count
+size,S3 a rejected write changes nothing,tests/log_writer_test.rs,rejected_records_change_nothing
+size,S4 parser length caps (PRS-007/008/009/074),tests/error_codes_prs_test.rs,prs_007_string_exceeds_maximum_length
+size,S4 parser length caps (PRS-007/008/009/074),tests/error_codes_prs_test.rs,prs_008_keyword_exceeds_maximum_length
+size,S4 parser length caps (PRS-007/008/009/074),tests/error_codes_prs_test.rs,prs_009_tagged_literal_exceeds_maximum_length
+size,S4 parser length caps (PRS-007/008/009/074),tests/error_codes_prs_test.rs,prs_074_bind_slot_name_exceeds_maximum_length
+size,S5 in-memory databases have no file bound,tests/edge_cases_test.rs,test_oversized_fact_accepted_in_memory
+window,W1 empty or inverted window (API-019),tests/valid_time_window_test.rs,inverted_window_rejected_by_execute
+window,W1 empty or inverted window (API-019),tests/valid_time_window_test.rs,inverted_window_rejected_by_tx_execute
+window,W1 empty or inverted window (API-019),src/graph/storage.rs,check_valid_windows_rejects_empty_and_inverted_windows
+window,W1 empty or inverted window (API-019),src/graph/storage.rs,transact_batch_rejects_inverted_window_without_taking_a_tx
+window,W1 empty or inverted window (API-019),src/db.rs,commit_rejects_window_that_ended_before_commit_time
+window,W1 empty or inverted window (API-019),src/storage/persistent_facts/large_tx.rs,a_staged_window_ended_at_the_switch_rejects_the_statement
+window,W2 two windows for one fact in one transaction (API-011),tests/valid_time_window_test.rs,same_transaction_two_windows_rejected
+window,W2 two windows for one fact in one transaction (API-011),tests/statement_order_test.rs,two_windows_in_one_statement_rejected_by_tx_execute
+window,W2 two windows for one fact in one transaction (API-011),src/graph/storage.rs,check_one_window_per_triple_rejects_two_windows
+window,W2 two windows for one fact in one transaction (API-011),src/graph/storage.rs,transact_batch_rejects_two_windows_without_taking_a_tx
+window,W3 write ordering: last statement wins,tests/statement_order_test.rs,last_statement_decides_triple
+window,W3 write ordering: last statement wins,tests/statement_order_test.rs,other_triples_of_overridden_statement_survive
+window,W3 write ordering: last statement wins,tests/statement_order_test.rs,commit_writes_one_transaction_without_overridden_records
+window,W4 log-writer order and ambiguity (API-015/016/019/020),tests/log_writer_test.rs,records_that_break_write_rules_are_rejected
+window,W5 error phase order within a statement,src/query/datalog/parser/statement.rs,materialisation_and_window_errors_come_with_the_facts
+bind,B1 bind slots outside prepare (API-010),tests/prepared_statements_test.rs,execute_rejects_bind_slot_in_every_position
+bind,B1 bind slots outside prepare (API-010),tests/prepared_statements_test.rs,execute_rejects_bind_slots_with_api_error
+bind,B1 bind slots outside prepare (API-010),tests/prepared_statements_test.rs,write_transaction_execute_rejects_bind_slots
+bind,B1 bind slots outside prepare (API-010),tests/cursor_test.rs,bind_slots_are_api_010
+bind,"B2 missing, attribute-position and wrong-kind binds (API-022/023/024)",tests/prepared_statements_test.rs,missing_bind_value_is_api_022_in_every_position
+bind,"B2 missing, attribute-position and wrong-kind binds (API-022/023/024)",tests/prepared_statements_test.rs,attribute_slot_is_api_023_in_every_clause
+bind,"B2 missing, attribute-position and wrong-kind binds (API-022/023/024)",tests/prepared_statements_test.rs,bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind
+bind,B3 count slot values,tests/limit_order_test.rs,limit_slot_errors
+bind,B3 count slot values,tests/limit_order_test.rs,offset_slot_errors
+bind,B3 count slot values,src/query/datalog/prepared.rs,limit_slot_errors
+bind,B3 count slot values,src/query/datalog/prepared.rs,limit_slot_is_collected_and_rejected_unbound
+callback,U1 failing predicate (QRY-014),tests/udf_test.rs,failing_predicate_fails_the_query_in_every_position
+callback,U1 failing predicate (QRY-014),tests/udf_test.rs,failing_predicate_fails_a_prepared_query
+callback,U1 failing predicate (QRY-014),tests/udf_test.rs,failing_predicate_through_a_cursor_returns_earlier_rows_then_the_error
+callback,U2 failing aggregate (QRY-014),tests/udf_test.rs,failing_aggregate_fails_the_query_in_every_phase
+callback,U3 late callback errors not hidden by limits or ordered plans,src/query/engine/aggregate_order_tests.rs,late_callbacks_and_collect_set_failures_cannot_be_hidden_by_group_limit
+callback,U3 late callback errors not hidden by limits or ordered plans,src/query/engine/aggregate_order_tests.rs,fallible_finishes_keep_later_group_errors_and_dropped_group_precedence
+callback,U3 late callback errors not hidden by limits or ordered plans,src/query/engine/aggregate_order_tests.rs,registered_aggregate_keeps_full_drain_under_group_limit
+callback,U3 late callback errors not hidden by limits or ordered plans,src/query/engine/order_tests.rs,nested_and_binding_callbacks_keep_sort_and_late_errors_under_limit
+callback,U3 late callback errors not hidden by limits or ordered plans,src/query/engine/window_order_tests.rs,late_callbacks_and_collect_set_errors_still_fail_before_answers
+callback,U3 late callback errors not hidden by limits or ordered plans,src/query/engine/window_order_tests.rs,registered_window_callbacks_keep_full_evaluation_under_limit
+callback,U4 error names the function and its message,src/error.rs,qry014_names_the_failing_function_and_its_message
+limits,L1 query memory exhaustion (QRY-012),tests/memory_limit_test.rs,execute_and_query_fail_with_qry_012
+limits,L1 query memory exhaustion (QRY-012),tests/memory_limit_test.rs,the_database_answers_after_qry_012
+limits,L1 query memory exhaustion (QRY-012),tests/memory_limit_test.rs,prepared_queries_are_limited
+limits,L1 query memory exhaustion (QRY-012),tests/memory_limit_test.rs,rule_queries_are_limited
+limits,L1 query memory exhaustion (QRY-012),tests/memory_limit_test.rs,write_transaction_queries_are_counted
+limits,L1 query memory exhaustion (QRY-012),tests/limit_order_test.rs,sort_memory_limit
+limits,L1 query memory exhaustion (QRY-012),src/query/engine/tests.rs,cursor_returns_rows_then_qry_012
+limits,L1 query memory exhaustion (QRY-012),src/query/engine/tests.rs,qry_012_allocator_form
+limits,L2 rule exhaustion (INT-020),tests/error_codes_qry_test.rs,recursive_rule_derived_facts_limit_returns_int020
+limits,L2 rule exhaustion (INT-020),tests/recursive_engine_test.rs,limits
+limits,L2 rule exhaustion (INT-020),tests/recursive_engine_test.rs,limit_counts_every_fact_through_a_not_rule
+limits,L2 rule exhaustion (INT-020),tests/memory_limit_test.rs,prepared_rule_queries_use_the_database_limits
+limits,L2 rule exhaustion (INT-020),tests/cursor_test.rs,rule_limits_apply_while_the_engine_materialises
+limits,L2 rule exhaustion (INT-020),src/db.rs,max_derived_facts_limits_the_total_not_one_iteration
+limits,L3 invalid query options,tests/error_codes_prs_test.rs,prs_115_limit_not_a_non_negative_integer
+limits,L3 invalid query options,tests/error_codes_prs_test.rs,prs_116_offset_without_order_by
+limits,L3 invalid query options,tests/error_codes_prs_test.rs,prs_117_order_by_entry_not_in_find
+limits,L3 invalid query options,tests/error_codes_prs_test.rs,prs_118_malformed_order_by
+limits,L3 invalid query options,tests/error_codes_prs_test.rs,prs_084_over_without_order_by
+limits,L3 invalid query options,src/query/datalog/parser.rs,test_parse_max_derived_facts_zero_rejected
+limits,L3 invalid query options,src/query/datalog/parser.rs,test_parse_max_derived_facts_duplicate_rejected
+limits,L4 query validation codes (QRY-007/010/011/013/015),tests/error_codes_qry_test.rs,query_unknown_predicate_returns_qry_007
+limits,L4 query validation codes (QRY-007/010/011/013/015),tests/error_codes_qry_test.rs,unknown_aggregate_with_matching_rows_returns_qry_010
+limits,L4 query validation codes (QRY-007/010/011/013/015),tests/error_codes_qry_test.rs,unknown_window_function_with_matching_rows_returns_qry_011
+limits,L4 query validation codes (QRY-007/010/011/013/015),tests/recursive_rules_test.rs,test_rule_head_entity_not_an_entity_is_qry013
+limits,L4 query validation codes (QRY-007/010/011/013/015),tests/collect_set_test.rs,set_valued_attribute_is_qry_015
+limits,L4 query validation codes (QRY-007/010/011/013/015),src/query/engine/tests.rs,planner_errors_keep_their_codes
+limits,L5 parser codes and grammar,tests/error_codes_prs_test.rs,prs_codes_reach_through_prepare
+limits,L5 parser codes and grammar,tests/error_codes_prs_test.rs,prs_codes_cover_tokenizer_and_edn_errors
+limits,L5 parser codes and grammar,tests/error_codes_prs_test.rs,prs_108_rejects_the_whole_transaction
+limits,L5 parser codes and grammar,tests/grammar_conformance.rs,invalid_syntax_corpus
+limits,L5 parser codes and grammar,tests/grammar_conformance.rs,invalid_semantic_corpus
+limits,L5 parser codes and grammar,src/query/datalog/parser/verifier.rs,structural_level
+limits,L5 parser codes and grammar,src/query/datalog/parser/verifier.rs,semantic_witnesses_raise_their_code
+limits,L6 API codes on handles (API-014),tests/read_only_open_test.rs,writes_are_api_014_and_change_nothing
+limits,L7 code registry matches ERROR_REFERENCE.md,src/error.rs,registry_matches_error_reference_doc_bidirectionally
+limits,L7 code registry matches ERROR_REFERENCE.md,src/error.rs,every_error_code_variant_has_a_registry_entry
+corrupt,"C1 page checksum, id and generation (STG-029/030/031)",src/storage/page.rs,flipped_body_bit_is_stg_029
+corrupt,"C1 page checksum, id and generation (STG-029/030/031)",src/storage/page.rs,wrong_page_id_is_stg_030
+corrupt,"C1 page checksum, id and generation (STG-029/030/031)",src/storage/page.rs,future_generation_is_stg_031
+corrupt,"C1 page checksum, id and generation (STG-029/030/031)",src/storage/cache.rs,corrupt_page_is_rejected_and_not_cached
+corrupt,"C1 page checksum, id and generation (STG-029/030/031)",src/storage/persistent_facts.rs,damaged_pages_surface_as_stg_029_on_read
+corrupt,"C1 page checksum, id and generation (STG-029/030/031)",tests/index_corruption_test.rs,query_over_damaged_leaves_fails_with_stg_029
+corrupt,C2 meta pages and short files (STG-032/033/044/045),src/storage/persistent_facts.rs,torn_initial_meta_with_data_in_page_1_is_stg_032
+corrupt,C2 meta pages and short files (STG-032/033/044/045),src/storage/persistent_facts.rs,wal_newer_than_the_valid_meta_is_stg_033
+corrupt,C2 meta pages and short files (STG-032/033/044/045),src/storage/persistent_facts.rs,truncated_file_is_stg_044
+corrupt,C2 meta pages and short files (STG-032/033/044/045),tests/btree_v6_test.rs,newest_meta_damaged_after_commit_is_refused
+corrupt,C2 meta pages and short files (STG-032/033/044/045),tests/integrity_test.rs,truncated_file_is_refused_at_open
+corrupt,C2 meta pages and short files (STG-032/033/044/045),tests/integrity_test.rs,sub_page_file_is_refused_unless_a_torn_first_write
+corrupt,C2 meta pages and short files (STG-032/033/044/045),tests/integrity_test.rs,meta_page_count_past_end_is_refused_and_file_never_grows
+corrupt,"C3 trees, dictionary and free list (STG-035/036, INT-049)",src/storage/freelist.rs,wrong_count_or_looping_chain_is_stg_035
+corrupt,"C3 trees, dictionary and free list (STG-035/036, INT-049)",src/storage/dict.rs,missing_dictionary_entry_is_stg_036
+corrupt,"C3 trees, dictionary and free list (STG-035/036, INT-049)",src/storage/node.rs,corrupt_leaf_is_rejected
+corrupt,"C3 trees, dictionary and free list (STG-035/036, INT-049)",src/storage/btree.rs,cursor_through_a_cycle_is_int_049_without_repeating_a_key
+corrupt,"C3 trees, dictionary and free list (STG-035/036, INT-049)",tests/integrity_test.rs,internal_node_pointing_at_itself_fails_the_scan_instead_of_looping
+corrupt,C4 verify and repair of arbitrary damage,tests/integrity_test.rs,damaged_leaves_are_reported_and_index_damage_is_repaired
+corrupt,C4 verify and repair of arbitrary damage,src/storage/persistent_facts.rs,each_index_damage_is_found_and_repaired
+corrupt,C4 verify and repair of arbitrary damage,src/storage/persistent_facts.rs,dictionary_damage_is_reported_and_not_rebuilt
+corrupt,C4 verify and repair of arbitrary damage,src/storage/persistent_facts.rs,damaged_free_list_page_fails_the_checkpoint_not_the_file
+corrupt,C4 verify and repair of arbitrary damage,src/storage/persistent_facts.rs,crash_at_every_point_of_rebuild_keeps_every_fact
+corrupt,C4 verify and repair of arbitrary damage,src/fault_matrix.rs,faults_during_rebuild_indexes
+retry,R1 failed checkpoint refuses retry (STG-046),src/fault_matrix.rs,faults_during_checkpoint
+retry,R1 failed checkpoint refuses retry (STG-046),src/fault_matrix.rs,faults_during_auto_checkpoint
+retry,R1 failed checkpoint refuses retry (STG-046),src/fault_matrix.rs,disk_full_halfway_through_a_checkpoint
+retry,R1 failed checkpoint refuses retry (STG-046),src/fault_matrix.rs,no_commit_after_a_failed_meta_fsync
+retry,R1 failed checkpoint refuses retry (STG-046),src/fault_matrix.rs,faults_during_a_large_transaction
+retry,R1 failed checkpoint refuses retry (STG-046),src/storage/persistent_facts/large_tx.rs,a_failed_handle_is_refused_when_a_transaction_would_become_large
+retry,R1 failed checkpoint refuses retry (STG-046),src/storage/persistent_facts/large_tx.rs,a_failure_in_a_large_write_transaction_fails_its_commit
+retry,R2 failed WAL append refuses writes (WAL-007),src/wal.rs,test_wal_failed_append_refuses_later_appends_with_wal_007
+retry,R2 failed WAL append refuses writes (WAL-007),src/db.rs,test_failed_wal_append_refuses_writes_until_checkpoint
+retry,R2 failed WAL append refuses writes (WAL-007),src/fault_matrix.rs,faults_during_transact
+legacy,V1 v1-v6 files refused (STG-028),tests/migration_matrix_test.rs,pre_v7_versions_are_rejected_with_stg_028
+legacy,V1 v1-v6 files refused (STG-028),tests/error_codes_storage_test.rs,open_pre_v7_version_returns_stg_028
+legacy,V1 v1-v6 files refused (STG-028),tests/btree_v6_test.rs,test_v5_file_is_rejected
+legacy,V1 v1-v6 files refused (STG-028),tests/wal_test.rs,test_v2_file_is_rejected
+legacy,V1 v1-v6 files refused (STG-028),src/storage/mod.rs,from_bytes_pre_v7_returns_stg_028
+legacy,V1 v1-v6 files refused (STG-028),src/storage/mod.rs,validate_pre_v7_returns_stg_028
+legacy,V2 unknown versions (STG-006),tests/error_codes_storage_test.rs,open_unsupported_version_returns_stg_006
+legacy,V2 unknown versions (STG-006),tests/migration_matrix_test.rs,unsupported_version_fails_loudly
+wal_heavy,"H1 WAL entry of more than 1,000,000 facts (reader)",src/wal.rs,test_wal_entry_of_more_than_a_million_facts_replays
+wal_heavy,H2 damaged entry bounds end replay,src/wal.rs,test_wal_entry_with_more_facts_than_bytes_left_ends_replay
+wal_heavy,H2 damaged entry bounds end replay,src/wal.rs,test_wal_entry_with_facts_cut_short_ends_replay
+wal_heavy,H3 million-fact statements commit as checkpoints (ignored; nightly smoke.yml),tests/large_transaction_acceptance_test.rs,one_million_fact_transact_holds_one_chunk
+wal_heavy,H3 million-fact statements commit as checkpoints (ignored; nightly smoke.yml),tests/large_transaction_acceptance_test.rs,custom_chunk_bounds
