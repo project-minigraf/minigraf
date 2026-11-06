@@ -2,6 +2,15 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Failure paths (#843, unreleased)
+
+The [X08 map](benchmarks/843-failure-correctness/README.md) assigns invalid
+bounds, windows and binds, callback errors, exhaustion, corrupt pages,
+failed-handle retry, v1–v6 refusal and heavy single-entry WAL replay to
+correctness tests rather than nightly IDs. The C08 rebuild and C30 rollback IDs
+time successful work around one fixed failure; they are not failure-latency
+measurements.
+
 ## Semantic permutations and control limits (#842, unreleased)
 
 The [X07 map](benchmarks/842-semantic-permutations/README.md) assigns

@@ -47,6 +47,11 @@ The [semantic permutation map](docs/benchmarks/842-semantic-permutations/README.
 correctness tests and states what the natural-plan nightly controls do not
 isolate. It adds no nightly benchmark.
 
+The [failure-path correctness map](docs/benchmarks/843-failure-correctness/README.md)
+(#843) ties invalid inputs, callback errors, corruption, failed-handle refusal,
+v1–v6 refusal and heavy WAL replay to the correctness tests that check their
+error codes and data. It adds no nightly benchmark; a heavy-replay test gap is #865.
+
 The [manual shape sweep](docs/benchmarks/841-shape-sweeps/README.md) (#841)
 examines native sort/window, set and UUID shapes, recursive controls, and
 sustained reader retention. The report separates query latency, process RSS,
