@@ -124,10 +124,10 @@ pub struct DatalogExecutor {
     rules: Arc<RwLock<RuleRegistry>>,
     /// The functions; each query reads one snapshot of them (#180).
     functions: Arc<Functions>,
-    /// The most facts a rule query may derive, base facts not counted (#553).
-    max_derived_facts: usize,
-    /// The most bytes an engine query may hold (#549).
-    query_memory_limit: usize,
+    /// The database's limits (`OpenOptions`): rounds per stratum (#861),
+    /// facts a rule query may derive, base facts not counted (#553), and
+    /// bytes a query may hold (#549). A query's keywords replace them.
+    limits: crate::query::engine::Limits,
 }
 
 impl DatalogExecutor {
@@ -138,8 +138,7 @@ impl DatalogExecutor {
             snapshot: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(Functions::with_builtins()),
-            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-            query_memory_limit: usize::MAX,
+            limits: crate::query::engine::Limits::default(),
         }
     }
 
@@ -156,8 +155,7 @@ impl DatalogExecutor {
             snapshot: None,
             rules,
             functions,
-            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-            query_memory_limit: usize::MAX,
+            limits: crate::query::engine::Limits::default(),
         }
     }
 
@@ -169,32 +167,12 @@ impl DatalogExecutor {
         Self::new_with_rules_and_functions(storage, rules, Arc::new(Functions::with_builtins()))
     }
 
-    /// Create a `DatalogExecutor` with custom complexity limits.
-    ///
-    /// Used by `Minigraf` when `OpenOptions` specifies non-default limits.
-    #[allow(dead_code)]
-    pub fn new_with_limits(
-        storage: FactStorage,
-        rules: Arc<RwLock<RuleRegistry>>,
-        functions: Arc<Functions>,
-        max_derived_facts: usize,
-    ) -> Self {
-        DatalogExecutor {
-            storage,
-            snapshot: None,
-            rules,
-            functions,
-            max_derived_facts,
-            query_memory_limit: usize::MAX,
-        }
-    }
-
-    /// Set the most facts a rule query may derive, base facts not counted
-    /// (`OpenOptions::max_derived_facts`, #553), and the most bytes a query
-    /// on the engine may hold (`OpenOptions::query_memory_limit`, #549).
-    pub fn set_limits(&mut self, max_derived_facts: usize, query_memory_limit: usize) {
-        self.max_derived_facts = max_derived_facts;
-        self.query_memory_limit = query_memory_limit;
+    /// Set the database's limits: rounds per stratum
+    /// (`OpenOptions::max_iterations`, #861), facts a rule query may derive
+    /// (`OpenOptions::max_derived_facts`, #553) and bytes a query may hold
+    /// (`OpenOptions::query_memory_limit`, #549).
+    pub(crate) fn set_limits(&mut self, limits: crate::query::engine::Limits) {
+        self.limits = limits;
     }
 
     /// Read every fact from `snapshot`, so the queries of this executor see
@@ -385,7 +363,7 @@ impl DatalogExecutor {
         };
         check_per_fact_pseudo_attrs(query)?;
         let limits = crate::query::engine::Limits {
-            max_iterations: crate::query::datalog::evaluator::DEFAULT_MAX_ITERATIONS,
+            max_iterations: self.iteration_limit(query)?,
             max_derived_facts: self.derived_limit(query)?,
             query_memory: self.memory_limit(query)?,
         };
@@ -433,7 +411,7 @@ impl DatalogExecutor {
             None => Ok(usize::MAX),
         };
         Ok(match (&query.max_derived_facts, &query.max_results) {
-            (None, None) => self.max_derived_facts,
+            (None, None) => self.limits.max_derived_facts,
             (a, b) => limit(a, ":max-derived-facts")?.min(limit(b, ":max-results")?),
         })
     }
@@ -443,7 +421,16 @@ impl DatalogExecutor {
     fn memory_limit(&self, query: &DatalogQuery) -> Result<usize> {
         match &query.query_memory_limit {
             Some(c) => c.literal(":query-memory-limit"),
-            None => Ok(self.query_memory_limit),
+            None => Ok(self.limits.query_memory),
+        }
+    }
+
+    /// The most rounds a stratum of `query`'s rules may run: its
+    /// `:max-iterations` replaces the executor's (#861).
+    fn iteration_limit(&self, query: &DatalogQuery) -> Result<usize> {
+        match &query.max_iterations {
+            Some(c) => c.literal(":max-iterations"),
+            None => Ok(self.limits.max_iterations),
         }
     }
 
@@ -1550,6 +1537,7 @@ mod tests {
                 max_derived_facts: None,
                 max_results: None,
                 query_memory_limit: None,
+                max_iterations: None,
                 limit: None,
                 offset: None,
                 order_by: Vec::new(),
@@ -1613,6 +1601,7 @@ mod tests {
                 max_derived_facts: None,
                 max_results: None,
                 query_memory_limit: None,
+                max_iterations: None,
                 limit: None,
                 offset: None,
                 order_by: Vec::new(),
@@ -2011,7 +2000,7 @@ mod tests {
             rules.clone(),
             functions.clone(),
         );
-        executor.set_limits(1_000_000, usize::MAX);
+        executor.set_limits(crate::query::engine::Limits::default());
 
         executor
             .execute(parse_datalog_command(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#).unwrap())

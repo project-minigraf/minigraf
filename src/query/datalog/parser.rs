@@ -900,6 +900,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     let mut query_max_derived_facts: Option<Count> = None;
     let mut query_max_results: Option<Count> = None;
     let mut query_query_memory_limit: Option<Count> = None;
+    let mut query_max_iterations: Option<Count> = None;
     let mut query_limit: Option<Count> = None;
     let mut query_offset: Option<Count> = None;
     let mut query_order_by: Option<Vec<(FindSpec, Order)>> = None;
@@ -982,11 +983,15 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     i += 1;
                     continue;
                 }
-                ":max-derived-facts" | ":max-results" | ":query-memory-limit" => {
+                ":max-derived-facts"
+                | ":max-results"
+                | ":query-memory-limit"
+                | ":max-iterations" => {
                     current_clause = None;
                     let (target, min) = match keyword {
                         ":max-derived-facts" => (&mut query_max_derived_facts, 1),
                         ":max-results" => (&mut query_max_results, 1),
+                        ":max-iterations" => (&mut query_max_iterations, 1),
                         _ => (&mut query_query_memory_limit, 0),
                     };
                     if target.is_some() {
@@ -1000,7 +1005,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                         EdnValue::Integer(n) if *n >= min => {
                             Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX))
                         }
-                        // Only the two older keywords reject zero (INT-014).
+                        // Every keyword but `:query-memory-limit` rejects zero (INT-014).
                         EdnValue::Integer(_) if min == 1 => {
                             bail_coded!(ErrorCode::Int014, keyword);
                         }
@@ -1234,6 +1239,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     query.max_derived_facts = query_max_derived_facts;
     query.max_results = query_max_results;
     query.query_memory_limit = query_query_memory_limit;
+    query.max_iterations = query_max_iterations;
     query.limit = query_limit;
     query.offset = query_offset;
     query.order_by = order_by;
@@ -3381,6 +3387,25 @@ mod tests {
                 assert_eq!(q.query_memory_limit, Some(Count::Literal(0)));
             }
             _ => panic!("expected a query"),
+        }
+    }
+
+    #[test]
+    fn max_iterations_takes_a_literal_or_a_slot() {
+        for (input, want) in [
+            (
+                "(query [:find ?x :where [?x :a :b] :max-iterations 7])",
+                Count::Literal(7),
+            ),
+            (
+                "(query [:find ?x :where [?x :a :b] :max-iterations $n])",
+                Count::Slot("n".into()),
+            ),
+        ] {
+            match parse_datalog_command(input).expect("parses") {
+                DatalogCommand::Query(q) => assert_eq!(q.max_iterations, Some(want)),
+                _ => panic!("expected a query"),
+            }
         }
     }
 

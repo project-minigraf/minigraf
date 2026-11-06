@@ -2,9 +2,10 @@ use super::types::{EdnValue, Pattern};
 use crate::error::{ErrorCode, err_coded};
 use anyhow::Result;
 
-/// Default maximum iterations for recursive evaluation (kept for reference).
-#[allow(dead_code)]
-pub const DEFAULT_MAX_ITERATIONS: usize = 1000;
+/// Default maximum rounds of one stratum of a rule query (#861): equal to
+/// [`DEFAULT_MAX_DERIVED_FACTS`], since a round that continues derived a new
+/// fact, so at the defaults the derived-facts limit is reached first.
+pub const DEFAULT_MAX_ITERATIONS: usize = 1_000_000;
 /// Default maximum facts the rules of one query may derive in total; base
 /// facts do not count (#553).
 pub const DEFAULT_MAX_DERIVED_FACTS: usize = 1_000_000;
@@ -24,7 +25,7 @@ pub(crate) fn iterations_exceeded(limit: usize) -> anyhow::Error {
     err_coded!(
         ErrorCode::Int020,
         format!(
-            "Max iterations ({limit}) exceeded. Possible infinite recursion or cycle in rules."
+            "Max iterations ({limit}) exceeded. A stratum's rules were still deriving new facts after {limit} rounds; raise the limit with :max-iterations N or OpenOptions::max_iterations."
         )
     )
 }

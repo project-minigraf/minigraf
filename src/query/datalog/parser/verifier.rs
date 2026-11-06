@@ -66,7 +66,7 @@ fn alphabet() -> Vec<char> {
     a
 }
 
-const TOKENS: [&str; 41] = [
+const TOKENS: [&str; 42] = [
     "(",
     ")",
     "[",
@@ -91,6 +91,7 @@ const TOKENS: [&str; 41] = [
     ":limit",
     ":offset",
     ":query-memory-limit",
+    ":max-iterations",
     ":distinct",
     ":asc",
     ":desc",
@@ -551,11 +552,11 @@ fn filler_counts_match_the_spec() {
         }
         n
     };
-    // 41 tokens: the #643 spec's 32, `#{` (#316), `:limit`, `:offset`,
-    // `:asc`, `:desc` (#306), `:distinct` (#493), `:rows`, `preceding` (#183)
-    // and `:query-memory-limit` (#870).
-    assert_eq!(count(3), 44_454);
-    assert_eq!(count(4), 1_567_147);
+    // 42 tokens: the #643 spec's 32, `#{` (#316), `:limit`, `:offset`,
+    // `:asc`, `:desc` (#306), `:distinct` (#493), `:rows`, `preceding` (#183),
+    // `:query-memory-limit` (#870) and `:max-iterations` (#861).
+    assert_eq!(count(3), 48_316);
+    assert_eq!(count(4), 1_751_278);
 }
 
 #[test]

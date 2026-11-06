@@ -95,7 +95,11 @@ fn defaults_read_back_and_compose() {
     );
     assert_eq!(
         Overridable::DEFAULTS,
-        &[Overridable::MaxDerivedFacts, Overridable::MaxResults]
+        &[
+            Overridable::MaxDerivedFacts,
+            Overridable::MaxResults,
+            Overridable::MaxIterations
+        ]
     );
     assert_eq!(Overridable::MaxDerivedFacts.keyword(), ":max-derived-facts");
     assert_eq!(Overridable::MaxResults.keyword(), ":max-results");

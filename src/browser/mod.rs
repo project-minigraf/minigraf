@@ -331,10 +331,7 @@ impl BrowserDb {
             inner.fact_storage.clone(),
             inner.rules.clone(),
             inner.functions.clone(),
-            (
-                crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-                usize::MAX,
-            ),
+            crate::query::engine::Limits::default(),
         )
     }
 
@@ -751,6 +748,26 @@ mod tests {
         let text = err.as_string().expect("rejection is a string");
         assert!(text.starts_with("[API-025] "), "rejection is API-025");
         assert!(text.contains(":query-memory-limit"), "names the keyword");
+    }
+
+    // #861: `:max-iterations` is in the default list, so BrowserDb runs it.
+    #[wasm_bindgen_test]
+    async fn max_iterations_keyword_is_allowed() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        db.execute("(transact [[:a :edge :b] [:b :edge :c]])".to_string())
+            .await
+            .expect("transact");
+        db.execute("(rule [(reach ?x ?y) [?x :edge ?y]])".to_string())
+            .await
+            .expect("rule");
+        db.execute("(rule [(reach ?x ?y) [?x :edge ?z] (reach ?z ?y)])".to_string())
+            .await
+            .expect("rule");
+        let q = |n: u32| format!("(query [:find ?x ?y :where (reach ?x ?y) :max-iterations {n}])");
+        db.execute(q(10)).await.expect("allowed");
+        let err = db.execute(q(1)).await.expect_err("over the limit");
+        let text = err.as_string().expect("rejection is a string");
+        assert!(text.starts_with("[INT-020] "), "rejection is INT-020");
     }
 
     #[wasm_bindgen_test]
