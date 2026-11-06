@@ -21,6 +21,11 @@ pub enum Overridable {
     MaxDerivedFacts,
     /// `:max-results N`, the deprecated alias of `:max-derived-facts`.
     MaxResults,
+    /// `:query-memory-limit N`, which overrides
+    /// [`OpenOptions::query_memory_limit`](crate::OpenOptions::query_memory_limit)
+    /// (#870). Not in [`DEFAULTS`](Self::DEFAULTS): query text can raise the
+    /// limit that keeps it from exhausting memory.
+    QueryMemoryLimit,
 }
 
 impl Overridable {
@@ -35,6 +40,7 @@ impl Overridable {
         match self {
             Overridable::MaxDerivedFacts => ":max-derived-facts",
             Overridable::MaxResults => ":max-results",
+            Overridable::QueryMemoryLimit => ":query-memory-limit",
         }
     }
 
@@ -42,6 +48,7 @@ impl Overridable {
         match self {
             Overridable::MaxDerivedFacts => "MaxDerivedFacts",
             Overridable::MaxResults => "MaxResults",
+            Overridable::QueryMemoryLimit => "QueryMemoryLimit",
         }
     }
 }
@@ -57,6 +64,10 @@ pub(crate) fn check_overrides(query: &DatalogQuery, allowed: &[Overridable]) -> 
             query.max_derived_facts.is_some(),
         ),
         (Overridable::MaxResults, query.max_results.is_some()),
+        (
+            Overridable::QueryMemoryLimit,
+            query.query_memory_limit.is_some(),
+        ),
     ];
     for (setting, used) in present {
         if used && !allowed.contains(&setting) {
@@ -93,6 +104,30 @@ mod tests {
         assert!(err.to_string().contains(":max-derived-facts"));
         assert!(err.to_string().contains("Overridable::MaxDerivedFacts"));
         assert!(!err.to_string().contains(":max-results"));
+    }
+
+    #[test]
+    fn checks_in_a_fixed_order() {
+        let q = query(
+            "(query [:find ?e :where [?e :a ?v] :query-memory-limit 9 \
+             :max-results 5 :max-derived-facts 5])",
+        );
+        let first = |allowed: &[Overridable]| {
+            crate::MinigrafError::from(check_overrides(&q, allowed).expect_err("refused"))
+                .to_string()
+        };
+        assert!(first(&[]).contains(":max-derived-facts"));
+        assert!(first(&[Overridable::MaxDerivedFacts]).contains(":max-results"));
+        let last = first(Overridable::DEFAULTS);
+        assert!(last.contains(":query-memory-limit"));
+        assert!(last.contains("Overridable::QueryMemoryLimit"));
+        let all: Vec<_> = Overridable::DEFAULTS
+            .iter()
+            .copied()
+            .chain([Overridable::QueryMemoryLimit])
+            .collect();
+        check_overrides(&q, &all).expect("all listed");
+        assert!(!Overridable::DEFAULTS.contains(&Overridable::QueryMemoryLimit));
     }
 
     #[test]

@@ -26,10 +26,19 @@ fn pest_accepts(input: &str) -> bool {
 ///
 /// Uses `db.prepare()` for `(query ...)` commands so that bind-slot
 /// templates parse correctly without needing substituted values at test time.
-/// Uses `db.execute()` for transact / retract / rule.
+/// Uses `db.execute()` for transact / retract / rule. The handle allows every
+/// override keyword, so `allow_overrides` (API-025, #869) is not a parse error.
 fn parser_accepts(input: &str) -> bool {
+    use minigraf::Overridable;
     let input = input.trim();
-    let Ok(db) = minigraf::Minigraf::in_memory() else {
+    let all = Overridable::DEFAULTS
+        .iter()
+        .copied()
+        .chain([Overridable::QueryMemoryLimit]);
+    let Ok(db) = minigraf::OpenOptions::new()
+        .allow_overrides(all)
+        .open_memory()
+    else {
         return false;
     };
     if input.starts_with("(query") {

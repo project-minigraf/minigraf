@@ -82,7 +82,8 @@ pub struct PreparedQuery {
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<Functions>,
-    /// The database's `max_derived_facts` and `query_memory_limit`.
+    /// The database's `max_derived_facts` and `query_memory_limit`, or the
+    /// setters' values (#870).
     limits: (usize, usize),
 }
 
@@ -95,6 +96,49 @@ impl std::fmt::Debug for PreparedQuery {
 }
 
 impl PreparedQuery {
+    /// Replace the database's
+    /// [`max_derived_facts`](crate::OpenOptions::max_derived_facts) for this
+    /// statement (#870). An allowed `:max-derived-facts` or `:max-results` in
+    /// the query still overrides it. `usize::MAX` means no limit.
+    ///
+    /// Not gated by [`OpenOptions::allow_overrides`](crate::OpenOptions::allow_overrides):
+    /// it is application code, not query text.
+    ///
+    /// ```
+    /// # use minigraf::Minigraf;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.execute("(transact [[:a :edge :b] [:b :edge :c]])").unwrap();
+    /// db.execute("(rule [(reach ?x ?y) [?x :edge ?y]])").unwrap();
+    /// let pq = db.prepare("(query [:find ?x ?y :where (reach ?x ?y)])").unwrap();
+    /// let err = pq.with_max_derived_facts(1).execute(&[]).unwrap_err();
+    /// assert_eq!(err.code(), "INT-020");
+    /// ```
+    pub fn with_max_derived_facts(mut self, n: usize) -> Self {
+        self.limits.0 = n;
+        self
+    }
+
+    /// Replace the database's
+    /// [`query_memory_limit`](crate::OpenOptions::query_memory_limit) for this
+    /// statement (#870). An allowed `:query-memory-limit` in the query still
+    /// overrides it. `usize::MAX` means no limit; `0` lets only queries that
+    /// hold no state run.
+    ///
+    /// Not gated by [`OpenOptions::allow_overrides`](crate::OpenOptions::allow_overrides).
+    ///
+    /// ```
+    /// # use minigraf::Minigraf;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.execute("(transact [[:a :v 1] [:b :v 1]])").unwrap();
+    /// let pq = db.prepare("(query [:find ?v (count ?e) :where [?e :v ?v]])").unwrap();
+    /// let err = pq.with_query_memory_limit(16).execute(&[]).unwrap_err();
+    /// assert_eq!(err.code(), "QRY-012");
+    /// ```
+    pub fn with_query_memory_limit(mut self, bytes: usize) -> Self {
+        self.limits.1 = bytes;
+        self
+    }
+
     /// Substitute bind values and execute against the current database state.
     ///
     /// Extra bindings not referenced by the query are silently ignored.
@@ -250,7 +294,13 @@ fn collect_slot_names(query: &DatalogQuery) -> Vec<String> {
     if let Some(ValidAt::Slot(name)) = &query.valid_at {
         names.insert(name.clone());
     }
-    for count in [&query.limit, &query.offset] {
+    for count in [
+        &query.limit,
+        &query.offset,
+        &query.max_derived_facts,
+        &query.max_results,
+        &query.query_memory_limit,
+    ] {
         if let Some(Count::Slot(name)) = count {
             names.insert(name.clone());
         }
@@ -338,6 +388,17 @@ fn substitute(
 
     if let Some(Count::Slot(name)) = &query.offset {
         query.offset = Some(resolve_count_slot(name, ":offset", bindings)?);
+    }
+
+    // The limit keywords (#870): the literal form's range and codes.
+    for (target, option, min) in [
+        (&mut query.max_derived_facts, ":max-derived-facts", 1),
+        (&mut query.max_results, ":max-results", 1),
+        (&mut query.query_memory_limit, ":query-memory-limit", 0),
+    ] {
+        if let Some(Count::Slot(name)) = target {
+            *target = Some(resolve_limit_slot(name, option, min, bindings)?);
+        }
     }
 
     for clause in &mut query.where_clauses {
@@ -502,6 +563,33 @@ fn resolve_count_slot(
             Ok(Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX)))
         }
         Some(BindValue::Val(Value::Integer(n))) => bail_coded!(ErrorCode::Prs115, option, n),
+        Some(other) => bail_coded!(
+            ErrorCode::Api024,
+            name,
+            option,
+            "Val(Integer)",
+            bind_value_type_name(other)
+        ),
+        None => bail_coded!(ErrorCode::Api022, name),
+    }
+}
+
+/// A limit keyword's slot (#870): `Val(Integer(n))` with `n >= min`; below
+/// it, INT-014 (`min` 1) or INT-015 (`min` 0), as for a literal.
+fn resolve_limit_slot(
+    name: &str,
+    option: &str,
+    min: i64,
+    bindings: &HashMap<&str, &BindValue>,
+) -> Result<Count> {
+    match bindings.get(name) {
+        Some(BindValue::Val(Value::Integer(n))) if *n >= min => {
+            Ok(Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX)))
+        }
+        Some(BindValue::Val(Value::Integer(_))) if min == 1 => {
+            bail_coded!(ErrorCode::Int014, option)
+        }
+        Some(BindValue::Val(Value::Integer(_))) => bail_coded!(ErrorCode::Int015, option),
         Some(other) => bail_coded!(
             ErrorCode::Api024,
             name,

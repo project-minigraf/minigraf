@@ -255,7 +255,7 @@ with no `CodedError` anywhere in its chain.
 | INT-012 | Duplicate query option | Internal |
 | INT-013 | Query option requires a value | Internal |
 | INT-014 | Query option must be >= 1 | Internal |
-| INT-015 | Query option must be a positive integer | Internal |
+| INT-015 | Query option must be a non-negative integer | Internal |
 | INT-016 | (or)/(or-join) nested inside (not)/(not-join) | Internal |
 | INT-017 | Pseudo-attribute not valid in this position | Internal |
 | INT-018 | Variable not bound by any outer/earlier clause | Internal |
@@ -3848,8 +3848,9 @@ clause, `not`/`not-join`/`or`/`or-join`, a rule invocation, or `and`). The
 
 **Error text**: `duplicate {}`
 
-**Cause**: A query specified `:max-derived-facts`, `:max-results`, `:limit`,
-`:offset`, `:order-by` or `:distinct` more than once.
+**Cause**: A query specified `:max-derived-facts`, `:max-results`,
+`:query-memory-limit`, `:limit`, `:offset`, `:order-by` or `:distinct` more
+than once.
 
 **Resolution**:
 - Specify each query option at most once.
@@ -3858,31 +3859,35 @@ clause, `not`/`not-join`/`or`/`or-join`, a rule invocation, or `and`). The
 
 **Error text**: `{} requires a value`
 
-**Cause**: A query option keyword (`:max-derived-facts` or `:max-results`)
-was present with no following value.
+**Cause**: A query option keyword (`:max-derived-facts`, `:max-results` or
+`:query-memory-limit`) was present with no following value.
 
 **Resolution**:
-- Supply a positive integer value after the option keyword.
+- Supply an integer value or a `$slot` after the option keyword.
 
 ### INT-014 Query option must be >= 1
 
 **Error text**: `{} must be >= 1`
 
 **Cause**: `:max-derived-facts` or `:max-results` was given a value less
-than 1.
+than 1, as a literal or as a prepared query's bind value.
 
 **Resolution**:
 - Use a value of 1 or greater.
 
-### INT-015 Query option must be a positive integer
+### INT-015 Query option must be a non-negative integer
 
-**Error text**: `{} must be a positive integer`
+**Error text**: `{} must be a non-negative integer`
 
 **Cause**: `:max-derived-facts` or `:max-results` was given a non-integer
-value.
+value, or `:query-memory-limit` was given a negative or non-integer value, as
+a literal or as a prepared query's bind value. (Before #870 the text said
+"positive integer".)
 
 **Resolution**:
-- Supply a positive integer literal.
+- Supply an integer literal or a `$slot`: at least 1 for
+  `:max-derived-facts` and `:max-results`, at least 0 for
+  `:query-memory-limit`.
 
 ### INT-016 (or)/(or-join) nested inside (not)/(not-join)
 

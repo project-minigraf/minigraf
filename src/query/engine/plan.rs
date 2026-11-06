@@ -626,11 +626,7 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
     // After `finish`, which may still add the steps of a clause list with
     // no pattern. `execute` rejects an unbound slot (API-010); a prepared
     // query fills it.
-    let count = |c: &Option<Count>, option: &str| match c {
-        None => Ok(None),
-        Some(Count::Literal(n)) => Ok(Some(*n)),
-        Some(Count::Slot(_)) => Err(invariant(&format!("a {option} slot reached the planner"))),
-    };
+    let count = |c: &Option<Count>, option: &str| c.as_ref().map(|c| c.literal(option)).transpose();
     let (limit, offset) = (
         count(&query.limit, ":limit")?,
         count(&query.offset, ":offset")?,

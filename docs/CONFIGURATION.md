@@ -17,9 +17,9 @@ code are not gated.
 
 | `OpenOptions` field | Default | Also changed by | Semantics of an override |
 |---|---|---|---|
-| `max_derived_facts` | 1,000,000 | query text: `:max-derived-facts N` | Replaces the database value for that query, up or down |
-| `max_results` (deprecated) | no limit of its own | query text: `:max-results N` | Alone, replaces the database value; with `:max-derived-facts`, the lower applies |
-| `query_memory_limit` | no limit | — (query keyword and `PreparedQuery` setter planned, #870) | — |
+| `max_derived_facts` | 1,000,000 | query text: `:max-derived-facts N` or `$slot`; code: `PreparedQuery::with_max_derived_facts` | Replaces the database value for that query, up or down; a keyword overrides the setter |
+| `max_results` (deprecated) | no limit of its own | query text: `:max-results N` or `$slot` | Alone, replaces the database value; with `:max-derived-facts`, the lower applies |
+| `query_memory_limit` | no limit | query text: `:query-memory-limit N` or `$slot` (not in `DEFAULTS`); code: `PreparedQuery::with_query_memory_limit` | Replaces the database value for that query, up or down; a keyword overrides the setter |
 | round limit | 1000, fixed | — (`OpenOptions::max_iterations` and `:max-iterations` planned, #861) | — |
 | `transaction_chunk_facts` | 65,536 | — (per-transaction `TxOptions` planned, #871) | — |
 | `synchronous` | `SyncMode::Full` | — (per-transaction `TxOptions` planned, #871) | — |
@@ -41,6 +41,7 @@ database's settings, as `Overridable` variants:
 |---|---|---|
 | `Overridable::MaxDerivedFacts` | `:max-derived-facts` | yes |
 | `Overridable::MaxResults` | `:max-results` | yes |
+| `Overridable::QueryMemoryLimit` | `:query-memory-limit` | no |
 
 The default, `Overridable::DEFAULTS`, allows every keyword that could
 override a setting before the list existed, so existing queries keep
@@ -78,5 +79,55 @@ let opts = OpenOptions::new().allow_overrides(
 ```
 
 `Overridable` is `#[non_exhaustive]`: later releases add variants for new
-keywords, such as `:query-memory-limit` (#870, not in `DEFAULTS`) and
-`:max-iterations` (#861, in `DEFAULTS`).
+keywords, such as `:max-iterations` (#861, in `DEFAULTS`).
+
+`QueryMemoryLimit` is left out of `DEFAULTS` because the keyword can raise the
+limit that keeps a query from exhausting memory. List it to let query text
+change the limit:
+
+```rust
+use minigraf::{OpenOptions, Overridable};
+
+let db = OpenOptions::new()
+    .query_memory_limit(64 << 20)
+    .allow_overrides(Overridable::DEFAULTS.iter().copied().chain([Overridable::QueryMemoryLimit]))
+    .open_memory()?;
+db.execute("(query [:find ?x :where [?e :v ?x] :query-memory-limit 1048576])")?;
+```
+
+## Limit keywords
+
+`:max-derived-facts N`, `:max-results N` and `:query-memory-limit N` take an
+integer or a `$slot` that a prepared query fills with
+`BindValue::Val(Value::Integer(n))`:
+
+| Keyword | Range | Out of range | Other value |
+|---|---|---|---|
+| `:max-derived-facts`, `:max-results` | `n >= 1` | `INT-014` | `INT-015` (literal), `API-024` (bind value) |
+| `:query-memory-limit` | `n >= 0` (bytes) | `INT-015` | `INT-015` (literal), `API-024` (bind value) |
+
+A missing bind value is `API-022`. `Minigraf::execute` and `Minigraf::query`
+refuse a query with an unbound slot (`API-010`).
+
+`:query-memory-limit 0` lets a query run only if it holds no state: no hash
+join, aggregate, sort, distinct set or rule relation, and no entity ids to
+resolve. Uncheckpointed facts and returned entities need ids, so in practice
+only a query over checkpointed facts that returns values runs under 0; any
+other query fails at once with `QRY-012`.
+
+## `PreparedQuery` setters
+
+`PreparedQuery::with_max_derived_facts(n)` and
+`PreparedQuery::with_query_memory_limit(bytes)` replace the database values
+that were copied when the query was prepared, for that statement. They are
+application code, so `allow_overrides` does not gate them. An allowed
+keyword in the prepared text, literal or slot, still overrides the setter.
+`usize::MAX` means no limit.
+
+```rust
+let pq = db
+    .prepare("(query [:find ?x ?y :where (reach ?x ?y)])")?
+    .with_max_derived_facts(10_000)
+    .with_query_memory_limit(16 << 20);
+let rows = pq.execute(&[])?;
+```

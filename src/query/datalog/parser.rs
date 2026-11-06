@@ -897,8 +897,9 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     let mut current_clause: Option<&str> = None;
     let mut query_as_of: Option<AsOf> = None;
     let mut query_valid_at: Option<ValidAt> = None;
-    let mut query_max_derived_facts: Option<usize> = None;
-    let mut query_max_results: Option<usize> = None;
+    let mut query_max_derived_facts: Option<Count> = None;
+    let mut query_max_results: Option<Count> = None;
+    let mut query_query_memory_limit: Option<Count> = None;
     let mut query_limit: Option<Count> = None;
     let mut query_offset: Option<Count> = None;
     let mut query_order_by: Option<Vec<(FindSpec, Order)>> = None;
@@ -981,55 +982,33 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     i += 1;
                     continue;
                 }
-                ":max-derived-facts" => {
+                ":max-derived-facts" | ":max-results" | ":query-memory-limit" => {
                     current_clause = None;
-                    if query_max_derived_facts.is_some() {
-                        bail_coded!(ErrorCode::Int012, ":max-derived-facts");
+                    let (target, min) = match keyword {
+                        ":max-derived-facts" => (&mut query_max_derived_facts, 1),
+                        ":max-results" => (&mut query_max_results, 1),
+                        _ => (&mut query_query_memory_limit, 0),
+                    };
+                    if target.is_some() {
+                        bail_coded!(ErrorCode::Int012, keyword);
                     }
                     i += 1;
                     let val = query_vector
                         .get(i)
-                        .ok_or_else(|| err_coded!(ErrorCode::Int013, ":max-derived-facts"))?;
-                    match val {
-                        EdnValue::Integer(n) if *n >= 1 => {
-                            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                            {
-                                query_max_derived_facts = Some(*n as usize);
-                            }
+                        .ok_or_else(|| err_coded!(ErrorCode::Int013, keyword))?;
+                    *target = Some(match val {
+                        EdnValue::Integer(n) if *n >= min => {
+                            Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX))
                         }
-                        EdnValue::Integer(_) => {
-                            bail_coded!(ErrorCode::Int014, ":max-derived-facts");
+                        // Only the two older keywords reject zero (INT-014).
+                        EdnValue::Integer(_) if min == 1 => {
+                            bail_coded!(ErrorCode::Int014, keyword);
                         }
+                        EdnValue::BindSlot(name) => Count::Slot(name.clone()),
                         _other => {
-                            bail_coded!(ErrorCode::Int015, ":max-derived-facts");
+                            bail_coded!(ErrorCode::Int015, keyword);
                         }
-                    }
-                    i += 1;
-                    continue;
-                }
-                ":max-results" => {
-                    current_clause = None;
-                    if query_max_results.is_some() {
-                        bail_coded!(ErrorCode::Int012, ":max-results");
-                    }
-                    i += 1;
-                    let val = query_vector
-                        .get(i)
-                        .ok_or_else(|| err_coded!(ErrorCode::Int013, ":max-results"))?;
-                    match val {
-                        EdnValue::Integer(n) if *n >= 1 => {
-                            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                            {
-                                query_max_results = Some(*n as usize);
-                            }
-                        }
-                        EdnValue::Integer(_) => {
-                            bail_coded!(ErrorCode::Int014, ":max-results");
-                        }
-                        _other => {
-                            bail_coded!(ErrorCode::Int015, ":max-results");
-                        }
-                    }
+                    });
                     i += 1;
                     continue;
                 }
@@ -1254,6 +1233,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     query.with_vars = with_vars;
     query.max_derived_facts = query_max_derived_facts;
     query.max_results = query_max_results;
+    query.query_memory_limit = query_query_memory_limit;
     query.limit = query_limit;
     query.offset = query_offset;
     query.order_by = order_by;
@@ -3110,7 +3090,7 @@ mod tests {
         assert!(result.is_ok(), "should parse :max-derived-facts");
         match result.unwrap() {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.max_derived_facts, Some(500_000));
+                assert_eq!(q.max_derived_facts, Some(Count::Literal(500_000)));
                 assert_eq!(q.max_results, None);
             }
             _ => panic!("expected Query"),
@@ -3125,7 +3105,7 @@ mod tests {
         match result.unwrap() {
             DatalogCommand::Query(q) => {
                 assert_eq!(q.max_derived_facts, None);
-                assert_eq!(q.max_results, Some(9_999));
+                assert_eq!(q.max_results, Some(Count::Literal(9_999)));
             }
             _ => panic!("expected Query"),
         }
@@ -3139,8 +3119,8 @@ mod tests {
         assert!(result.is_ok(), "should parse both limit keys");
         match result.unwrap() {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.max_derived_facts, Some(1_000_000));
-                assert_eq!(q.max_results, Some(100));
+                assert_eq!(q.max_derived_facts, Some(Count::Literal(1_000_000)));
+                assert_eq!(q.max_results, Some(Count::Literal(100)));
             }
             _ => panic!("expected Query"),
         }
@@ -3384,13 +3364,60 @@ mod tests {
     }
 
     #[test]
+    fn limit_keywords_take_slots_and_query_memory_limit_zero() {
+        let input = "(query [:find ?x :where [?x :a :b] :max-derived-facts $d \
+                     :max-results $r :query-memory-limit $m])";
+        match parse_datalog_command(input).expect("slots") {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.max_derived_facts, Some(Count::Slot("d".into())));
+                assert_eq!(q.max_results, Some(Count::Slot("r".into())));
+                assert_eq!(q.query_memory_limit, Some(Count::Slot("m".into())));
+            }
+            _ => panic!("expected a query"),
+        }
+        let input = "(query [:find ?x :where [?x :a :b] :query-memory-limit 0])";
+        match parse_datalog_command(input).expect("zero") {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.query_memory_limit, Some(Count::Literal(0)));
+            }
+            _ => panic!("expected a query"),
+        }
+    }
+
+    #[test]
+    fn query_memory_limit_errors() {
+        let code = |opt: &str| {
+            let input = format!("(query [:find ?x :where [?x :a :b] {opt}])");
+            crate::MinigrafError::from(parse_datalog_command(&input).expect_err(opt))
+                .code()
+                .to_string()
+        };
+        assert_eq!(
+            code(":query-memory-limit 1 :query-memory-limit 2"),
+            "INT-012"
+        );
+        assert_eq!(code(":query-memory-limit"), "INT-013");
+        assert_eq!(code(":query-memory-limit -1"), "INT-015");
+        assert_eq!(code(":query-memory-limit :x"), "INT-015");
+        assert_eq!(code(":max-derived-facts 0"), "INT-014");
+    }
+
+    #[test]
+    fn count_literal_refuses_a_slot() {
+        assert_eq!(Count::Literal(3).literal(":x").expect("literal"), 3);
+        let err =
+            crate::MinigrafError::from(Count::Slot("s".into()).literal(":x").expect_err("slot"));
+        assert_eq!(err.code(), "INT-032");
+    }
+
+    #[test]
     fn test_parse_max_derived_facts_non_integer_rejected() {
         let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts "a lot"])"#;
         let result = parse_datalog_command(input);
         assert!(result.is_err(), "non-integer should be rejected");
         let msg = result.unwrap_err().to_string();
         assert!(
-            msg.contains(":max-derived-facts must be a positive integer"),
+            msg.contains(":max-derived-facts must be a non-negative integer"),
             "wrong error: {}",
             msg
         );
@@ -3403,7 +3430,7 @@ mod tests {
         assert!(result.is_err(), "non-integer should be rejected");
         let msg = result.unwrap_err().to_string();
         assert!(
-            msg.contains(":max-results must be a positive integer"),
+            msg.contains(":max-results must be a non-negative integer"),
             "wrong error: {}",
             msg
         );
@@ -3484,7 +3511,7 @@ mod tests {
         let result = parse_datalog_command(input);
         assert!(result.is_ok(), "order should not matter");
         match result.unwrap() {
-            DatalogCommand::Query(q) => assert_eq!(q.max_derived_facts, Some(42)),
+            DatalogCommand::Query(q) => assert_eq!(q.max_derived_facts, Some(Count::Literal(42))),
             _ => panic!("expected Query"),
         }
     }

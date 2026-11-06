@@ -66,7 +66,7 @@ fn alphabet() -> Vec<char> {
     a
 }
 
-const TOKENS: [&str; 40] = [
+const TOKENS: [&str; 41] = [
     "(",
     ")",
     "[",
@@ -90,6 +90,7 @@ const TOKENS: [&str; 40] = [
     ":order-by",
     ":limit",
     ":offset",
+    ":query-memory-limit",
     ":distinct",
     ":asc",
     ":desc",
@@ -234,6 +235,12 @@ const SEMANTIC: &[Semantic] = &[
     Semantic {
         code: "PRS-115",
         witness: "(query [:find ?x :where [?x :a ?y] :limit -1])",
+    },
+    // parse_query: a negative `:query-memory-limit` (`integer_lit` takes a
+    // sign, #870).
+    Semantic {
+        code: "INT-015",
+        witness: "(query [:find ?x :where [?x :a ?y] :query-memory-limit -1])",
     },
     // parse_query: `:offset` without `:order-by` (#306).
     Semantic {
@@ -544,10 +551,11 @@ fn filler_counts_match_the_spec() {
         }
         n
     };
-    // 40 tokens: the #643 spec's 32, `#{` (#316), `:limit`, `:offset`,
-    // `:asc`, `:desc` (#306), `:distinct` (#493), and `:rows`, `preceding` (#183).
-    assert_eq!(count(3), 40_804);
-    assert_eq!(count(4), 1_397_966);
+    // 41 tokens: the #643 spec's 32, `#{` (#316), `:limit`, `:offset`,
+    // `:asc`, `:desc` (#306), `:distinct` (#493), `:rows`, `preceding` (#183)
+    // and `:query-memory-limit` (#870).
+    assert_eq!(count(3), 44_454);
+    assert_eq!(count(4), 1_567_147);
 }
 
 #[test]
