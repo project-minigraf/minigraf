@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Heavy WAL entry replay test** (#865): a nightly acceptance test writes one WAL entry of 1,000,000 facts, reopens without a checkpoint and checks every replayed fact through entity, attribute and attribute-value lookups, then checkpoints, verifies and reopens. It passes; no production change.
 - **Failure-path correctness map** (#843): [X08's correctness-target map](docs/benchmarks/843-failure-correctness/README.md) ties invalid bounds, windows and binds, callback errors, exhaustion, corrupt pages, failed-handle retry, v1–v6 refusal and heavy single-entry WAL replay to 138 named tests at a pinned v3 revision, with their error and data invariants, and limits the C08 repair and C30 rollback claims to their fixtures. Gaps found: heavy WAL replay through `Minigraf::open` (#865) and the recursion round bound (#861). X08 stays excluded. No production, test, public API or nightly-route change.
 
 - **Semantic permutation map** (#842): [X07's correctness-target map](docs/benchmarks/842-semantic-permutations/README.md) ties numeric, bind, cross-kind join and forced-planner permutations to 128 named tests at a pinned v3 revision, states what the representative nightly controls do and do not establish, and records the hash-scan and keyword binding/clone confounders. X07 stays excluded. No production, test, public API or nightly-route change.

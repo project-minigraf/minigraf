@@ -1,6 +1,8 @@
 //! Acceptance test for large transactions (#550 spec §8.1, #473 spec §8): a
 //! 1M-fact `transact` on a file database holds at most `TX_CHUNK_FACTS`
-//! materialised facts at any time, and commits as a checkpoint.
+//! materialised facts at any time, and commits as a checkpoint. A statement
+//! within a raised chunk writes one heavy WAL entry instead, which a reopen
+//! replays (#865).
 //!
 //! Ignored by default; `.github/workflows/smoke.yml` runs it nightly:
 //!
@@ -159,4 +161,148 @@ fn custom_chunk_bounds() {
         );
         assert_eq!(db.current_tx_count(), 1);
     }
+}
+
+fn count_value(db: &Minigraf, query: &str) -> i64 {
+    let QueryResult::QueryResults { results, .. } = db.execute(query).unwrap() else {
+        panic!("expected count result");
+    };
+    assert_eq!(results.len(), 1, "one count row");
+    match results[0][0] {
+        minigraf::Value::Integer(n) => n,
+        _ => panic!("count is not an integer"),
+    }
+}
+
+/// Check both WAL entries of `one_million_fact_wal_entry_replays_on_open`
+/// through the EAVT (entity bound), AEVT (attribute scan) and AVET (attribute
+/// and value bound) paths, and the transaction boundary between them.
+fn check_heavy_entry(db: &Minigraf, ctx: &str) {
+    assert_eq!(db.current_tx_count(), 2, "{ctx}: two transactions");
+    assert_eq!(
+        count_value(db, "(query [:find (count ?v) :where [:e10 :n ?v]])"),
+        1,
+        "{ctx}: EAVT"
+    );
+    assert_eq!(
+        count(db, "(query [:find ?e :where [?e :n 10]])"),
+        1,
+        "{ctx}: EAVT value"
+    );
+    assert_eq!(
+        count_value(db, "(query [:find (count ?e) :where [?e :n ?v]])"),
+        (FACTS / 2) as i64,
+        "{ctx}: AEVT :n"
+    );
+    assert_eq!(
+        count_value(db, "(query [:find (count ?v) :where [?e :m ?v]])"),
+        (FACTS / 2) as i64,
+        "{ctx}: AEVT :m"
+    );
+    assert_eq!(
+        count(db, "(query [:find ?v :where [:hub1 :m ?v]])"),
+        FACTS / 64,
+        "{ctx}: repeated entity"
+    );
+    assert_eq!(
+        count(db, "(query [:find ?e :where [?e :n 999998]])"),
+        1,
+        "{ctx}: AVET last"
+    );
+    assert_eq!(
+        count(db, "(query [:find ?e :where [?e :n 0]])"),
+        1,
+        "{ctx}: AVET first"
+    );
+    assert_eq!(
+        count(db, "(query [:find ?e :where [?e :m 999999]])"),
+        1,
+        "{ctx}: AVET :m"
+    );
+    assert_eq!(
+        count(db, r#"(query [:find ?e :where [?e :x "after"]])"#),
+        1,
+        "{ctx}: second entry"
+    );
+    assert_eq!(
+        count(db, "(query [:find ?v :as-of 1 :where [:small :x ?v]])"),
+        0,
+        "{ctx}: second entry is after tx 1"
+    );
+    assert_eq!(
+        count_value(db, "(query [:find (count ?e) :as-of 1 :where [?e :n ?v]])"),
+        (FACTS / 2) as i64,
+        "{ctx}: first entry is whole at tx 1"
+    );
+}
+
+/// #865: a database whose WAL holds one heavy entry replays it through
+/// `Minigraf::open`. One `transact` of exactly 1,000,000 facts with
+/// `transaction_chunk_facts(1_000_000)` stays a small statement and writes
+/// one WAL entry; a second small statement writes another. The handle is
+/// closed without a checkpoint: `wal_checkpoint_threshold(usize::MAX)` makes
+/// the drop discard the storage instead of saving it, so the file holds no
+/// facts and the reopen must replay both entries. The replayed facts are
+/// checked, then checkpointed, verified and reopened again.
+#[test]
+#[ignore]
+fn one_million_fact_wal_entry_replays_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("heavy-wal.graph");
+    let mut wal = path.as_os_str().to_owned();
+    wal.push(".wal");
+    let wal = std::path::PathBuf::from(wal);
+    let open_no_checkpoint = || {
+        minigraf::OpenOptions::new()
+            .transaction_chunk_facts(1_000_000)
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(&path)
+            .open()
+            .unwrap()
+    };
+
+    let db = open_no_checkpoint();
+    let mut input = String::with_capacity(FACTS * 26);
+    input.push_str("(transact [");
+    for i in 0..FACTS {
+        if i % 2 == 0 {
+            input.push_str(&format!("[:e{i} :n {i}]"));
+        } else {
+            input.push_str(&format!("[:hub{} :m {i}]", i % 64));
+        }
+    }
+    input.push_str("])");
+    let start = std::time::Instant::now();
+    db.execute(&input).unwrap();
+    drop(input);
+    let written = start.elapsed();
+    assert!(wal.exists(), "the heavy statement stayed in the WAL");
+    db.execute(r#"(transact [[:small :x "after"]])"#).unwrap();
+    assert_eq!(db.current_tx_count(), 2);
+    assert_eq!(db.verify().unwrap().facts, 0, "nothing checkpointed");
+    drop(db);
+    let wal_bytes = std::fs::metadata(&wal).unwrap().len();
+
+    let start = std::time::Instant::now();
+    let db = open_no_checkpoint();
+    let replayed = start.elapsed();
+    assert_eq!(db.verify().unwrap().facts, 0, "replayed, not checkpointed");
+    check_heavy_entry(&db, "after replay");
+
+    db.checkpoint().unwrap();
+    assert!(!wal.exists(), "checkpoint removed the WAL");
+    let report = db.verify().unwrap();
+    assert!(report.is_ok(), "file intact after checkpoint");
+    assert_eq!(report.facts, FACTS as u64 + 1, "every fact checkpointed");
+    check_heavy_entry(&db, "after checkpoint");
+    drop(db);
+
+    let db = Minigraf::open(&path).unwrap();
+    assert!(!wal.exists(), "no WAL after the checkpointed reopen");
+    check_heavy_entry(&db, "after reopen");
+    eprintln!(
+        "one_million_fact_wal_entry_replays_on_open: {FACTS} facts written in {written:.2?}; \
+         WAL {} MiB; replayed on open in {replayed:.2?}",
+        wal_bytes / (1024 * 1024)
+    );
 }
