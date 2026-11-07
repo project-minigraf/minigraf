@@ -18,6 +18,12 @@ SUITES = {
         [],
     ),
     'size-per-fact': (['storage::persistent_facts::tests::size_per_fact_in_433_shape_1m'], []),
+    'nightly-candidates': (
+        ['n1_skew_running_sum_streams_by_partition', 'n2_set_membership_k256',
+         'n3_sort_heap_holds_offset_plus_limit', 'n4_small_tree_takes_ancestor_alternative',
+         'n5_committed_tree_uses_bound_value_probes', 'n6_held_cursor_quarantine_and_reuse'],
+        [],
+    ),
 }
 
 
