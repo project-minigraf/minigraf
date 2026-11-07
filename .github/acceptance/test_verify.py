@@ -1,7 +1,7 @@
 """Regression checks for false-green acceptance output (no third-party modules)."""
 import unittest
 
-from verify import verify
+from verify import SUITES, verify
 
 
 class AcceptanceOutputTests(unittest.TestCase):
@@ -45,6 +45,15 @@ class AcceptanceOutputTests(unittest.TestCase):
         verify(self.output([name]), [name], [])
         with self.assertRaises(ValueError):
             verify(self.output(['unrelated']), [name], [])
+
+    def test_nightly_candidates_suite_needs_all_six(self):
+        names, rss = SUITES['nightly-candidates']
+        self.assertEqual(len(names), 6)
+        # The port check is not ignored, so `--ignored` filters it out.
+        output = self.output(names).replace('0 filtered out', '1 filtered out')
+        verify(output, names, rss)
+        with self.assertRaises(ValueError):
+            verify(self.output(names[:5]), names, rss)
 
 
 if __name__ == '__main__':
