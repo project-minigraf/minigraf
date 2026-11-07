@@ -43,7 +43,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Measured source: $sha; workflow: ${{ github.workflow_sha }}" >> "$GITHUB_STEP_SUMMARY"
           acceptance=true
-          for test in recursive memory_limit limit large_transaction; do
+          for test in recursive memory_limit limit large_transaction nightly_candidates; do
             if [ ! -f "tests/${test}_acceptance_test.rs" ]; then
               acceptance=false
             fi
@@ -105,6 +105,12 @@ jobs:
           - name: size-per-fact
             timeout: 15
             command: cargo test --lib size_per_fact_in_433_shape_1m -- --include-ignored --nocapture
+          # #863: answers, path events and charged memory of the qualified #841
+          # candidates (times are in bench.yml). Six tests took 37-57 s on
+          # ubuntu-latest after the build.
+          - name: nightly-candidates
+            timeout: 30
+            command: cargo test --profile bench --features test-hooks --test nightly_candidates_acceptance_test -- --ignored --nocapture --test-threads=1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -163,6 +169,6 @@ jobs:
           merge-multiple: false
       - name: Require the complete test inventory and measured RSS checks
         run: |
-          for suite in recursive memory-limit limit large-transaction size-per-fact; do
+          for suite in recursive memory-limit limit large-transaction size-per-fact nightly-candidates; do
             python3 -I .github/acceptance/verify.py "$suite" "acceptance-artifacts/acceptance-$suite/acceptance.txt"
           done
