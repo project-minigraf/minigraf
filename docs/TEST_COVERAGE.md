@@ -4,12 +4,20 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,083 | 2,118 |
-| **Ignored** | 21 | 24 |
-| **Total** | 2,104 | 2,142 |
+| **Active** | 2,087 | 2,125 |
+| **Ignored** | 21 | 30 |
+| **Total** | 2,108 | 2,155 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837, #865, #869, #870 and #861 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861 and #863 (Linux). Verification results below identify which suites ran.
+
+**#863 nightly candidates**: four engine unit tests check the `test-hooks`
+path events and memory peaks (both builds). With `test-hooks` only,
+`path_events_test.rs` adds two integration tests and
+`nightly_candidates_acceptance_test.rs` adds one active fixture-port check and
+six ignored nightly acceptance tests, one per qualified #841 candidate
+([evidence](benchmarks/863-nightly-candidates/README.md)). Full default and
+`test-hooks` suites passed on the alternate bench machine (2026-11-06).
 
 **#838 manual migration verification**: the [manual sweep](benchmarks/838-migration/README.md)
 checks every fixture value and cursor snapshot before accepting timings, including

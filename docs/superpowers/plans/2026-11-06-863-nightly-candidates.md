@@ -248,3 +248,11 @@ diff:
    (1.0); it is a band [0.85, 0.95] instead. N3 keeps ≤ 0.6, N6 keeps ≤ 0.5.
 5. **Port check.** `shape_port_matches_the_database` (not ignored) checks
    every shape against the database at small sizes on every hooks test run.
+6. **Qualification bar amended** (user, 2026-11-06 and 2026-11-07): the
+   first three runs failed the raw 25% spread only because their CPU models
+   differed; three more runs showed a 1.46× whole-runner shift within one model
+   (#678). The verdict uses the spread after dividing each run by its speed
+   factor (the geometric mean of its timed cases), over six runs at
+   `ad326585`; all six candidates qualify (3.5–13.1%). The rerun reused the
+   workflow run (GitHub attempt 3; attempt 2 was cancelled), so the evidence
+   directories are `attempt-1/` and `attempt-2/`.

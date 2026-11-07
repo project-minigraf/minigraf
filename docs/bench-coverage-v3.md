@@ -25,6 +25,20 @@ for X02 below; those rows retain the historical audit context. Activation on the
 default-branch schedule requires v3 PR #848 followed by main PR #849. This adds
 no Bencher memory metric and does not resolve the other manual exclusions.
 
+**#863 follow-up (2026-11-07):** [the qualification report](benchmarks/863-nightly-candidates/README.md)
+resolves the six #841 nightly proposals; all qualify. Six Criterion IDs join
+existing routes: `window/nightly_candidates/skew_running_sum/100k`
+(`^window/`); `query/nightly_candidates/{set_membership_k256/10k,
+sort_offset_desc/100k, sort_offset_asc/100k}` (`^query/`);
+`recursion/nightly_candidates/{tree_ancestors_k1_pending,
+tree_ancestors_k16_committed}/1110` (`^recursion/`). The `nightly-candidates`
+v3 acceptance suite (`tests/nightly_candidates_acceptance_test.rs`, six named
+tests, `test-hooks`) pins answers, path events (`ancestor_alternative_selected`,
+`bound_value_avet_range`), plan operators and charged query memory, and the
+held-cursor churn has no timed case. Spread was judged after normalizing each
+runner's overall speed; raw runner-to-runner shifts reach 1.46× within one CPU
+model. The selected native ID count grows from 427 to 433 once the routes run.
+
 ## Revisions and method
 
 | Input | Revision |

@@ -26,6 +26,7 @@ re-establish the #841 envelope, and the report says so.
 | D1 | **Path evidence:** read the cursor's existing `Debug` operator counters (operator names, rows, bytes held) wherever they distinguish the path. Add thread-local event counters only for the events `Debug` cannot show, under the `test-hooks` feature (`cfg(any(test, feature = "test-hooks"))`). The default and `dist` builds do not change. |
 | D2 | **Route:** split. Time goes in a Criterion case selected by an existing nightly `bench.yml` filter (Bencher latency, t-test alerts, bench profile). Answer, path and memory go in a named, ignored acceptance test in `smoke.yml`'s v3 acceptance matrix, built with `--features test-hooks`. A path regression fails the acceptance job. A slower runner can only raise a Bencher alert. |
 | D3 | **Qualification bar:** at least 3 runs on separate `ubuntu-latest` runners. A candidate is rejected if fixture construction plus measurement takes more than **10 job-minutes**, or its run-to-run spread is over **25%**: `(max − min) / min` of the per-run Criterion point estimates. |
+| D3a | **Amended (user, 2026-11-06 and 2026-11-07):** runners differ by CPU model, and one runner can be ~1.46× slower on every case within one model (#678). The 25% bar applies to the spread after dividing each run by its speed factor (the geometric mean of all timed cases in that run), over six runs; raw same-model and cross-model spreads are reported. See the [evidence](../../benchmarks/863-nightly-candidates/README.md). |
 
 ## 3. Candidates
 

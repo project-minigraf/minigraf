@@ -10,6 +10,11 @@ benchmark machine. Source changes made by `instrument.py`, `variants.py` and
 `events.py` are restricted to a **disposable checkout**. Never run them in a
 working checkout with user edits. None adds a shipping feature flag or public API.
 
+`benches/helpers/shape.rs` is a trimmed port of `native/src/main.rs`'s fixtures,
+queries and oracles for the six nightly candidates qualified by #863
+([evidence](../../docs/benchmarks/863-nightly-candidates/README.md)). This harness
+stays authoritative for the sweep; change the port only to follow it.
+
 ## Build and verify
 
 From a fresh disposable checkout of the recorded core revision, with the harness

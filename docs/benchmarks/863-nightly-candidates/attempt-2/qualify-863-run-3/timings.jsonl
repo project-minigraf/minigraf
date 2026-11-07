@@ -1,0 +1,12 @@
+{"kind":"criterion","id":"window/nightly_candidates/skew_running_sum/100k","seconds":155.234}
+{"kind":"criterion","id":"query/nightly_candidates/set_membership_k256/10k","seconds":91.83}
+{"kind":"criterion","id":"query/nightly_candidates/sort_offset_desc/100k","seconds":53.522}
+{"kind":"criterion","id":"query/nightly_candidates/sort_offset_asc/100k","seconds":55.487}
+{"kind":"criterion","id":"recursion/nightly_candidates/tree_ancestors_k1_pending/1110","seconds":39.411}
+{"kind":"criterion","id":"recursion/nightly_candidates/tree_ancestors_k16_committed/1110","seconds":41.875}
+{"kind":"acceptance","test":"n1_skew_running_sum_streams_by_partition","seconds":48.902}
+{"kind":"acceptance","test":"n2_set_membership_k256","seconds":4.289}
+{"kind":"acceptance","test":"n3_sort_heap_holds_offset_plus_limit","seconds":1.223}
+{"kind":"acceptance","test":"n4_small_tree_takes_ancestor_alternative","seconds":0.119}
+{"kind":"acceptance","test":"n5_committed_tree_uses_bound_value_probes","seconds":0.224}
+{"kind":"acceptance","test":"n6_held_cursor_quarantine_and_reuse","seconds":2.476}

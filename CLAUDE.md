@@ -32,7 +32,12 @@ The [#841 manual shape sweep](docs/benchmarks/841-shape-sweeps/README.md)
 records native sort/window, set, UUID, recursive-control and sustained-reader
 experiments, including rejected inputs, capped attempts and attribution limits.
 Its standalone harness and disposable diagnostic probes do not change the
-library test inventory, production code or nightly routes.
+library test inventory, production code or nightly routes. #863 qualified its
+nightly candidates ([evidence](docs/benchmarks/863-nightly-candidates/README.md)):
+Criterion cases in `benches/minigraf_bench/nightly_candidates.rs` (fixtures in
+`benches/helpers/shape.rs`) and ignored `test-hooks` acceptance tests in
+`tests/nightly_candidates_acceptance_test.rs` (`minigraf::__path_events`,
+`Cursor::__memory_peak`).
 
 ## Core Philosophy - CRITICAL
 
@@ -245,7 +250,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2104 tests** (2083 active, 21 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2108 tests** (2087 active, 21 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.
