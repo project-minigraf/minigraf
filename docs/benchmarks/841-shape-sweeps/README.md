@@ -545,6 +545,10 @@ quarantined pages become reusable.
 
 ## Nightly candidates (proposals only)
 
+Resolved by [#863](../863-nightly-candidates/README.md): each candidate below was
+qualified on the GitHub runner or rejected there, with its cost and spread. The
+table is kept as proposed.
+
 No sweep case is added to nightly CI by this change. The following small
 representatives each exercise one behavior this sweep found, at a cost that
 looks compatible with a nightly route. Times are this host's warmed medians;

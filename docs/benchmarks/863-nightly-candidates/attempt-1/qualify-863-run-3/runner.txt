@@ -1,0 +1,7 @@
+run=3
+sha=ad3265851a8933e1de78c2b193f41067b1a34209
+image=ubuntu26 20261101.186.1
+nproc=4
+model name	: AMD EPYC 9V74 80-Core Processor
+Mem:           15983         980       14172          45        1177       15003
+rustc 1.99.1 (58cf8f9c3 2026-10-13)

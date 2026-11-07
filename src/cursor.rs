@@ -102,6 +102,16 @@ impl Cursor {
         self.stream.as_deref_mut()
     }
 
+    /// The most bytes this query's holders counted at once (#863): in total
+    /// (`None`) or for one tracked op (`Some("Window")`, `"Aggregate"`,
+    /// `"IdSpace"`). `None` once the stream has ended or for an answer
+    /// computed at open. Only for tests; built with `test-hooks` only.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn __memory_peak(&self, op: Option<&str>) -> Option<usize> {
+        self.stream.as_ref().map(|s| s.memory_peak(op))
+    }
+
     /// The engine's operator counters (spec §6.3); empty once the stream is
     /// done or for an answer computed at open.
     #[cfg(test)]

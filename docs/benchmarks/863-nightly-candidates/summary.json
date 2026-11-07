@@ -1,0 +1,225 @@
+{
+  "runs": [
+    "AMD EPYC 9V45 96-Core Processor",
+    "AMD EPYC 9V74 80-Core Processor",
+    "AMD EPYC 9V74 80-Core Processor",
+    "AMD EPYC 7763 64-Core Processor",
+    "AMD EPYC 9V74 80-Core Processor",
+    "AMD EPYC 9V74 80-Core Processor"
+  ],
+  "speed_factor_ms": [
+    35.42506258176116,
+    47.251441536573786,
+    48.0561786404889,
+    57.54135219891703,
+    47.377282524908566,
+    69.30847831222255
+  ],
+  "candidates": {
+    "N1": {
+      "criterion_ids": [
+        "window/nightly_candidates/skew_running_sum/100k"
+      ],
+      "acceptance_test": "n1_skew_running_sum_streams_by_partition",
+      "cost_seconds_per_run": [
+        140.305,
+        157.51999999999998,
+        185.44899999999998,
+        167.591,
+        161.691,
+        204.13600000000002
+      ],
+      "median_ms_per_run": {
+        "window/nightly_candidates/skew_running_sum/100k": [
+          704.7803905,
+          973.083548,
+          980.9042795,
+          1153.1932915,
+          972.0500005,
+          1423.69982
+        ]
+      },
+      "normalized_spread": {
+        "window/nightly_candidates/skew_running_sum/100k": 0.03512281698711682
+      },
+      "same_model_spread": {
+        "window/nightly_candidates/skew_running_sum/100k": 0.46463640683882707
+      },
+      "cross_model_spread": {
+        "window/nightly_candidates/skew_running_sum/100k": 1.0200616237207867
+      },
+      "verdict": "qualified",
+      "reasons": []
+    },
+    "N2": {
+      "criterion_ids": [
+        "query/nightly_candidates/set_membership_k256/10k"
+      ],
+      "acceptance_test": "n2_set_membership_k256",
+      "cost_seconds_per_run": [
+        63.677,
+        75.767,
+        86.32600000000001,
+        79.244,
+        75.69800000000001,
+        96.119
+      ],
+      "median_ms_per_run": {
+        "query/nightly_candidates/set_membership_k256/10k": [
+          785.831977,
+          946.4375405,
+          1024.328286,
+          1192.206824,
+          971.734955,
+          1440.914877
+        ]
+      },
+      "normalized_spread": {
+        "query/nightly_candidates/set_membership_k256/10k": 0.10749602233451472
+      },
+      "same_model_spread": {
+        "query/nightly_candidates/set_membership_k256/10k": 0.5224616684570322
+      },
+      "cross_model_spread": {
+        "query/nightly_candidates/set_membership_k256/10k": 0.8336170061453224
+      },
+      "verdict": "qualified",
+      "reasons": []
+    },
+    "N3": {
+      "criterion_ids": [
+        "query/nightly_candidates/sort_offset_desc/100k",
+        "query/nightly_candidates/sort_offset_asc/100k"
+      ],
+      "acceptance_test": "n3_sort_heap_holds_offset_plus_limit",
+      "cost_seconds_per_run": [
+        83.591,
+        94.941,
+        113.377,
+        97.396,
+        111.32399999999998,
+        110.232
+      ],
+      "median_ms_per_run": {
+        "query/nightly_candidates/sort_offset_desc/100k": [
+          56.79200538333333,
+          78.09737986666667,
+          82.02211500714286,
+          86.98207694999999,
+          80.99068268055555,
+          115.46151027142858
+        ],
+        "query/nightly_candidates/sort_offset_asc/100k": [
+          11.111449709722221,
+          15.13297805,
+          14.845053044217687,
+          18.629467934285714,
+          14.631186535714287,
+          21.557456820833334
+        ]
+      },
+      "normalized_spread": {
+        "query/nightly_candidates/sort_offset_desc/100k": 0.1308765611853359,
+        "query/nightly_candidates/sort_offset_asc/100k": 0.04836131647401104
+      },
+      "same_model_spread": {
+        "query/nightly_candidates/sort_offset_desc/100k": 0.4784300122302768,
+        "query/nightly_candidates/sort_offset_asc/100k": 0.4733908810616439
+      },
+      "cross_model_spread": {
+        "query/nightly_candidates/sort_offset_desc/100k": 1.0330592218409829,
+        "query/nightly_candidates/sort_offset_asc/100k": 0.9401119911446961
+      },
+      "verdict": "qualified",
+      "reasons": []
+    },
+    "N4": {
+      "criterion_ids": [
+        "recursion/nightly_candidates/tree_ancestors_k1_pending/1110"
+      ],
+      "acceptance_test": "n4_small_tree_takes_ancestor_alternative",
+      "cost_seconds_per_run": [
+        30.570999999999998,
+        34.643,
+        49.788000000000004,
+        36.364,
+        37.259,
+        39.53
+      ],
+      "median_ms_per_run": {
+        "recursion/nightly_candidates/tree_ancestors_k1_pending/1110": [
+          0.1033167686124508,
+          0.13279990033270947,
+          0.13273025290697674,
+          0.17839792844742064,
+          0.13379526639254385,
+          0.2002645808662281
+        ]
+      },
+      "normalized_spread": {
+        "recursion/nightly_candidates/tree_ancestors_k1_pending/1110": 0.12250699254617622
+      },
+      "same_model_spread": {
+        "recursion/nightly_candidates/tree_ancestors_k1_pending/1110": 0.5088088546518661
+      },
+      "cross_model_spread": {
+        "recursion/nightly_candidates/tree_ancestors_k1_pending/1110": 0.9383550565488167
+      },
+      "verdict": "qualified",
+      "reasons": []
+    },
+    "N5": {
+      "criterion_ids": [
+        "recursion/nightly_candidates/tree_ancestors_k16_committed/1110"
+      ],
+      "acceptance_test": "n5_committed_tree_uses_bound_value_probes",
+      "cost_seconds_per_run": [
+        32.861,
+        39.693,
+        44.807,
+        37.774,
+        42.17,
+        42.099
+      ],
+      "median_ms_per_run": {
+        "recursion/nightly_candidates/tree_ancestors_k16_committed/1110": [
+          54.73328366666667,
+          76.9998131388889,
+          75.84849465625,
+          91.32856585714286,
+          75.51428154999999,
+          108.39831292857143
+        ]
+      },
+      "normalized_spread": {
+        "recursion/nightly_candidates/tree_ancestors_k16_committed/1110": 0.054711620592318086
+      },
+      "same_model_spread": {
+        "recursion/nightly_candidates/tree_ancestors_k16_committed/1110": 0.4354677115851
+      },
+      "cross_model_spread": {
+        "recursion/nightly_candidates/tree_ancestors_k16_committed/1110": 0.9804825449306543
+      },
+      "verdict": "qualified",
+      "reasons": []
+    },
+    "N6": {
+      "criterion_ids": [],
+      "acceptance_test": "n6_held_cursor_quarantine_and_reuse",
+      "cost_seconds_per_run": [
+        1.817,
+        2.009,
+        1.843,
+        2.268,
+        2.025,
+        2.476
+      ],
+      "median_ms_per_run": {},
+      "normalized_spread": {},
+      "same_model_spread": {},
+      "cross_model_spread": {},
+      "verdict": "qualified",
+      "reasons": []
+    }
+  }
+}

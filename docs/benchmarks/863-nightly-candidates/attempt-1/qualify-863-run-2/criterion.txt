@@ -1,0 +1,875 @@
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+   Compiling minigraf v2.0.5 (/home/runner/work/minigraf/minigraf)
+warning: unused import: `super::*`
+   --> benches/simd_helpers.rs:120:9
+    |
+120 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench.rs:64:53
+   |
+64 | use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+   |                                                     ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:327:21
+    |
+327 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:372:21
+    |
+372 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:419:21
+    |
+419 |                     black_box(results)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:35
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                   ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:56
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                                        ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:53
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:70
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2043:25
+     |
+2043 |                         black_box(&valid_from),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2044:25
+     |
+2044 |                         black_box(&valid_to),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2045:25
+     |
+2045 |                         black_box(ts),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2071:46
+     |
+2071 |                         .filter(|&&tc| tc <= black_box(threshold))
+     |                                              ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:53
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:76
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2099:27
+     |
+2099 |                 b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+     |                           ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2103:54
+     |
+2103 |                 b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+     |                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/minigraf_bench/history.rs:1:41
+  |
+1 | use criterion::{BenchmarkId, Criterion, black_box};
+  |                                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench/history.rs:70:27
+   |
+70 |                 b.iter(|| black_box(db.execute(q).unwrap()));
+   |                           ^^^^^^^^^
+
+warning: use of deprecated trait `wide::CmpGt`: use the inherent function `simd_gt` instead
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: unused import: `CmpGt`
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: `minigraf` (bench "minigraf_bench") generated 21 warnings (run `cargo fix --bench "minigraf_bench" -p minigraf` to apply 1 suggestion)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 1m 00s
+     Running benches/minigraf_bench.rs (target/release/deps/minigraf_bench-b1bb1439ad4d5c66)
+Gnuplot not found, using plotters backend
+Benchmarking window/nightly_candidates/skew_running_sum/100k
+Benchmarking window/nightly_candidates/skew_running_sum/100k: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 9.8s.
+Benchmarking window/nightly_candidates/skew_running_sum/100k: Collecting 10 samples in estimated 9.8238 s (10 iterations)
+Benchmarking window/nightly_candidates/skew_running_sum/100k: Analyzing
+window/nightly_candidates/skew_running_sum/100k
+                        time:   [970.63 ms 977.98 ms 987.37 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+warning: unused import: `super::*`
+   --> benches/simd_helpers.rs:120:9
+    |
+120 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench.rs:64:53
+   |
+64 | use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+   |                                                     ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:327:21
+    |
+327 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:372:21
+    |
+372 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:419:21
+    |
+419 |                     black_box(results)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:35
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                   ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:56
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                                        ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:53
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:70
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2043:25
+     |
+2043 |                         black_box(&valid_from),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2044:25
+     |
+2044 |                         black_box(&valid_to),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2045:25
+     |
+2045 |                         black_box(ts),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2071:46
+     |
+2071 |                         .filter(|&&tc| tc <= black_box(threshold))
+     |                                              ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:53
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:76
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2099:27
+     |
+2099 |                 b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+     |                           ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2103:54
+     |
+2103 |                 b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+     |                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/minigraf_bench/history.rs:1:41
+  |
+1 | use criterion::{BenchmarkId, Criterion, black_box};
+  |                                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench/history.rs:70:27
+   |
+70 |                 b.iter(|| black_box(db.execute(q).unwrap()));
+   |                           ^^^^^^^^^
+
+warning: use of deprecated trait `wide::CmpGt`: use the inherent function `simd_gt` instead
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: unused import: `CmpGt`
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: `minigraf` (bench "minigraf_bench") generated 21 warnings (run `cargo fix --bench "minigraf_bench" -p minigraf` to apply 1 suggestion)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/minigraf_bench.rs (target/release/deps/minigraf_bench-b1bb1439ad4d5c66)
+Gnuplot not found, using plotters backend
+Benchmarking query/nightly_candidates/set_membership_k256/10k
+Benchmarking query/nightly_candidates/set_membership_k256/10k: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 9.6s.
+Benchmarking query/nightly_candidates/set_membership_k256/10k: Collecting 10 samples in estimated 9.6123 s (10 iterations)
+Benchmarking query/nightly_candidates/set_membership_k256/10k: Analyzing
+query/nightly_candidates/set_membership_k256/10k
+                        time:   [939.44 ms 952.05 ms 966.21 ms]
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+warning: unused import: `super::*`
+   --> benches/simd_helpers.rs:120:9
+    |
+120 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench.rs:64:53
+   |
+64 | use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+   |                                                     ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:327:21
+    |
+327 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:372:21
+    |
+372 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:419:21
+    |
+419 |                     black_box(results)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:35
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                   ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:56
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                                        ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:53
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:70
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2043:25
+     |
+2043 |                         black_box(&valid_from),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2044:25
+     |
+2044 |                         black_box(&valid_to),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2045:25
+     |
+2045 |                         black_box(ts),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2071:46
+     |
+2071 |                         .filter(|&&tc| tc <= black_box(threshold))
+     |                                              ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:53
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:76
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2099:27
+     |
+2099 |                 b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+     |                           ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2103:54
+     |
+2103 |                 b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+     |                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/minigraf_bench/history.rs:1:41
+  |
+1 | use criterion::{BenchmarkId, Criterion, black_box};
+  |                                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench/history.rs:70:27
+   |
+70 |                 b.iter(|| black_box(db.execute(q).unwrap()));
+   |                           ^^^^^^^^^
+
+warning: use of deprecated trait `wide::CmpGt`: use the inherent function `simd_gt` instead
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: unused import: `CmpGt`
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: `minigraf` (bench "minigraf_bench") generated 21 warnings (run `cargo fix --bench "minigraf_bench" -p minigraf` to apply 1 suggestion)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.06s
+     Running benches/minigraf_bench.rs (target/release/deps/minigraf_bench-b1bb1439ad4d5c66)
+Gnuplot not found, using plotters backend
+Benchmarking query/nightly_candidates/sort_offset_desc/100k
+Benchmarking query/nightly_candidates/sort_offset_desc/100k: Warming up for 3.0000 s
+Benchmarking query/nightly_candidates/sort_offset_desc/100k: Collecting 10 samples in estimated 8.6113 s (110 iterations)
+Benchmarking query/nightly_candidates/sort_offset_desc/100k: Analyzing
+query/nightly_candidates/sort_offset_desc/100k
+                        time:   [77.788 ms 78.887 ms 80.113 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+warning: unused import: `super::*`
+   --> benches/simd_helpers.rs:120:9
+    |
+120 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench.rs:64:53
+   |
+64 | use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+   |                                                     ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:327:21
+    |
+327 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:372:21
+    |
+372 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:419:21
+    |
+419 |                     black_box(results)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:35
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                   ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:56
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                                        ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:53
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:70
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2043:25
+     |
+2043 |                         black_box(&valid_from),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2044:25
+     |
+2044 |                         black_box(&valid_to),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2045:25
+     |
+2045 |                         black_box(ts),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2071:46
+     |
+2071 |                         .filter(|&&tc| tc <= black_box(threshold))
+     |                                              ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:53
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:76
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2099:27
+     |
+2099 |                 b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+     |                           ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2103:54
+     |
+2103 |                 b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+     |                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/minigraf_bench/history.rs:1:41
+  |
+1 | use criterion::{BenchmarkId, Criterion, black_box};
+  |                                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench/history.rs:70:27
+   |
+70 |                 b.iter(|| black_box(db.execute(q).unwrap()));
+   |                           ^^^^^^^^^
+
+warning: use of deprecated trait `wide::CmpGt`: use the inherent function `simd_gt` instead
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: unused import: `CmpGt`
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: `minigraf` (bench "minigraf_bench") generated 21 warnings (run `cargo fix --bench "minigraf_bench" -p minigraf` to apply 1 suggestion)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/minigraf_bench.rs (target/release/deps/minigraf_bench-b1bb1439ad4d5c66)
+Gnuplot not found, using plotters backend
+Benchmarking query/nightly_candidates/sort_offset_asc/100k
+Benchmarking query/nightly_candidates/sort_offset_asc/100k: Warming up for 3.0000 s
+Benchmarking query/nightly_candidates/sort_offset_asc/100k: Collecting 10 samples in estimated 5.8333 s (385 iterations)
+Benchmarking query/nightly_candidates/sort_offset_asc/100k: Analyzing
+query/nightly_candidates/sort_offset_asc/100k
+                        time:   [15.105 ms 15.133 ms 15.158 ms]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+warning: unused import: `super::*`
+   --> benches/simd_helpers.rs:120:9
+    |
+120 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench.rs:64:53
+   |
+64 | use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+   |                                                     ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:327:21
+    |
+327 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:372:21
+    |
+372 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:419:21
+    |
+419 |                     black_box(results)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:35
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                   ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:56
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                                        ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:53
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:70
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2043:25
+     |
+2043 |                         black_box(&valid_from),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2044:25
+     |
+2044 |                         black_box(&valid_to),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2045:25
+     |
+2045 |                         black_box(ts),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2071:46
+     |
+2071 |                         .filter(|&&tc| tc <= black_box(threshold))
+     |                                              ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:53
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:76
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2099:27
+     |
+2099 |                 b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+     |                           ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2103:54
+     |
+2103 |                 b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+     |                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/minigraf_bench/history.rs:1:41
+  |
+1 | use criterion::{BenchmarkId, Criterion, black_box};
+  |                                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench/history.rs:70:27
+   |
+70 |                 b.iter(|| black_box(db.execute(q).unwrap()));
+   |                           ^^^^^^^^^
+
+warning: use of deprecated trait `wide::CmpGt`: use the inherent function `simd_gt` instead
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: unused import: `CmpGt`
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: `minigraf` (bench "minigraf_bench") generated 21 warnings (run `cargo fix --bench "minigraf_bench" -p minigraf` to apply 1 suggestion)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/minigraf_bench.rs (target/release/deps/minigraf_bench-b1bb1439ad4d5c66)
+Gnuplot not found, using plotters backend
+Benchmarking recursion/nightly_candidates/tree_ancestors_k1_pending/1110
+Benchmarking recursion/nightly_candidates/tree_ancestors_k1_pending/1110: Warming up for 3.0000 s
+Benchmarking recursion/nightly_candidates/tree_ancestors_k1_pending/1110: Collecting 10 samples in estimated 5.0055 s (38k iterations)
+Benchmarking recursion/nightly_candidates/tree_ancestors_k1_pending/1110: Analyzing
+recursion/nightly_candidates/tree_ancestors_k1_pending/1110
+                        time:   [132.58 µs 132.80 µs 133.02 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+warning: unused import: `super::*`
+   --> benches/simd_helpers.rs:120:9
+    |
+120 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench.rs:64:53
+   |
+64 | use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+   |                                                     ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:327:21
+    |
+327 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:372:21
+    |
+372 |                     black_box(rows)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+   --> benches/minigraf_bench.rs:419:21
+    |
+419 |                     black_box(results)
+    |                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:35
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                   ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:1642:56
+     |
+1642 |                         b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+     |                                                        ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:53
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2035:70
+     |
+2035 |                         .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+     |                                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2043:25
+     |
+2043 |                         black_box(&valid_from),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2044:25
+     |
+2044 |                         black_box(&valid_to),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2045:25
+     |
+2045 |                         black_box(ts),
+     |                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2071:46
+     |
+2071 |                         .filter(|&&tc| tc <= black_box(threshold))
+     |                                              ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:53
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2078:76
+     |
+2078 |                     simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+     |                                                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2099:27
+     |
+2099 |                 b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+     |                           ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+    --> benches/minigraf_bench.rs:2103:54
+     |
+2103 |                 b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+     |                                                      ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/minigraf_bench/history.rs:1:41
+  |
+1 | use criterion::{BenchmarkId, Criterion, black_box};
+  |                                         ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/minigraf_bench/history.rs:70:27
+   |
+70 |                 b.iter(|| black_box(db.execute(q).unwrap()));
+   |                           ^^^^^^^^^
+
+warning: use of deprecated trait `wide::CmpGt`: use the inherent function `simd_gt` instead
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: unused import: `CmpGt`
+  --> benches/simd_helpers.rs:19:12
+   |
+19 | use wide::{CmpGt, i64x4, u64x4};
+   |            ^^^^^
+
+warning: `minigraf` (bench "minigraf_bench") generated 21 warnings (run `cargo fix --bench "minigraf_bench" -p minigraf` to apply 1 suggestion)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/minigraf_bench.rs (target/release/deps/minigraf_bench-b1bb1439ad4d5c66)
+Gnuplot not found, using plotters backend
+Benchmarking recursion/nightly_candidates/tree_ancestors_k16_committed/1110
+Benchmarking recursion/nightly_candidates/tree_ancestors_k16_committed/1110: Warming up for 3.0000 s
+Benchmarking recursion/nightly_candidates/tree_ancestors_k16_committed/1110: Collecting 10 samples in estimated 8.4394 s (110 iterations)
+Benchmarking recursion/nightly_candidates/tree_ancestors_k16_committed/1110: Analyzing
+recursion/nightly_candidates/tree_ancestors_k16_committed/1110
+                        time:   [76.866 ms 77.028 ms 77.224 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+

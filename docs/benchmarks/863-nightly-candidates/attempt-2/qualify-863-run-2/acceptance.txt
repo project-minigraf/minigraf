@@ -1,0 +1,64 @@
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+   Compiling minigraf v2.0.5 (/home/runner/work/minigraf/minigraf)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 34.00s
+     Running tests/nightly_candidates_acceptance_test.rs (target/release/deps/nightly_candidates_acceptance_test-1a5cb55a4ca16d75)
+
+running 1 test
+test n1_skew_running_sum_streams_by_partition ... PEAK_CHECK n1 partitioned_bytes=9073864 full_bytes=10000032
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 2.51s
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running tests/nightly_candidates_acceptance_test.rs (target/release/deps/nightly_candidates_acceptance_test-1a5cb55a4ca16d75)
+
+running 1 test
+test n2_set_membership_k256 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 2.89s
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running tests/nightly_candidates_acceptance_test.rs (target/release/deps/nightly_candidates_acceptance_test-1a5cb55a4ca16d75)
+
+running 1 test
+test n3_sort_heap_holds_offset_plus_limit ... PEAK_CHECK n3 heap_bytes=2856056 full_bytes=5600000
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.96s
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running tests/nightly_candidates_acceptance_test.rs (target/release/deps/nightly_candidates_acceptance_test-1a5cb55a4ca16d75)
+
+running 1 test
+test n4_small_tree_takes_ancestor_alternative ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running tests/nightly_candidates_acceptance_test.rs (target/release/deps/nightly_candidates_acceptance_test-1a5cb55a4ca16d75)
+
+running 1 test
+test n5_committed_tree_uses_bound_value_probes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.08s
+
+warning: Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running tests/nightly_candidates_acceptance_test.rs (target/release/deps/nightly_candidates_acceptance_test-1a5cb55a4ca16d75)
+
+running 1 test
+test n6_held_cursor_quarantine_and_reuse ... CHURN_CHECK n6 held_growth_bytes=10280960 after_growth_bytes=0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1.95s
+

@@ -239,6 +239,7 @@ impl Scan {
             for v in &candidates {
                 if let Some(kv) = key_value(keys, v)? {
                     ranges.push((Index::Avet, keys::attribute_value_prefix(a, &kv)));
+                    super::path_event("bound_value_avet_range");
                 }
             }
         }

@@ -26,24 +26,24 @@ pub(crate) struct Meter {
     used: AtomicUsize,
     /// The most `used` has been, for tests and measurement.
     peak: AtomicUsize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     window: LivePeak,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     aggregate: LivePeak,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     ids: LivePeak,
 }
 
 /// Test-only ownership totals distinguish a window's retained rows from the
 /// lookup cache. Multiple Helds with the same name contribute together.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Debug, Default)]
 struct LivePeak {
     used: AtomicUsize,
     peak: AtomicUsize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl LivePeak {
     fn add(&self, n: usize) {
         let now = self.used.load(Ordering::Relaxed).saturating_add(n);
@@ -65,11 +65,11 @@ impl Meter {
             limit,
             used: AtomicUsize::new(0),
             peak: AtomicUsize::new(0),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             window: LivePeak::default(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             aggregate: LivePeak::default(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             ids: LivePeak::default(),
         })
     }
@@ -86,12 +86,12 @@ impl Meter {
         self.used.load(Ordering::Relaxed)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     pub(crate) fn peak(&self) -> usize {
         self.peak.load(Ordering::Relaxed)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     fn tracked(&self, op: &str) -> Option<&LivePeak> {
         match op {
             "Window" => Some(&self.window),
@@ -101,7 +101,7 @@ impl Meter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     pub(crate) fn peak_for(&self, op: &str) -> usize {
         self.tracked(op)
             .map_or(0, |p| p.peak.load(Ordering::Relaxed))
@@ -152,7 +152,7 @@ impl Held {
         m.used.store(now, Ordering::Relaxed);
         m.peak.fetch_max(now, Ordering::Relaxed);
         self.bytes = self.bytes.saturating_add(n);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         if let Some(peak) = m.tracked(self.op) {
             peak.add(n);
         }
@@ -164,7 +164,7 @@ impl Held {
         let n = n.min(self.bytes);
         self.bytes -= n;
         let m = &*self.meter;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         if let Some(peak) = m.tracked(self.op) {
             peak.subtract(n);
         }
@@ -177,7 +177,7 @@ impl Held {
     /// Take over what `other` counts, which goes on being counted until this
     /// holder lets it go.
     pub(crate) fn absorb(&mut self, mut other: Held) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         if self.op != other.op {
             if let Some(peak) = self.meter.tracked(other.op) {
                 peak.subtract(other.bytes);

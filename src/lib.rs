@@ -154,6 +154,16 @@ pub fn __input_order(on: bool) -> InputOrderGuard {
     query::engine::set_input_order(on)
 }
 
+/// This thread's path events since the last call, which clears them: how
+/// often queries took the paths the nightly acceptance tests guard (#863),
+/// such as `ancestor_alternative_selected` and `bound_value_avet_range`.
+/// Only for tests; built with the `test-hooks` feature only.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn __path_events() -> std::collections::BTreeMap<&'static str, u64> {
+    query::engine::take_path_events()
+}
+
 // Large-transaction tests (#550): statements read and written in small chunks.
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]

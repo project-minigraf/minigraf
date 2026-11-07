@@ -517,3 +517,4 @@ fn insert_val_facts(db: &Minigraf, n: usize) {
         db.execute(&cmd).unwrap();
     }
 }
+pub mod shape;

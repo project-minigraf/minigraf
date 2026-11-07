@@ -4548,3 +4548,111 @@ fn ignored_aggregate_arguments_do_not_hide_upstream_failures() {
         assert_eq!(meter.used(), 0);
     }
 }
+
+/// #863: the path events a nightly acceptance test reads. A width-10 tree of
+/// 1,110 edges, pending: one leaf's ancestors take the small in-memory
+/// alternative (#723). Checkpointed, 16 demanded leaves join their parents
+/// by bound-value AVET probes (#721), and the alternative is not taken.
+fn count(db: &Minigraf, query: &str) -> usize {
+    let QueryResult::QueryResults { results, .. } = db.execute(query).expect("query") else {
+        panic!("expected query results");
+    };
+    results.len()
+}
+
+fn t(i: usize) -> String {
+    format!(
+        "#uuid \"{}\"",
+        uuid::Uuid::from_u128(0x8410_0000_0000_0000_0000_0000_0000_0000 + i as u128)
+    )
+}
+
+fn tree(db: &Minigraf, n: usize) {
+    // UUID entities and refs, as the #841 fixtures (a keyword entity has no
+    // AVET probe unless the query names the keyword, #721).
+    let facts: String = (1..=n)
+        .map(|i| format!("[{} :s/parent {}]", t(i), t((i - 1) / 10)))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.execute("(rule [(anc ?x ?a) [?x :s/parent ?a]])")
+        .unwrap();
+    db.execute("(rule [(anc ?x ?a) [?x :s/parent ?p] (anc ?p ?a)])")
+        .unwrap();
+}
+
+#[test]
+fn path_events_record_the_ancestor_alternative() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = crate::OpenOptions::new()
+        .wal_checkpoint_threshold(usize::MAX)
+        .path(dir.path().join("events.graph"))
+        .open()
+        .unwrap();
+    tree(&db, 1110);
+    super::take_path_events();
+    // 1110's ancestors: 110, 10, 0.
+    let q = format!("(query [:find ?a :where (anc {} ?a)])", t(1110));
+    assert_eq!(count(&db, &q), 3);
+    let events = super::take_path_events();
+    assert!(
+        events
+            .get("ancestor_alternative_selected")
+            .is_some_and(|n| *n >= 1)
+    );
+    assert!(
+        super::take_path_events().is_empty(),
+        "taking resets the map"
+    );
+}
+
+#[test]
+fn path_events_record_bound_value_probes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("events.graph")).unwrap();
+    tree(&db, 1110);
+    let demand: String = (1095..=1110)
+        .map(|i| format!("[{} :s/demand true]", t(i)))
+        .collect();
+    db.execute(&format!("(transact [{demand}])")).unwrap();
+    db.checkpoint().unwrap();
+    super::take_path_events();
+    let q = "(query [:find ?l ?a :where [?l :s/demand true] (anc ?l ?a)])";
+    assert_eq!(count(&db, q), 48, "16 leaves, three ancestors each");
+    let events = super::take_path_events();
+    assert!(
+        events
+            .get("bound_value_avet_range")
+            .is_some_and(|n| *n >= 1)
+    );
+    assert!(!events.contains_key("ancestor_alternative_selected"));
+}
+
+#[test]
+fn plain_queries_record_no_path_events() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :v 1] [:b :v 2]])").unwrap();
+    super::take_path_events();
+    assert_eq!(count(&db, "(query [:find ?e :where [?e :v ?x]])"), 2);
+    assert!(super::take_path_events().is_empty());
+}
+
+#[test]
+fn memory_peak_reports_the_query_and_window_peaks() {
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..200)
+        .map(|i| format!("[:w{i} :v {i}] [:w{i} :p {}]", i % 3))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    let mut cursor = db
+        .query("(query [:find ?i ?p (sum ?i :over (:partition-by ?p :order-by ?i)) :where [?e :p ?p] [?e :v ?i]])")
+        .unwrap();
+    // Ask for exactly the rows left: a larger request pulls past the end
+    // and the cursor drops its stream.
+    let mut n = 0;
+    while n < 200 {
+        n += cursor.next_batch(200 - n).unwrap().expect("rows").len();
+    }
+    let stream = cursor.stream_mut().expect("stream still open");
+    assert!(stream.memory_peak(Some("Window")) > 0);
+    assert!(stream.memory_peak(None) >= stream.memory_peak(Some("Window")));
+}
