@@ -43,6 +43,17 @@ A crash during a checkpoint is no different: the file keeps the previous checkpo
 
 Batching is the other lever: `begin_write()`, several `execute()` calls and one `commit()` write one WAL entry with one sync, in either mode.
 
+### Per-transaction mode
+
+`Minigraf::begin_write_with(TxOptions::new().synchronous(mode))` chooses the mode of one `WriteTransaction`'s commit, whatever the database's mode (#871); `begin_write()` and `execute()` use the database's. The mode is not kept: the next transaction uses the database's again. So one WAL can hold entries committed both ways:
+
+- A **process crash** keeps every committed transaction, in either mode.
+- A **power loss** keeps a prefix of the commit order, never a transaction in part and never a later one without an earlier one. The prefix includes every transaction up to the last `Full` commit, the last checkpoint, or whichever is later: a `Full` commit syncs the whole WAL file, so the `Normal` entries before it become durable with it. Entries committed with `Normal` after the last `Full` commit may be lost.
+- A `Normal` commit never weakens a transaction committed before it.
+- A **large transaction** (more facts than `transaction_chunk_facts`) commits as a checkpoint, with no WAL entry, so it is durable in both modes; the header of the WAL it creates before its first page write is always synced. The per-transaction mode has no effect on it.
+
+For example, a database opened `Full` can run a bulk load as `Normal` transactions and end it with one `Full` transaction (or a `checkpoint()`), which makes the whole load durable at once.
+
 **What durability assumes.** A sync is only as good as the storage under it. Minigraf assumes that when `fdatasync`/`fsync` (`FlushFileBuffers` on Windows) returns, the data is on stable storage. Disks or controllers with a volatile write cache that ignore flushes, virtual machines with an "unsafe" disk cache mode, and some network or FUSE filesystems break that assumption, and a power loss there can lose committed transactions or tear a page. A torn or rotted page is detected by its checksum on the next read (`STG-029`); it is not silently read.
 
 **Browser (`BrowserDb`).** There is no WAL. Each `transact` and `retract` is a checkpoint whose pages, meta page and freed page keys are written in one IndexedDB `readwrite` transaction, and the returned promise resolves after that transaction completes. Closing the tab before then loses that write, whole. How durable a completed IndexedDB transaction is on a power loss is up to the browser.

@@ -76,6 +76,10 @@ fn memory_page_cache_capacity(_opts: &OpenOptions) -> usize {
 ///
 /// Independent of [`Minigraf::checkpoint`], which always fsyncs the main
 /// `.graph` file regardless of this setting — see [`OpenOptions::synchronous`].
+/// The database's mode is set at open; one `WriteTransaction` can choose its
+/// own with [`TxOptions::synchronous`] and [`Minigraf::begin_write_with`].
+/// A `Full` commit syncs the whole WAL, so it also makes earlier `Normal`
+/// commits durable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncMode {
     /// `fdatasync` after every WAL write. Default; matches Minigraf's
@@ -175,6 +179,9 @@ pub struct OpenOptions {
     /// setting.
     ///
     /// No effect on in-memory databases, which have no WAL.
+    ///
+    /// One `WriteTransaction` can use the other mode: see
+    /// [`TxOptions::synchronous`] and [`Minigraf::begin_write_with`].
     pub synchronous: SyncMode,
     /// Open the database read-only. Defaults to `false`.
     ///
@@ -221,6 +228,9 @@ pub struct OpenOptions {
     /// Kept between 1 and 1,000,000 (the most facts one WAL entry holds). In-memory
     /// databases never write chunks; a statement is still read a chunk at a
     /// time.
+    ///
+    /// One `WriteTransaction` can use another size: see
+    /// [`TxOptions::chunk_facts`] and [`Minigraf::begin_write_with`].
     pub transaction_chunk_facts: usize,
     /// The query keywords that may override this database's settings (#862).
     /// Defaults to [`Overridable::DEFAULTS`], every keyword that could
@@ -2145,8 +2155,9 @@ impl<'a> WriteTransaction<'a> {
     /// Commit this transaction atomically.
     ///
     /// All buffered facts are stamped with a single `tx_count` / `tx_id`, then
-    /// the WAL entry is written and fsynced **before** any fact is applied to the
-    /// shared `FactStorage`.  This guarantees that if the WAL write fails the
+    /// the WAL entry is written (and synced, unless the transaction's mode is
+    /// `SyncMode::Normal`: [`TxOptions::synchronous`]) **before** any fact is
+    /// applied to the shared `FactStorage`.  This guarantees that if the WAL write fails the
     /// database is left completely unchanged (clean rollback — no cleanup needed).
     ///
     /// # Errors
