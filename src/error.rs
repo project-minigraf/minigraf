@@ -1671,7 +1671,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Int001,
         "INT-001",
-        "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
+        "a write transaction is already in progress on this thread; use tx.execute() instead",
         ErrorCategory::Internal,
     ),
     (

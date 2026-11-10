@@ -59,6 +59,48 @@ pub(crate) fn is_write_tx_active() -> bool {
     WRITE_TX_ACTIVE.with(|f| f.get())
 }
 
+/// The begin thread of a database's open [`OwnedWriteTransaction`] (#824).
+///
+/// The borrowed transaction's thread-local flag cannot follow a transaction
+/// that moves between threads, so an owned one records the thread that
+/// began it here, per database, until it finishes. The calls a borrowed
+/// transaction refuses on its thread (`INT-001`) are refused on this one.
+/// The mutex is only ever held to read or set the id.
+#[derive(Default)]
+pub(crate) struct TxOwner {
+    thread: Mutex<Option<std::thread::ThreadId>>,
+}
+
+impl TxOwner {
+    /// Whether the current thread began this database's open owned
+    /// transaction.
+    fn held_here(&self) -> bool {
+        let current = std::thread::current().id();
+        *self
+            .thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            == Some(current)
+    }
+
+    fn set(&self, thread: Option<std::thread::ThreadId>) {
+        *self
+            .thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = thread;
+    }
+
+    /// Fail with `INT-001` on a thread with an open transaction on this
+    /// database: a borrowed one (any database, as before #824) or an owned
+    /// one it began.
+    pub(crate) fn refuse_reentry(&self) -> Result<()> {
+        if is_write_tx_active() || self.held_here() {
+            bail_coded!(ErrorCode::Int001);
+        }
+        Ok(())
+    }
+}
+
 // ─── Page cache sizing ─────────────────────────────────────────────────────────
 
 /// Page cache capacity to use for an in-memory (`MemoryBackend`) database.
@@ -541,6 +583,27 @@ enum WriteContext {
     },
 }
 
+/// The write lock's state: the context, and whether an owned transaction
+/// holds the lock between its calls (#824). While `owned` is set, every
+/// writer other than that transaction waits on `Inner::write_free`.
+struct WriteSlot {
+    ctx: WriteContext,
+    owned: bool,
+}
+
+impl std::ops::Deref for WriteSlot {
+    type Target = WriteContext;
+    fn deref(&self) -> &WriteContext {
+        &self.ctx
+    }
+}
+
+impl std::ops::DerefMut for WriteSlot {
+    fn deref_mut(&mut self) -> &mut WriteContext {
+        &mut self.ctx
+    }
+}
+
 // ─── IntegrityReport ──────────────────────────────────────────────────────────
 
 /// The result of [`Minigraf::verify`].
@@ -573,8 +636,13 @@ struct Inner {
     /// each query reads a snapshot of it (#180).
     functions: Arc<Functions>,
     /// Serialises all writes. Holds `WriteContext` which contains the PFS/WAL
-    /// for file-backed databases.
-    write_lock: Mutex<WriteContext>,
+    /// for file-backed databases. Take it with [`Inner::lock_write`], which
+    /// waits while an owned transaction holds it.
+    write_lock: Mutex<WriteSlot>,
+    /// Signalled when an owned transaction releases the write lock.
+    write_free: std::sync::Condvar,
+    /// The begin thread of the open owned transaction, if any.
+    owner: Arc<TxOwner>,
     /// Configuration options.
     options: OpenOptions,
 }
@@ -592,7 +660,11 @@ impl Drop for Inner {
         }
         if self.options.wal_checkpoint_threshold == usize::MAX {
             #[cfg(not(target_arch = "wasm32"))]
-            if let Ok(WriteContext::File { pfs, .. }) = self.write_lock.get_mut() {
+            if let Ok(WriteSlot {
+                ctx: WriteContext::File { pfs, .. },
+                ..
+            }) = self.write_lock.get_mut()
+            {
                 pfs.discard();
             }
             return;
@@ -600,6 +672,32 @@ impl Drop for Inner {
         if let Ok(mut ctx) = self.write_lock.lock() {
             let _ = Minigraf::do_checkpoint(&self.fact_storage, &mut ctx);
         }
+    }
+}
+
+impl Inner {
+    /// Take the write lock for a write, a checkpoint or a begin: wait first
+    /// while an owned transaction holds it (#824). `API-001` if poisoned.
+    fn lock_write(&self) -> Result<MutexGuard<'_, WriteSlot>> {
+        let mut slot = self
+            .write_lock
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        while slot.owned {
+            slot = self
+                .write_free
+                .wait(slot)
+                .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        }
+        Ok(slot)
+    }
+
+    /// End an owned transaction's hold on the write lock and wake the
+    /// writers waiting for it.
+    fn release_owned(&self, slot: &mut WriteSlot) {
+        slot.owned = false;
+        self.owner.set(None);
+        self.write_free.notify_all();
     }
 }
 
@@ -776,7 +874,9 @@ impl Minigraf {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
                 functions: Arc::new(Functions::with_builtins()),
-                write_lock: Mutex::new(ctx),
+                write_lock: Mutex::new(WriteSlot { ctx, owned: false }),
+                write_free: std::sync::Condvar::new(),
+                owner: Arc::default(),
                 options,
             }),
         }
@@ -893,9 +993,7 @@ impl Minigraf {
 
     fn execute_inner(&self, input: &str) -> Result<QueryResult> {
         // Detect same-thread reentrant write (would deadlock on the Mutex).
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
 
         if let Some(kind) = statement::kind_of(input) {
             return self.execute_statement(input, kind);
@@ -912,11 +1010,7 @@ impl Minigraf {
             DatalogCommand::Rule(_) => {
                 // Rule registration is a write: it mutates the shared
                 // RuleRegistry, so it runs under write_lock (no WAL needed).
-                let _ctx = self
-                    .inner
-                    .write_lock
-                    .lock()
-                    .map_err(|_| err_coded!(ErrorCode::Api001))?;
+                let _ctx = self.inner.lock_write()?;
                 let executor = DatalogExecutor::new_with_rules_and_functions(
                     self.inner.fact_storage.clone(),
                     self.inner.rules.clone(),
@@ -946,14 +1040,10 @@ impl Minigraf {
         )?;
         self.reject_if_read_only(kind.name())?;
         {
-            let mut ctx = self
-                .inner
-                .write_lock
-                .lock()
-                .map_err(|_| err_coded!(ErrorCode::Api001))?;
+            let mut ctx = self.inner.lock_write()?;
 
             #[cfg(not(target_arch = "wasm32"))]
-            if statement.is_large() && matches!(*ctx, WriteContext::File { .. }) {
+            if statement.is_large() && matches!(ctx.ctx, WriteContext::File { .. }) {
                 return self.execute_large(&mut ctx, statement, kind);
             }
 
@@ -1112,9 +1202,7 @@ impl Minigraf {
     }
 
     fn query_inner(&self, input: &str) -> Result<Cursor> {
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
         let cmd = parse_datalog_command(input)?;
         match &cmd {
             DatalogCommand::Query(q) => {
@@ -1159,9 +1247,7 @@ impl Minigraf {
     }
 
     fn fact_log_inner(&self, filter: &crate::FactFilter) -> Result<crate::FactLog> {
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
         // No write lock: the snapshot holds whole transactions, and its pin
         // keeps checkpoints from reusing the pages it reads (#473 spec §4).
         crate::FactLog::open(&self.inner.fact_storage, filter)
@@ -1222,32 +1308,62 @@ impl Minigraf {
     }
 
     fn begin_write_inner(&self, options: TxOptions) -> Result<WriteTransaction<'_>> {
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
         self.reject_if_read_only("begin_write")?;
-        let guard = self
-            .inner
-            .write_lock
-            .lock()
-            .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        let guard = self.inner.lock_write()?;
         // Set flag only after successfully acquiring the lock
         set_write_tx_active(true);
         Ok(WriteTransaction {
+            state: TxState::new(&self.inner, options),
             guard,
             inner: &self.inner,
-            sync: options
-                .synchronous
-                .unwrap_or(self.inner.options.synchronous),
-            chunk_facts: options
-                .chunk_facts
-                .unwrap_or(self.inner.options.transaction_chunk_facts),
-            pending_facts: Vec::new(),
-            next_pending_tx_count: self.inner.fact_storage.current_tx_count().saturating_add(1),
-            next_pending_tx_id: crate::graph::types::tx_id_now(),
             committed: false,
-            #[cfg(not(target_arch = "wasm32"))]
-            large: None,
+        })
+    }
+
+    /// Begin an [`OwnedWriteTransaction`] with the database's options:
+    /// [`begin_write_owned_with`](Self::begin_write_owned_with) with
+    /// [`TxOptions::default`].
+    ///
+    /// # Errors
+    ///
+    /// As [`begin_write_owned_with`](Self::begin_write_owned_with).
+    pub fn begin_write_owned(&self) -> Result<OwnedWriteTransaction, MinigrafError> {
+        self.begin_write_owned_with(TxOptions::default())
+    }
+
+    /// Begin an [`OwnedWriteTransaction`] with `options`, which apply as they
+    /// do to [`begin_write_with`](Self::begin_write_with) (#824).
+    ///
+    /// Takes the write lock, and holds it until the transaction commits,
+    /// rolls back or is dropped, on whichever thread that happens. While
+    /// another transaction (of either kind) holds it, this waits.
+    ///
+    /// # Errors
+    ///
+    /// `INT-001` on a thread with an open `WriteTransaction`, or with an open
+    /// owned transaction of this database that it began; `API-014` on a
+    /// read-only handle. A failed call leaves the handle usable.
+    pub fn begin_write_owned_with(
+        &self,
+        options: TxOptions,
+    ) -> Result<OwnedWriteTransaction, MinigrafError> {
+        self.begin_write_owned_inner(options)
+            .map_err(MinigrafError::from)
+    }
+
+    fn begin_write_owned_inner(&self, options: TxOptions) -> Result<OwnedWriteTransaction> {
+        self.inner.owner.refuse_reentry()?;
+        self.reject_if_read_only("begin_write")?;
+        let mut slot = self.inner.lock_write()?;
+        slot.owned = true;
+        self.inner.owner.set(Some(std::thread::current().id()));
+        let state = TxState::new(&self.inner, options);
+        drop(slot);
+        Ok(OwnedWriteTransaction {
+            db: self.clone(),
+            state,
+            finished: false,
         })
     }
 
@@ -1286,15 +1402,9 @@ impl Minigraf {
     }
 
     fn checkpoint_inner(&self) -> Result<()> {
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
         self.reject_if_read_only("checkpoint")?;
-        let mut ctx = self
-            .inner
-            .write_lock
-            .lock()
-            .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        let mut ctx = self.inner.lock_write()?;
         Self::do_checkpoint(&self.inner.fact_storage, &mut ctx)
     }
 
@@ -1325,15 +1435,9 @@ impl Minigraf {
     }
 
     fn verify_inner(&self) -> Result<IntegrityReport> {
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
-        let ctx = self
-            .inner
-            .write_lock
-            .lock()
-            .map_err(|_| err_coded!(ErrorCode::Api001))?;
-        match &*ctx {
+        self.inner.owner.refuse_reentry()?;
+        let ctx = self.inner.lock_write()?;
+        match &ctx.ctx {
             WriteContext::Memory => Ok(IntegrityReport::default()),
             #[cfg(not(target_arch = "wasm32"))]
             WriteContext::File { pfs, .. } | WriteContext::ReadOnly { pfs } => {
@@ -1373,16 +1477,10 @@ impl Minigraf {
     }
 
     fn rebuild_indexes_inner(&self) -> Result<()> {
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
         self.reject_if_read_only("rebuild_indexes")?;
-        let mut ctx = self
-            .inner
-            .write_lock
-            .lock()
-            .map_err(|_| err_coded!(ErrorCode::Api001))?;
-        match &mut *ctx {
+        let mut ctx = self.inner.lock_write()?;
+        match &mut ctx.ctx {
             WriteContext::Memory => Ok(()),
             #[cfg(not(target_arch = "wasm32"))]
             WriteContext::File {
@@ -1421,7 +1519,7 @@ impl Minigraf {
     /// check when a checkpoint commits.
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn generation(&self) -> u64 {
-        match &*self.inner.write_lock.lock().unwrap() {
+        match &self.inner.write_lock.lock().unwrap().ctx {
             WriteContext::File { pfs, .. } | WriteContext::ReadOnly { pfs } => pfs.generation(),
             WriteContext::Memory => 0,
         }
@@ -1433,7 +1531,7 @@ impl Minigraf {
     pub(crate) fn kill(self) {
         let mut ctx = self.inner.write_lock.lock().unwrap();
         if let WriteContext::File { mut pfs, .. } =
-            std::mem::replace(&mut *ctx, WriteContext::Memory)
+            std::mem::replace(&mut ctx.ctx, WriteContext::Memory)
         {
             pfs.discard();
         }
@@ -1446,7 +1544,7 @@ impl Minigraf {
     pub(crate) fn power_loss(self) {
         let mut ctx = self.inner.write_lock.lock().unwrap();
         if let WriteContext::File { mut pfs, wal, .. } =
-            std::mem::replace(&mut *ctx, WriteContext::Memory)
+            std::mem::replace(&mut ctx.ctx, WriteContext::Memory)
         {
             if let Some(mut wal) = wal {
                 wal.lose_unsynced().unwrap();
@@ -1459,7 +1557,7 @@ impl Minigraf {
     /// tests that check whether a commit synced it.
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn wal_synced(&self) -> Option<bool> {
-        match &*self.inner.write_lock.lock().unwrap() {
+        match &self.inner.write_lock.lock().unwrap().ctx {
             WriteContext::File { wal, .. } => wal.as_ref().map(WalWriter::is_synced),
             _ => None,
         }
@@ -1553,9 +1651,7 @@ impl Minigraf {
     ) -> Result<crate::query::datalog::prepared::PreparedQuery> {
         use crate::query::datalog::prepared::prepare_query;
 
-        if is_write_tx_active() {
-            bail_coded!(ErrorCode::Int001);
-        }
+        self.inner.owner.refuse_reentry()?;
 
         let cmd = parse_datalog_command(query_str)?;
 
@@ -1579,6 +1675,7 @@ impl Minigraf {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
             self.inner.options.limits(),
+            self.inner.owner.clone(),
         )
     }
 
@@ -1894,23 +1991,29 @@ impl Minigraf {
 /// ```
 ///
 /// Dropping without committing performs an implicit rollback.
+///
+/// It borrows the database and stays on the thread that began it. To hold a
+/// transaction in an object that outlives the borrow or moves between
+/// threads, use [`OwnedWriteTransaction`].
 pub struct WriteTransaction<'a> {
-    guard: MutexGuard<'a, WriteContext>,
+    guard: MutexGuard<'a, WriteSlot>,
     inner: &'a Inner,
+    state: TxState,
+    /// Set to `true` after a successful `commit()` to suppress rollback in `Drop`.
+    committed: bool,
+}
+
+/// What a transaction has staged, shared by [`WriteTransaction`] and
+/// [`OwnedWriteTransaction`]. Every method runs under the write lock.
+struct TxState {
     /// This transaction's WAL durability mode (`TxOptions::synchronous`,
     /// else the database's).
     sync: SyncMode,
     /// This transaction's configured chunk size, before the clamp
     /// (`TxOptions::chunk_facts`, else the database's).
     chunk_facts: usize,
-    /// Facts buffered in this transaction (not yet committed to FactStorage).
-    pending_facts: Vec<Fact>,
-    /// Synthetic tx_count assigned to the next staged write batch.
-    next_pending_tx_count: u64,
-    /// Synthetic tx_id seed used to keep staged writes monotonic.
-    next_pending_tx_id: TxId,
-    /// Set to `true` after a successful `commit()` to suppress rollback in `Drop`.
-    committed: bool,
+    /// What the transaction staged while small.
+    staged: Staged,
     /// The working state once the transaction is large (#550 spec §4): its
     /// statements are then in copy-on-write working trees, not staged.
     #[cfg(not(target_arch = "wasm32"))]
@@ -1926,23 +2029,25 @@ enum Current<'s> {
     Large(statement::Statement<'s>),
 }
 
-impl<'a> WriteTransaction<'a> {
-    /// Execute a Datalog command within this transaction.
-    ///
-    /// - **Writes** (transact / retract): buffered in-memory; not durable until `commit()`.
-    ///   Returns `Ok(QueryResult::Ok)` immediately (not `Transacted`/`Retracted`).
-    /// - **Reads** (query): see committed facts in `FactStorage` **plus** all facts
-    ///   buffered in this transaction (read-your-own-writes).
-    /// - **Rules**: registered immediately into the shared rule registry.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parsing or execution fails.
-    pub fn execute(&mut self, input: &str) -> Result<QueryResult, MinigrafError> {
-        self.execute_inner(input).map_err(MinigrafError::from)
+impl TxState {
+    fn new(inner: &Inner, options: TxOptions) -> Self {
+        TxState {
+            sync: options.synchronous.unwrap_or(inner.options.synchronous),
+            chunk_facts: options
+                .chunk_facts
+                .unwrap_or(inner.options.transaction_chunk_facts),
+            staged: Staged::new(inner.fact_storage.current_tx_count()),
+            #[cfg(not(target_arch = "wasm32"))]
+            large: None,
+        }
     }
 
-    fn execute_inner(&mut self, input: &str) -> Result<QueryResult> {
+    fn execute(
+        &mut self,
+        ctx: &mut WriteContext,
+        inner: &Inner,
+        input: &str,
+    ) -> Result<QueryResult> {
         if let Some(kind) = statement::kind_of(input) {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(tx) = &self.large {
@@ -1950,32 +2055,31 @@ impl<'a> WriteTransaction<'a> {
                 let chunk = statement::tx_chunk_facts(self.chunk_facts);
                 let statement = statement::read_statement(input, kind, tx.tx_id(), chunk)?;
                 let chunks = statement.chunks()?;
-                refuse_if_failed(&self.guard)?;
-                self.write_statement(chunks)?;
+                refuse_if_failed(ctx)?;
+                self.write_statement(ctx, chunks)?;
                 return Ok(QueryResult::Ok);
             }
             // A rejected statement stages nothing; the transaction stays
             // usable. Pass 1 checks windows at the staging time; `commit`
             // checks them again at the commit time.
-            let staged_tx_id =
-                std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
+            let staged_tx_id = self.staged.next_tx_id();
             let chunk = statement::tx_chunk_facts(self.chunk_facts);
             let statement = statement::read_statement(input, kind, staged_tx_id, chunk)?;
             #[cfg(not(target_arch = "wasm32"))]
-            let file = matches!(*self.guard, WriteContext::File { .. });
+            let file = matches!(*ctx, WriteContext::File { .. });
             #[cfg(not(target_arch = "wasm32"))]
             if file && statement.is_large() {
-                self.become_large(Current::Large(statement))?;
+                self.become_large(ctx, Current::Large(statement))?;
                 return Ok(QueryResult::Ok);
             }
             let facts = statement.facts()?;
             crate::graph::storage::check_one_window_per_triple(&facts)?;
             #[cfg(not(target_arch = "wasm32"))]
-            if file && self.pending_facts.len().saturating_add(facts.len()) > chunk {
-                self.become_large(Current::Small(facts))?;
+            if file && self.staged.pending_facts.len().saturating_add(facts.len()) > chunk {
+                self.become_large(ctx, Current::Small(facts))?;
                 return Ok(QueryResult::Ok);
             }
-            self.stage_pending_facts(facts);
+            self.staged.stage(facts);
             return Ok(QueryResult::Ok);
         }
         let cmd = parse_datalog_command(input)?;
@@ -1985,49 +2089,42 @@ impl<'a> WriteTransaction<'a> {
                 Err(err_coded!(ErrorCode::Api002))
             }
             DatalogCommand::Query(ref q) => {
-                check_overrides(q, &self.inner.options.allow_overrides)?;
+                check_overrides(q, &inner.options.allow_overrides)?;
                 reject_unbound_slots(q)?;
-                self.execute_read_command(cmd)
+                let mut executor = DatalogExecutor::new_with_rules_and_functions(
+                    inner.fact_storage.clone(),
+                    inner.rules.clone(),
+                    inner.functions.clone(),
+                );
+                executor.set_limits(inner.options.limits());
+                executor.set_snapshot(self.read_snapshot(ctx, inner)?);
+                executor.execute(cmd)
             }
-            DatalogCommand::Rule(rule) => self.execute_rule_command(rule),
+            DatalogCommand::Rule(rule) => {
+                let mut executor = DatalogExecutor::new_with_rules_and_functions(
+                    inner.fact_storage.clone(),
+                    inner.rules.clone(),
+                    inner.functions.clone(),
+                );
+                executor.set_limits(inner.options.limits());
+                executor.execute(DatalogCommand::Rule(rule))
+            }
         }
-    }
-
-    fn execute_read_command(&self, cmd: DatalogCommand) -> Result<QueryResult> {
-        let mut executor = DatalogExecutor::new_with_rules_and_functions(
-            self.inner.fact_storage.clone(),
-            self.inner.rules.clone(),
-            self.inner.functions.clone(),
-        );
-        executor.set_limits(self.inner.options.limits());
-        executor.set_snapshot(self.read_snapshot()?);
-        executor.execute(cmd)
     }
 
     /// The state a query inside the transaction reads (#550 spec §7): for a
     /// large transaction its working trees, which hold every committed and
     /// pending fact and its finished statements; otherwise the database with
     /// the staged facts after its pending ones.
-    fn read_snapshot(&self) -> Result<Snapshot> {
-        let snapshot = self.inner.fact_storage.snapshot()?;
+    fn read_snapshot(&self, ctx: &WriteContext, inner: &Inner) -> Result<Snapshot> {
+        let snapshot = inner.fact_storage.snapshot()?;
         #[cfg(not(target_arch = "wasm32"))]
-        if let (Some(tx), WriteContext::File { pfs, .. }) = (&self.large, &*self.guard) {
+        if let (Some(tx), WriteContext::File { pfs, .. }) = (&self.large, ctx) {
             return Ok(snapshot.with_committed(pfs.large_reader(tx)));
         }
-        // A default `valid_from` stays the sentinel until the commit stamps
-        // it; reads see it as the fact's own staged tx_id.
-        let staged = self
-            .pending_facts
-            .iter()
-            .cloned()
-            .map(|mut f| {
-                if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
-                    f.valid_from = f.tx_id.cast_signed();
-                }
-                f
-            })
-            .collect();
-        Ok(snapshot.with_staged(staged))
+        #[cfg(target_arch = "wasm32")]
+        let _ = ctx;
+        Ok(snapshot.with_staged(self.staged.read_view()))
     }
 
     /// Make the transaction large with `current`, the statement that takes
@@ -2035,11 +2132,12 @@ impl<'a> WriteTransaction<'a> {
     /// 26). The staged statements are checked at the transaction's `tx_id`
     /// first: a failure rejects `current` and leaves the transaction small.
     #[cfg(not(target_arch = "wasm32"))]
-    fn become_large(&mut self, current: Current<'_>) -> Result<()> {
+    fn become_large(&mut self, ctx: &mut WriteContext, current: Current<'_>) -> Result<()> {
         let tx_id = crate::graph::types::tx_id_now();
-        let keep = last_statement_mask(&self.pending_facts);
+        let keep = last_statement_mask(&self.staged.pending_facts);
         let kept = || {
-            self.pending_facts
+            self.staged
+                .pending_facts
                 .iter()
                 .zip(&keep)
                 .filter_map(|(f, k)| k.then_some(f))
@@ -2050,10 +2148,10 @@ impl<'a> WriteTransaction<'a> {
         for f in kept() {
             crate::wal::check_fact_size(f)?;
         }
-        refuse_if_failed(&self.guard)?;
+        refuse_if_failed(ctx)?;
         let WriteContext::File {
             pfs, wal, db_path, ..
-        } = &mut *self.guard
+        } = &mut *ctx
         else {
             bail_coded!(ErrorCode::Int019, "a large transaction without a file");
         };
@@ -2061,7 +2159,7 @@ impl<'a> WriteTransaction<'a> {
         // synced whatever the transaction's mode (#871).
         Minigraf::open_wal(wal, db_path, pfs.generation())?;
         let mut tx = pfs.begin_large(tx_id)?;
-        let mut staged: Vec<Fact> = std::mem::take(&mut self.pending_facts)
+        let mut staged: Vec<Fact> = std::mem::take(&mut self.staged.pending_facts)
             .into_iter()
             .zip(keep)
             .filter_map(|(f, k)| k.then_some(f))
@@ -2077,8 +2175,8 @@ impl<'a> WriteTransaction<'a> {
         self.large = Some(tx);
         written?;
         match current {
-            Current::Small(facts) => self.write_statement(std::iter::once(Ok(facts))),
-            Current::Large(statement) => self.write_statement(statement.chunks()?),
+            Current::Small(facts) => self.write_statement(ctx, std::iter::once(Ok(facts))),
+            Current::Large(statement) => self.write_statement(ctx, statement.chunks()?),
         }
     }
 
@@ -2086,13 +2184,16 @@ impl<'a> WriteTransaction<'a> {
     /// a statement base (#550 spec §5): a rejected statement returns the
     /// working trees to it and leaves the transaction usable.
     #[cfg(not(target_arch = "wasm32"))]
-    fn write_statement<C>(&mut self, chunks: impl IntoIterator<Item = Result<C>>) -> Result<()>
+    fn write_statement<C>(
+        &mut self,
+        ctx: &mut WriteContext,
+        chunks: impl IntoIterator<Item = Result<C>>,
+    ) -> Result<()>
     where
         C: std::ops::DerefMut<Target = [Fact]>,
     {
         use crate::storage::persistent_facts::ChunkError;
-        let (WriteContext::File { pfs, .. }, Some(tx)) = (&mut *self.guard, self.large.as_mut())
-        else {
+        let (WriteContext::File { pfs, .. }, Some(tx)) = (ctx, self.large.as_mut()) else {
             bail_coded!(
                 ErrorCode::Int019,
                 "a large statement without a large transaction"
@@ -2114,46 +2215,100 @@ impl<'a> WriteTransaction<'a> {
         pfs.end_statement(tx, true)
     }
 
-    /// Discard the working state of a large transaction (#550 spec §4.4).
-    #[cfg(not(target_arch = "wasm32"))]
-    fn rollback_large(&mut self) {
-        if let (Some(tx), WriteContext::File { pfs, .. }) = (self.large.take(), &mut *self.guard) {
-            pfs.rollback_large(tx);
+    /// Commit what is staged. On an error the caller rolls back what is
+    /// left (a large transaction's working state).
+    fn commit(&mut self, ctx: &mut WriteContext, inner: &Inner) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.large.is_some() {
+            // A failed handle is refused; the caller rolls the transaction back.
+            refuse_if_failed(ctx)?;
+            // No statement wrote a fact: nothing to commit, no tx_count taken.
+            if !self.large.as_ref().is_some_and(|tx| tx.wrote()) {
+                self.rollback(ctx);
+            }
+            if let (
+                Some(tx),
+                WriteContext::File {
+                    pfs,
+                    wal,
+                    db_path,
+                    wal_entry_count,
+                },
+            ) = (self.large.take(), ctx)
+            {
+                pfs.commit_large(tx)?;
+                Minigraf::delete_wal(wal, db_path, wal_entry_count)?;
+            }
+            return Ok(());
         }
+        let facts_to_commit = std::mem::take(&mut self.staged.pending_facts);
+
+        if !facts_to_commit.is_empty() {
+            let (facts_to_commit, tx_id) = Staged::checked_for_commit(facts_to_commit)?;
+            refuse_if_failed(ctx)?;
+            let tx_count = inner.fact_storage.allocate_tx_count();
+            let stamped = Staged::stamp(facts_to_commit, tx_id, tx_count);
+
+            // WAL write includes size validation — no separate check needed.
+
+            // Write WAL entry FIRST — if this fails, no facts have been applied
+            // to shared FactStorage, so the database remains in a clean state.
+            let should_checkpoint = WriteTransaction::wal_write_stamped_batch(
+                ctx,
+                &inner.options,
+                self.sync,
+                tx_count,
+                &stamped,
+            )?;
+
+            // WAL succeeded — now apply facts to shared FactStorage, in one
+            // batch so no query sees part of the transaction (#554).
+            let _ = inner.fact_storage.load_facts(stamped)?;
+
+            // Trigger auto-checkpoint AFTER facts are in FactStorage so the
+            // checkpoint captures the newly written facts.
+            if should_checkpoint {
+                Minigraf::do_checkpoint(&inner.fact_storage, ctx)?;
+            }
+        }
+        Ok(())
     }
 
-    fn execute_rule_command(
-        &self,
-        rule: crate::query::datalog::types::Rule,
-    ) -> Result<QueryResult> {
-        let mut executor = DatalogExecutor::new_with_rules_and_functions(
-            self.inner.fact_storage.clone(),
-            self.inner.rules.clone(),
-            self.inner.functions.clone(),
-        );
-        executor.set_limits(self.inner.options.limits());
-        executor.execute(DatalogCommand::Rule(rule))
+    /// Discard everything staged, and a large transaction's working state
+    /// (#550 spec §4.4).
+    fn rollback(&mut self, ctx: &mut WriteContext) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(tx), WriteContext::File { pfs, .. }) = (self.large.take(), ctx) {
+            pfs.rollback_large(tx);
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = ctx;
+        self.staged.pending_facts.clear();
+    }
+}
+
+impl<'a> WriteTransaction<'a> {
+    /// Execute a Datalog command within this transaction.
+    ///
+    /// - **Writes** (transact / retract): buffered in-memory; not durable until `commit()`.
+    ///   Returns `Ok(QueryResult::Ok)` immediately (not `Transacted`/`Retracted`).
+    /// - **Reads** (query): see committed facts in `FactStorage` **plus** all facts
+    ///   buffered in this transaction (read-your-own-writes).
+    /// - **Rules**: registered immediately into the shared rule registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing or execution fails.
+    pub fn execute(&mut self, input: &str) -> Result<QueryResult, MinigrafError> {
+        self.state
+            .execute(&mut self.guard.ctx, self.inner, input)
+            .map_err(MinigrafError::from)
     }
 
     /// This transaction's chunk size after the clamp, for tests.
     #[cfg(test)]
     pub(crate) fn chunk(&self) -> usize {
-        statement::tx_chunk_facts(self.chunk_facts)
-    }
-
-    /// Stage buffered facts with stable synthetic read metadata.
-    fn stage_pending_facts(&mut self, facts: Vec<Fact>) {
-        let staged_tx_id = std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
-        let staged_tx_count = self.next_pending_tx_count;
-
-        self.pending_facts.extend(facts.into_iter().map(|mut fact| {
-            fact.tx_id = staged_tx_id;
-            fact.tx_count = staged_tx_count;
-            fact
-        }));
-
-        self.next_pending_tx_id = staged_tx_id.saturating_add(1);
-        self.next_pending_tx_count = self.next_pending_tx_count.saturating_add(1);
+        statement::tx_chunk_facts(self.state.chunk_facts)
     }
 
     /// Commit this transaction atomically.
@@ -2167,89 +2322,11 @@ impl<'a> WriteTransaction<'a> {
     /// # Errors
     ///
     /// Returns an error if the WAL write or fact application fails.
-    pub fn commit(self) -> Result<(), MinigrafError> {
-        self.commit_inner().map_err(MinigrafError::from)
-    }
-
-    fn commit_inner(mut self) -> Result<()> {
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.large.is_some() {
-            // A failed handle is refused; the drop rolls the transaction back.
-            refuse_if_failed(&self.guard)?;
-            // No statement wrote a fact: nothing to commit, no tx_count taken.
-            if !self.large.as_ref().is_some_and(|tx| tx.wrote()) {
-                self.rollback_large();
-            }
-            if let (
-                Some(tx),
-                WriteContext::File {
-                    pfs,
-                    wal,
-                    db_path,
-                    wal_entry_count,
-                },
-            ) = (self.large.take(), &mut *self.guard)
-            {
-                pfs.commit_large(tx)?;
-                Minigraf::delete_wal(wal, db_path, wal_entry_count)?;
-            }
-            self.committed = true;
-            set_write_tx_active(false);
-            return Ok(());
-        }
-        let facts_to_commit = std::mem::take(&mut self.pending_facts);
-
-        if !facts_to_commit.is_empty() {
-            // One tx_id cannot tell several versions of a fact apart, so the
-            // last statement that wrote a triple decides it, as reads inside
-            // the transaction already see (#477). Each statement passed
-            // API-011 when staged, so every triple left has one window.
-            let facts_to_commit = keep_last_statement(facts_to_commit);
-            // Before allocating: a rejected transaction takes no tx_count.
-            // A default `valid_from` becomes the commit time, so the windows
-            // are checked again here (#436).
-            let tx_id = crate::graph::types::tx_id_now();
-            crate::graph::storage::check_valid_windows(&facts_to_commit, tx_id)?;
-            refuse_if_failed(&self.guard)?;
-            let tx_count = self.inner.fact_storage.allocate_tx_count();
-
-            // Stamp facts with tx_id and tx_count
-            let stamped: Vec<Fact> = facts_to_commit
-                .into_iter()
-                .map(|mut f| {
-                    f.tx_id = tx_id;
-                    f.tx_count = tx_count;
-                    // Fix valid_from if it was left as the sentinel (placeholder for "use tx time")
-                    if f.valid_from == VALID_FROM_USE_TX_TIME && f.asserted {
-                        f.valid_from = tx_id.cast_signed();
-                    }
-                    f
-                })
-                .collect();
-
-            // WAL write includes size validation — no separate check needed.
-
-            // Write WAL entry FIRST — if this fails, no facts have been applied
-            // to shared FactStorage, so the database remains in a clean state.
-            let should_checkpoint = Self::wal_write_stamped_batch(
-                &mut self.guard,
-                &self.inner.options,
-                self.sync,
-                tx_count,
-                &stamped,
-            )?;
-
-            // WAL succeeded — now apply facts to shared FactStorage, in one
-            // batch so no query sees part of the transaction (#554).
-            let _ = self.inner.fact_storage.load_facts(stamped)?;
-
-            // Trigger auto-checkpoint AFTER facts are in FactStorage so the
-            // checkpoint captures the newly written facts.
-            if should_checkpoint {
-                Minigraf::do_checkpoint(&self.inner.fact_storage, &mut self.guard)?;
-            }
-        }
-
+    pub fn commit(mut self) -> Result<(), MinigrafError> {
+        // On an error the drop rolls the transaction back.
+        self.state
+            .commit(&mut self.guard.ctx, self.inner)
+            .map_err(MinigrafError::from)?;
         self.committed = true;
         set_write_tx_active(false);
         Ok(())
@@ -2296,11 +2373,101 @@ impl<'a> WriteTransaction<'a> {
 
     /// Explicitly roll back the transaction. Also happens implicitly on drop.
     pub fn rollback(mut self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        self.rollback_large();
-        self.pending_facts.clear();
+        self.state.rollback(&mut self.guard.ctx);
         self.committed = true; // Suppress rollback in Drop
         set_write_tx_active(false);
+    }
+}
+
+/// The facts a small transaction staged (#550 keeps a large one in working
+/// trees instead), shared by [`WriteTransaction`], [`OwnedWriteTransaction`]
+/// and the browser's transaction (#824), so all of them stage, read and
+/// commit alike.
+pub(crate) struct Staged {
+    /// Facts buffered in this transaction (not yet committed to FactStorage).
+    pub(crate) pending_facts: Vec<Fact>,
+    /// Synthetic tx_count assigned to the next staged write batch.
+    next_pending_tx_count: u64,
+    /// Synthetic tx_id seed used to keep staged writes monotonic.
+    next_pending_tx_id: TxId,
+}
+
+impl Staged {
+    /// Nothing staged, on a store whose last `tx_count` is `current_tx_count`.
+    pub(crate) fn new(current_tx_count: u64) -> Self {
+        Staged {
+            pending_facts: Vec::new(),
+            next_pending_tx_count: current_tx_count.saturating_add(1),
+            next_pending_tx_id: crate::graph::types::tx_id_now(),
+        }
+    }
+
+    /// The `tx_id` the next staged statement is read at.
+    pub(crate) fn next_tx_id(&self) -> TxId {
+        std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id)
+    }
+
+    /// Stage buffered facts with stable synthetic read metadata.
+    pub(crate) fn stage(&mut self, facts: Vec<Fact>) {
+        let staged_tx_id = self.next_tx_id();
+        let staged_tx_count = self.next_pending_tx_count;
+
+        self.pending_facts.extend(facts.into_iter().map(|mut fact| {
+            fact.tx_id = staged_tx_id;
+            fact.tx_count = staged_tx_count;
+            fact
+        }));
+
+        self.next_pending_tx_id = staged_tx_id.saturating_add(1);
+        self.next_pending_tx_count = self.next_pending_tx_count.saturating_add(1);
+    }
+
+    /// The staged facts as a query inside the transaction reads them: a
+    /// default `valid_from` stays the sentinel until the commit stamps it;
+    /// reads see it as the fact's own staged tx_id.
+    pub(crate) fn read_view(&self) -> Vec<Fact> {
+        self.pending_facts
+            .iter()
+            .cloned()
+            .map(|mut f| {
+                if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
+                    f.valid_from = f.tx_id.cast_signed();
+                }
+                f
+            })
+            .collect()
+    }
+
+    /// The staged `facts` a commit writes, and its `tx_id`, or the error that
+    /// rejects the commit before it takes a `tx_count`.
+    pub(crate) fn checked_for_commit(facts: Vec<Fact>) -> Result<(Vec<Fact>, TxId)> {
+        // One tx_id cannot tell several versions of a fact apart, so the
+        // last statement that wrote a triple decides it, as reads inside
+        // the transaction already see (#477). Each statement passed
+        // API-011 when staged, so every triple left has one window.
+        let facts = keep_last_statement(facts);
+        // Before allocating: a rejected transaction takes no tx_count.
+        // A default `valid_from` becomes the commit time, so the windows
+        // are checked again here (#436).
+        let tx_id = crate::graph::types::tx_id_now();
+        crate::graph::storage::check_valid_windows(&facts, tx_id)?;
+        Ok((facts, tx_id))
+    }
+
+    /// Stamp `facts` with the commit's `tx_id` and `tx_count`.
+    pub(crate) fn stamp(facts: Vec<Fact>, tx_id: TxId, tx_count: u64) -> Vec<Fact> {
+        facts
+            .into_iter()
+            .map(|mut f| {
+                f.tx_id = tx_id;
+                f.tx_count = tx_count;
+                // Fix valid_from if it was left as the sentinel (placeholder for "use tx time")
+                if f.valid_from == VALID_FROM_USE_TX_TIME && f.asserted {
+                    f.valid_from = tx_id.cast_signed();
+                }
+                f
+            })
+            .collect()
     }
 }
 
@@ -2346,11 +2513,140 @@ impl Drop for WriteTransaction<'_> {
             // No changes were made to the shared FactStorage during buffering,
             // so no cleanup is required there. A large transaction's working
             // pages are discarded (#550 spec §4.4).
-            #[cfg(not(target_arch = "wasm32"))]
-            self.rollback_large();
-            self.pending_facts.clear();
+            self.state.rollback(&mut self.guard.ctx);
             set_write_tx_active(false);
         }
+    }
+}
+
+// ─── OwnedWriteTransaction ────────────────────────────────────────────────────
+
+/// An explicit write transaction that owns what it needs (#824): it keeps
+/// the database open, is `Send` and `'static`, and may begin on one thread
+/// and run statements, commit, roll back or be dropped on another. Language
+/// bindings hold it in their transaction objects. Begin one with
+/// [`Minigraf::begin_write_owned`] or [`Minigraf::begin_write_owned_with`].
+///
+/// It stages, reads and commits exactly as a [`WriteTransaction`] given the
+/// same statements and options does, and holds the database's write lock
+/// until it finishes: a write, a checkpoint or a begin from another thread
+/// waits until then, and a query from another thread reads the committed
+/// state without waiting. On the thread that began it, every call on the
+/// database that a `WriteTransaction` refuses is refused (`INT-001`) while
+/// it is open, whichever thread uses the transaction meanwhile. A thread
+/// that did not begin it and writes through the database while using it
+/// waits on its own transaction.
+///
+/// ```
+/// use minigraf::Minigraf;
+///
+/// let db = Minigraf::in_memory().unwrap();
+/// let mut tx = db.begin_write_owned().unwrap();
+/// tx.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+/// let tx = std::thread::spawn(move || {
+///     tx.execute(r#"(transact [[:alice :person/age 30]])"#).unwrap();
+///     tx
+/// })
+/// .join()
+/// .unwrap();
+/// tx.commit().unwrap();
+/// ```
+///
+/// Dropping it without committing rolls it back.
+pub struct OwnedWriteTransaction {
+    db: Minigraf,
+    state: TxState,
+    /// Set once the transaction committed, failed to commit or rolled back:
+    /// the drop then has nothing to release.
+    finished: bool,
+}
+
+impl std::fmt::Debug for OwnedWriteTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnedWriteTransaction")
+            .field("finished", &self.finished)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OwnedWriteTransaction {
+    /// Execute a Datalog command within this transaction, as
+    /// [`WriteTransaction::execute`] does: a `transact`/`retract` is staged
+    /// and returns `QueryResult::Ok`, a query reads the committed state plus
+    /// what is staged, and a rule is registered at once.
+    ///
+    /// # Errors
+    ///
+    /// As [`WriteTransaction::execute`]; a failed statement stages nothing and
+    /// leaves the transaction open. `API-001` if the write lock is poisoned.
+    pub fn execute(&mut self, input: &str) -> Result<QueryResult, MinigrafError> {
+        // The write lock is this transaction's (`WriteSlot::owned`): no other
+        // caller holds the mutex for longer than it takes to see that.
+        let inner = &self.db.inner;
+        let mut slot = inner
+            .write_lock
+            .lock()
+            .map_err(|_| MinigrafError::from(err_coded!(ErrorCode::Api001)))?;
+        self.state
+            .execute(&mut slot.ctx, inner, input)
+            .map_err(MinigrafError::from)
+    }
+
+    /// Commit this transaction atomically, as [`WriteTransaction::commit`]
+    /// does, and release the write lock. A commit that fails rolls the
+    /// transaction back.
+    ///
+    /// # Errors
+    ///
+    /// As [`WriteTransaction::commit`]; `API-001` if the write lock is
+    /// poisoned.
+    pub fn commit(mut self) -> Result<(), MinigrafError> {
+        let result = match self.db.inner.write_lock.lock() {
+            Ok(mut slot) => {
+                let committed = self.state.commit(&mut slot.ctx, &self.db.inner);
+                if committed.is_err() {
+                    self.state.rollback(&mut slot.ctx);
+                }
+                self.db.inner.release_owned(&mut slot);
+                committed
+            }
+            Err(poisoned) => {
+                let mut slot = poisoned.into_inner();
+                self.state.rollback(&mut slot.ctx);
+                self.db.inner.release_owned(&mut slot);
+                Err(err_coded!(ErrorCode::Api001))
+            }
+        };
+        self.finished = true;
+        result.map_err(MinigrafError::from)
+    }
+
+    /// Roll the transaction back and release the write lock. Also happens
+    /// when it is dropped open.
+    pub fn rollback(mut self) {
+        self.finish_rollback();
+    }
+
+    fn finish_rollback(&mut self) {
+        if self.finished {
+            return;
+        }
+        // A poisoned lock is still released: the transaction ends either way.
+        let mut slot = self
+            .db
+            .inner
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.state.rollback(&mut slot.ctx);
+        self.db.inner.release_owned(&mut slot);
+        self.finished = true;
+    }
+}
+
+impl Drop for OwnedWriteTransaction {
+    fn drop(&mut self) {
+        self.finish_rollback();
     }
 }
 
@@ -2496,7 +2792,7 @@ mod tests {
         tx.execute(r#"(transact [[:alice :person/age 30]])"#)
             .unwrap();
         let soon = crate::graph::types::tx_id_now().saturating_add(20);
-        for f in &mut tx.pending_facts {
+        for f in &mut tx.state.staged.pending_facts {
             f.valid_to = soon.cast_signed();
         }
         while crate::graph::types::tx_id_now() <= soon {
@@ -2505,6 +2801,54 @@ mod tests {
         let err = tx.commit().expect_err("window ends before the commit time");
         assert_eq!(err.code(), "API-019");
         assert_eq!(db.current_tx_count(), 0, "no tx_count taken");
+    }
+
+    /// A failed commit of an owned transaction finishes it, rolls it back
+    /// and releases the write lock (#824).
+    #[test]
+    fn owned_commit_failure_releases_the_lock() {
+        let db = Minigraf::in_memory().unwrap();
+        let mut tx = db.begin_write_owned().unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 30]])"#)
+            .unwrap();
+        let soon = crate::graph::types::tx_id_now().saturating_add(20);
+        for f in &mut tx.state.staged.pending_facts {
+            f.valid_to = soon.cast_signed();
+        }
+        while crate::graph::types::tx_id_now() <= soon {
+            std::thread::yield_now();
+        }
+        let err = tx.commit().expect_err("window ends before the commit time");
+        assert_eq!(err.code(), "API-019");
+        assert_eq!(db.current_tx_count(), 0, "no tx_count taken");
+        db.execute(r#"(transact [[:bob :person/age 40]])"#)
+            .expect("the write lock is free");
+        assert_eq!(db.current_tx_count(), 1);
+    }
+
+    /// A panic inside an owned transaction's statement poisons the write
+    /// lock: the transaction still finishes and later calls see API-001, as
+    /// after any poisoning (#824).
+    #[test]
+    fn owned_tx_finishes_on_a_poisoned_lock() {
+        let db = Minigraf::in_memory().unwrap();
+        let tx = db.begin_write_owned().unwrap();
+        let poison = db.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poison.inner.write_lock.lock().unwrap();
+            panic!("poison the write lock");
+        })
+        .join();
+        assert_eq!(tx.commit().expect_err("poisoned").code(), "API-001");
+        let slot = db
+            .inner
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(!slot.owned, "the commit released the write lock");
+        drop(slot);
+        let tx = db.begin_write_owned();
+        assert_eq!(tx.expect_err("poisoned").code(), "API-001");
     }
 
     // ── read-your-own-writes ──────────────────────────────────────────────────

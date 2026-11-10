@@ -108,7 +108,10 @@ pub mod browser;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use db::OpenOptionsWithPath;
-pub use db::{IntegrityReport, Minigraf, OpenOptions, SyncMode, TxOptions, WriteTransaction};
+pub use db::{
+    IntegrityReport, Minigraf, OpenOptions, OwnedWriteTransaction, SyncMode, TxOptions,
+    WriteTransaction,
+};
 pub use error::{ErrorCategory, MinigrafError};
 pub use overrides::Overridable;
 pub use query::datalog::functions::UdfError;
