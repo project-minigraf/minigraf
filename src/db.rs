@@ -2121,6 +2121,12 @@ impl<'a> WriteTransaction<'a> {
         executor.execute(DatalogCommand::Rule(rule))
     }
 
+    /// This transaction's chunk size after the clamp, for tests.
+    #[cfg(test)]
+    pub(crate) fn chunk(&self) -> usize {
+        statement::tx_chunk_facts(self.chunk_facts)
+    }
+
     /// Stage buffered facts with stable synthetic read metadata.
     fn stage_pending_facts(&mut self, facts: Vec<Fact>) {
         let staged_tx_id = std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
