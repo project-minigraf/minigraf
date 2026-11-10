@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,087 | 2,125 |
+| **Active** | 2,111 | 2,149 |
 | **Ignored** | 21 | 30 |
-| **Total** | 2,108 | 2,155 |
+| **Total** | 2,132 | 2,179 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861 and #863 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863 and #871 (Linux). Verification results below identify which suites ran.
 
 **#863 nightly candidates**: four engine unit tests check the `test-hooks`
 path events and memory peaks (both builds). With `test-hooks` only,
@@ -397,7 +397,7 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
   - An append that fails part-way makes every later append `WAL-007`. A rejected oversize fact (`WAL-003`, nothing written) does not.
   - Through `Minigraf`: the failed transaction is not applied, later `transact` and `commit` are `WAL-007`, and a `checkpoint()` makes writes work again.
   - In `tests/wal_test.rs`: a commit made after reopening a crash-left WAL with each kind of torn tail survives a second crash.
-- **Per-transaction options** (`src/tx_options_tests.rs`, 17 tests; `src/wal.rs`, 2 tests; `src/fault_matrix.rs`, 3 tests; 2 doctests; `src/db.rs`, 1 test rewritten; #871)
+- **Per-transaction options** (full default and `test-hooks` suites passed on the alternate bench machine with Rust 1.89, 2026-11-10; `src/tx_options_tests.rs`, 17 tests; `src/wal.rs`, 2 tests; `src/fault_matrix.rs`, 3 tests; 2 doctests; `src/db.rs`, 1 test rewritten; #871)
   - `TxOptions` builders and fields; `begin_write_with` fails with `INT-001` and `API-014` as `begin_write` does and leaves the handle usable.
   - A small commit syncs the WAL exactly when its effective mode is `Full`, for the database modes × `None`/`Full`/`Normal`, whether the commit creates the WAL or appends to it. The mode never stays with the WAL writer: implicit transactions and `begin_write()` follow the database mode after a commit, a rollback or a drop, including after a `Normal` transaction that became large (creating the WAL guard) and was rolled back. The stored-mode test of #302 now checks that a `Normal` database's commits leave the WAL unsynced at both writer call sites.
   - Test models: a lost sync loses every WAL byte since the last good sync, including whole `Normal` entries; `Minigraf::power_loss` ends a handle with the WAL cut back to its last sync.
