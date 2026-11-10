@@ -411,6 +411,80 @@ impl OpenOptions {
     }
 }
 
+// ─── TxOptions ───────────────────────────────────────────────────────────────
+
+/// Options for one explicit write transaction, passed to
+/// [`Minigraf::begin_write_with`] (#871).
+///
+/// Each field is `None` by default, which means the database's value from
+/// [`OpenOptions`]. A value applies to that transaction only: later
+/// transactions, and `transact`/`retract` through [`Minigraf::execute`], use
+/// the database's values again. Nothing about it is stored in the file.
+///
+/// `#[non_exhaustive]`: construct via [`TxOptions::new`]/[`TxOptions::default`]
+/// plus the builder methods.
+///
+/// ```no_run
+/// use minigraf::{OpenOptions, SyncMode, TxOptions};
+///
+/// let db = OpenOptions::new().path("bulk.graph").open().unwrap();
+/// // A bulk load that can be re-run: no WAL sync at its commit.
+/// let mut tx = db
+///     .begin_write_with(TxOptions::new().synchronous(SyncMode::Normal))
+///     .unwrap();
+/// tx.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+/// tx.commit().unwrap();
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TxOptions {
+    /// The WAL durability mode of this transaction's commit, or `None` for
+    /// [`OpenOptions::synchronous`].
+    ///
+    /// It decides only whether the WAL entry this transaction's commit
+    /// appends is synced: `Full` syncs it, `Normal` does not, whatever the
+    /// database's mode. A `Full` commit syncs the whole WAL, so it also makes
+    /// every entry committed before it durable, including entries committed
+    /// with `Normal`; a `Normal` commit never weakens one committed before it.
+    /// See [`SyncMode`] for what survives a crash.
+    ///
+    /// No effect on a transaction that becomes large (see
+    /// [`OpenOptions::transaction_chunk_facts`]): it commits as a
+    /// checkpoint, which is durable in either mode, and its WAL guard is
+    /// always synced. No effect on an in-memory database, which has no WAL.
+    pub synchronous: Option<SyncMode>,
+    /// The chunk size of this transaction, or `None` for
+    /// [`OpenOptions::transaction_chunk_facts`].
+    ///
+    /// Every `transact`/`retract` of the transaction is read a chunk of this
+    /// many facts at a time, and on a file database the transaction becomes
+    /// large once its facts pass it. Kept between 1 and 1,000,000, as the
+    /// database value is.
+    pub chunk_facts: Option<usize>,
+}
+
+impl TxOptions {
+    /// Every option `None`: the database's values.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set this transaction's WAL durability mode. See [`TxOptions::synchronous`].
+    #[must_use]
+    pub fn synchronous(mut self, mode: SyncMode) -> Self {
+        self.synchronous = Some(mode);
+        self
+    }
+
+    /// Set this transaction's chunk size. See [`TxOptions::chunk_facts`].
+    #[must_use]
+    pub fn chunk_facts(mut self, facts: usize) -> Self {
+        self.chunk_facts = Some(facts);
+        self
+    }
+}
+
 /// `OpenOptions` combined with a file path, ready to open.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct OpenOptionsWithPath {
@@ -669,11 +743,7 @@ impl Minigraf {
             // `g + 1` behind this WAL, and without it a file with one valid
             // meta slot would be refused (#550 spec §4.5).
             pfs.force_dirty();
-            Some(WalWriter::open_or_create_at(
-                &wal_path,
-                opts.synchronous,
-                pfs.generation(),
-            )?)
+            Some(WalWriter::open_or_create_at(&wal_path, pfs.generation())?)
         } else {
             None
         };
@@ -903,6 +973,7 @@ impl Minigraf {
             let should_checkpoint = WriteTransaction::wal_write_stamped_batch(
                 &mut ctx,
                 &self.inner.options,
+                self.inner.options.synchronous,
                 tx_count,
                 &stamped,
             )?;
@@ -951,12 +1022,7 @@ impl Minigraf {
         };
         // The WAL guard: a crash before the commit point finds a WAL whose
         // base is this generation, never an orphan `g + 1` page (§4.5).
-        Self::open_wal(
-            wal,
-            db_path,
-            self.inner.options.synchronous,
-            pfs.generation(),
-        )?;
+        Self::open_wal(wal, db_path, pfs.generation())?;
         let mut tx = pfs.begin_large(crate::graph::types::tx_id_now())?;
         for chunk in chunks {
             let written = match chunk {
@@ -983,12 +1049,11 @@ impl Minigraf {
     fn open_wal<'w>(
         wal: &'w mut Option<WalWriter>,
         db_path: &Path,
-        sync: SyncMode,
         generation: u64,
     ) -> Result<&'w mut WalWriter> {
         if wal.is_none() {
             let wal_path = Self::wal_path_for(db_path);
-            *wal = Some(WalWriter::open_or_create_at(&wal_path, sync, generation)?);
+            *wal = Some(WalWriter::open_or_create_at(&wal_path, generation)?);
         }
         wal.as_mut().ok_or_else(|| err_coded!(ErrorCode::Api009))
     }
@@ -1092,18 +1157,57 @@ impl Minigraf {
 
     // ── Explicit transaction ──────────────────────────────────────────────────
 
-    /// Begin an explicit write transaction.
+    /// Begin an explicit write transaction with the database's options:
+    /// [`begin_write_with`](Self::begin_write_with) with
+    /// [`TxOptions::default`]. To choose the WAL durability mode or the chunk
+    /// size of one transaction, use `begin_write_with`.
     ///
     /// Acquires the write lock; held until `commit()`, `rollback()`, or drop.
     ///
     /// # Errors
     ///
-    /// Returns an error if a `WriteTransaction` is already active on **this thread**.
+    /// Returns an error if a `WriteTransaction` is already active on **this
+    /// thread** (`INT-001`), or the handle is read-only (`API-014`).
     pub fn begin_write(&self) -> Result<WriteTransaction<'_>, MinigrafError> {
-        self.begin_write_inner().map_err(MinigrafError::from)
+        self.begin_write_with(TxOptions::default())
     }
 
-    fn begin_write_inner(&self) -> Result<WriteTransaction<'_>> {
+    /// Begin an explicit write transaction with `options` (#871): its WAL
+    /// durability mode ([`TxOptions::synchronous`]) and chunk size
+    /// ([`TxOptions::chunk_facts`]). A `None` option is the database's value
+    /// from [`OpenOptions`]. The options apply to this transaction only.
+    ///
+    /// Acquires the write lock; held until `commit()`, `rollback()`, or drop.
+    ///
+    /// ```no_run
+    /// use minigraf::{OpenOptions, SyncMode, TxOptions};
+    ///
+    /// let db = OpenOptions::new().path("app.graph").open().unwrap();
+    /// // This transaction's commit is not synced, and it is written a chunk
+    /// // of 10,000 facts at a time once it passes that many.
+    /// let opts = TxOptions::new()
+    ///     .synchronous(SyncMode::Normal)
+    ///     .chunk_facts(10_000);
+    /// let mut tx = db.begin_write_with(opts.clone()).unwrap();
+    /// tx.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+    /// tx.commit().unwrap();
+    /// // Later transactions use the database's options again.
+    /// db.execute(r#"(transact [[:bob :person/name "Bob"]])"#).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fails as [`begin_write`](Self::begin_write) does: `INT-001` while a
+    /// `WriteTransaction` is active on **this thread**, `API-014` on a
+    /// read-only handle. A failed call leaves the handle usable.
+    pub fn begin_write_with(
+        &self,
+        options: TxOptions,
+    ) -> Result<WriteTransaction<'_>, MinigrafError> {
+        self.begin_write_inner(options).map_err(MinigrafError::from)
+    }
+
+    fn begin_write_inner(&self, options: TxOptions) -> Result<WriteTransaction<'_>> {
         if is_write_tx_active() {
             bail_coded!(ErrorCode::Int001);
         }
@@ -1118,6 +1222,12 @@ impl Minigraf {
         Ok(WriteTransaction {
             guard,
             inner: &self.inner,
+            sync: options
+                .synchronous
+                .unwrap_or(self.inner.options.synchronous),
+            chunk_facts: options
+                .chunk_facts
+                .unwrap_or(self.inner.options.transaction_chunk_facts),
             pending_facts: Vec::new(),
             next_pending_tx_count: self.inner.fact_storage.current_tx_count().saturating_add(1),
             next_pending_tx_id: crate::graph::types::tx_id_now(),
@@ -1312,6 +1422,32 @@ impl Minigraf {
             std::mem::replace(&mut *ctx, WriteContext::Memory)
         {
             pfs.discard();
+        }
+    }
+
+    /// End the handle as a power loss between operations would (#871): as
+    /// [`kill`](Self::kill), and the WAL is cut back to its length at its
+    /// last successful sync, losing every entry committed since without one.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn power_loss(self) {
+        let mut ctx = self.inner.write_lock.lock().unwrap();
+        if let WriteContext::File { mut pfs, wal, .. } =
+            std::mem::replace(&mut *ctx, WriteContext::Memory)
+        {
+            if let Some(mut wal) = wal {
+                wal.lose_unsynced().unwrap();
+            }
+            pfs.discard();
+        }
+    }
+
+    /// Whether the WAL is open and every byte written to it is synced, for
+    /// tests that check whether a commit synced it.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn wal_synced(&self) -> Option<bool> {
+        match &*self.inner.write_lock.lock().unwrap() {
+            WriteContext::File { wal, .. } => wal.as_ref().map(WalWriter::is_synced),
+            _ => None,
         }
     }
 
@@ -1747,6 +1883,12 @@ impl Minigraf {
 pub struct WriteTransaction<'a> {
     guard: MutexGuard<'a, WriteContext>,
     inner: &'a Inner,
+    /// This transaction's WAL durability mode (`TxOptions::synchronous`,
+    /// else the database's).
+    sync: SyncMode,
+    /// This transaction's configured chunk size, before the clamp
+    /// (`TxOptions::chunk_facts`, else the database's).
+    chunk_facts: usize,
     /// Facts buffered in this transaction (not yet committed to FactStorage).
     pending_facts: Vec<Fact>,
     /// Synthetic tx_count assigned to the next staged write batch.
@@ -1791,7 +1933,7 @@ impl<'a> WriteTransaction<'a> {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(tx) = &self.large {
                 // Every fact is stamped with the transaction's tx_id.
-                let chunk = statement::tx_chunk_facts(self.inner.options.transaction_chunk_facts);
+                let chunk = statement::tx_chunk_facts(self.chunk_facts);
                 let statement = statement::read_statement(input, kind, tx.tx_id(), chunk)?;
                 let chunks = statement.chunks()?;
                 refuse_if_failed(&self.guard)?;
@@ -1803,7 +1945,7 @@ impl<'a> WriteTransaction<'a> {
             // checks them again at the commit time.
             let staged_tx_id =
                 std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
-            let chunk = statement::tx_chunk_facts(self.inner.options.transaction_chunk_facts);
+            let chunk = statement::tx_chunk_facts(self.chunk_facts);
             let statement = statement::read_statement(input, kind, staged_tx_id, chunk)?;
             #[cfg(not(target_arch = "wasm32"))]
             let file = matches!(*self.guard, WriteContext::File { .. });
@@ -1901,13 +2043,9 @@ impl<'a> WriteTransaction<'a> {
         else {
             bail_coded!(ErrorCode::Int019, "a large transaction without a file");
         };
-        // The WAL guard (§4.5), before any page is written.
-        Minigraf::open_wal(
-            wal,
-            db_path,
-            self.inner.options.synchronous,
-            pfs.generation(),
-        )?;
+        // The WAL guard (§4.5), before any page is written. Its header is
+        // synced whatever the transaction's mode (#871).
+        Minigraf::open_wal(wal, db_path, pfs.generation())?;
         let mut tx = pfs.begin_large(tx_id)?;
         let mut staged: Vec<Fact> = std::mem::take(&mut self.pending_facts)
             .into_iter()
@@ -2075,6 +2213,7 @@ impl<'a> WriteTransaction<'a> {
             let should_checkpoint = Self::wal_write_stamped_batch(
                 &mut self.guard,
                 &self.inner.options,
+                self.sync,
                 tx_count,
                 &stamped,
             )?;
@@ -2095,7 +2234,8 @@ impl<'a> WriteTransaction<'a> {
         Ok(())
     }
 
-    /// Write a pre-stamped batch of facts to the WAL.
+    /// Write a pre-stamped batch of facts to the WAL, synced if `sync` is
+    /// `SyncMode::Full`.
     ///
     /// Accepts an already-computed `tx_count` and `facts` slice.
     /// Called while the write lock is held.
@@ -2107,6 +2247,7 @@ impl<'a> WriteTransaction<'a> {
     fn wal_write_stamped_batch(
         ctx: &mut WriteContext,
         opts: &OpenOptions,
+        sync: SyncMode,
         tx_count: u64,
         facts: &[Fact],
     ) -> Result<bool> {
@@ -2120,9 +2261,8 @@ impl<'a> WriteTransaction<'a> {
                 wal_entry_count,
             } => {
                 // Lazily open the WAL writer if not already open.
-                let wal_writer =
-                    Minigraf::open_wal(wal, db_path, opts.synchronous, pfs.generation())?;
-                wal_writer.append_entry(tx_count, facts)?;
+                let wal_writer = Minigraf::open_wal(wal, db_path, pfs.generation())?;
+                wal_writer.append_entry(tx_count, facts, sync)?;
                 pfs.mark_dirty();
                 *wal_entry_count = wal_entry_count.saturating_add(1);
 
@@ -2830,19 +2970,12 @@ mod tests {
             db.execute(r#"(transact [[:alice :name "Alice"]])"#)
                 .unwrap();
 
-            let ctx = db.inner.write_lock.lock().unwrap();
-            match &*ctx {
-                WriteContext::File { wal, .. } => {
-                    let wal_writer = wal.as_ref().expect("WAL should be open after a write");
-                    assert_eq!(
-                        wal_writer.sync_mode(),
-                        SyncMode::Normal,
-                        "lazy-reopen call site should honor opts.synchronous"
-                    );
-                }
-                _ => panic!("expected read-write file-backed WriteContext"),
-            }
-            drop(ctx);
+            // The writer keeps no mode (#871): the append was not synced.
+            assert_eq!(
+                db.wal_synced(),
+                Some(false),
+                "lazy-reopen call site should honor opts.synchronous"
+            );
             // Handle drops here without checkpointing: wal_checkpoint_threshold ==
             // usize::MAX suppresses both auto-checkpoint and the close-time
             // checkpoint in `Inner::drop`, so the .wal file survives on disk.
@@ -2867,20 +3000,17 @@ mod tests {
             .open()
             .unwrap();
 
-        let ctx = db.inner.write_lock.lock().unwrap();
-        match &*ctx {
-            WriteContext::File { wal, .. } => {
-                let wal_writer = wal
-                    .as_ref()
-                    .expect("WAL should be opened eagerly since the .wal file pre-existed");
-                assert_eq!(
-                    wal_writer.sync_mode(),
-                    SyncMode::Normal,
-                    "initial-open call site should honor opts.synchronous"
-                );
-            }
-            _ => panic!("expected read-write file-backed WriteContext"),
-        }
+        assert_eq!(
+            db.wal_synced(),
+            Some(true),
+            "WAL should be opened eagerly since the .wal file pre-existed"
+        );
+        db.execute(r#"(transact [[:bob :name "Bob"]])"#).unwrap();
+        assert_eq!(
+            db.wal_synced(),
+            Some(false),
+            "initial-open call site should honor opts.synchronous"
+        );
     }
 
     // ── failed commit leaves database unchanged ───────────────────────────────
