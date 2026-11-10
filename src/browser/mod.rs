@@ -532,6 +532,59 @@ impl BrowserPreparedQuery {
             cursor: Some(cursor),
         })
     }
+
+    /// A new prepared query with `n` as its derived-facts limit; this one is
+    /// unchanged (#872). An allowed `:max-derived-facts` or `:max-results` in
+    /// the query still overrides it. `n` is a non-negative integer; at or
+    /// above the platform's largest `usize` (2^32 − 1) it means no limit.
+    /// Anything else throws `[API-017]`.
+    #[wasm_bindgen(js_name = withMaxDerivedFacts)]
+    pub fn with_max_derived_facts(&self, n: f64) -> Result<BrowserPreparedQuery, JsValue> {
+        let n = limit_arg("withMaxDerivedFacts", n)?;
+        Ok(self.derive(|q| q.with_max_derived_facts(n)))
+    }
+
+    /// A new prepared query with `bytes` as its query memory limit; this one
+    /// is unchanged (#872). `0` lets only queries that hold no state run.
+    /// Takes its argument as `withMaxDerivedFacts` does.
+    #[wasm_bindgen(js_name = withQueryMemoryLimit)]
+    pub fn with_query_memory_limit(&self, bytes: f64) -> Result<BrowserPreparedQuery, JsValue> {
+        let bytes = limit_arg("withQueryMemoryLimit", bytes)?;
+        Ok(self.derive(|q| q.with_query_memory_limit(bytes)))
+    }
+
+    /// A new prepared query with `n` as its rounds-per-stratum limit; this
+    /// one is unchanged (#872). An allowed `:max-iterations` in the query
+    /// still overrides it. Takes its argument as `withMaxDerivedFacts` does.
+    #[wasm_bindgen(js_name = withMaxIterations)]
+    pub fn with_max_iterations(&self, n: f64) -> Result<BrowserPreparedQuery, JsValue> {
+        let n = limit_arg("withMaxIterations", n)?;
+        Ok(self.derive(|q| q.with_max_iterations(n)))
+    }
+
+    fn derive(&self, set: impl FnOnce(PreparedQuery) -> PreparedQuery) -> BrowserPreparedQuery {
+        BrowserPreparedQuery {
+            _db: self._db.clone(),
+            query: set(self.query.clone()),
+        }
+    }
+}
+
+/// A setter's count: a non-negative integer, saturated at `usize::MAX` (no
+/// limit); a negative, fractional or non-finite number is `API-017`.
+fn limit_arg(what: &str, n: f64) -> Result<usize, JsValue> {
+    if !n.is_finite() || n < 0.0 || n.fract() != 0.0 {
+        return Err(JsValue::from_str(
+            &crate::MinigrafError::invalid_argument(format!(
+                "{what}: {n} is not a non-negative integer"
+            ))
+            .to_string(),
+        ));
+    }
+    // Checked above: whole and non-negative, and `as` saturates at
+    // `usize::MAX`, so a number at or above it is no limit.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok(n as usize)
 }
 
 fn as_slice(binds: &[(String, BindValue)]) -> Vec<(&str, BindValue)> {
@@ -768,6 +821,101 @@ mod tests {
         let err = db.execute(q(1)).await.expect_err("over the limit");
         let text = err.as_string().expect("rejection is a string");
         assert!(text.starts_with("[INT-020] "), "rejection is INT-020");
+    }
+
+    async fn reach_db() -> BrowserDb {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        db.execute("(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d]])".to_string())
+            .await
+            .expect("transact");
+        db.execute("(transact [[:p :v 1] [:q :v 1] [:r :v 2]])".to_string())
+            .await
+            .expect("transact");
+        db.execute("(rule [(reach ?x ?y) [?x :edge ?y]])".to_string())
+            .await
+            .expect("rule");
+        db.execute("(rule [(reach ?x ?y) [?x :edge ?z] (reach ?z ?y)])".to_string())
+            .await
+            .expect("rule");
+        db
+    }
+
+    fn result_rows(json: &str) -> usize {
+        let v: serde_json::Value = serde_json::from_str(json).unwrap();
+        v["results"].as_array().unwrap().len()
+    }
+
+    fn rejection(r: Result<String, JsValue>) -> String {
+        r.err()
+            .and_then(|e| e.as_string())
+            .expect("rejection is a string")
+    }
+
+    const REACH: &str = "(query [:find ?x ?y :where (reach ?x ?y)])";
+    const GROUPED: &str = "(query [:find ?v (count ?e) :where [?e :v ?v]])";
+
+    // #872: each setter returns a new prepared query; the receiver keeps its
+    // limits. The query text has no override keyword.
+    #[wasm_bindgen_test]
+    async fn prepared_setters_derive_new_queries() {
+        let db = reach_db().await;
+        let pq = db.prepare(REACH).expect("prepare");
+        let none = JsValue::UNDEFINED;
+        for derived in [
+            pq.with_max_derived_facts(1.0).expect("setter"),
+            pq.with_max_iterations(1.0).expect("setter"),
+        ] {
+            let text = rejection(derived.execute(none.clone()));
+            assert!(text.starts_with("[INT-020] "), "derived query is INT-020");
+            assert!(derived.query(none.clone()).is_err(), "cursor is refused");
+        }
+        assert_eq!(result_rows(&pq.execute(none.clone()).expect("receiver")), 6);
+
+        let grouped = db.prepare(GROUPED).expect("prepare");
+        let small = grouped.with_query_memory_limit(16.0).expect("setter");
+        let text = rejection(small.execute(none.clone()));
+        assert!(text.starts_with("[QRY-012] "), "derived query is QRY-012");
+        assert_eq!(
+            result_rows(&grouped.execute(none.clone()).expect("receiver")),
+            2
+        );
+
+        // A derived query takes another setter; the last value applies and
+        // the others are kept.
+        let raised = pq
+            .with_max_iterations(1.0)
+            .and_then(|q| q.with_max_derived_facts(1.0))
+            .and_then(|q| q.with_max_iterations(1e300))
+            .expect("setters");
+        let text = rejection(raised.execute(none.clone()));
+        assert!(text.starts_with("[INT-020] "), "derived-facts limit kept");
+        let unlimited = pq
+            .with_max_iterations(1.0)
+            .and_then(|q| q.with_max_iterations(usize::MAX as f64))
+            .expect("setters");
+        assert_eq!(result_rows(&unlimited.execute(none).expect("no limit")), 6);
+    }
+
+    // #872: a setter's argument is a non-negative integer number.
+    #[wasm_bindgen_test]
+    async fn prepared_setters_reject_bad_counts() {
+        let db = reach_db().await;
+        let pq = db.prepare(REACH).expect("prepare");
+        for n in [-1.0, 1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for r in [
+                pq.with_max_derived_facts(n),
+                pq.with_query_memory_limit(n),
+                pq.with_max_iterations(n),
+            ] {
+                let text = r.err().and_then(|e| e.as_string()).expect("rejected");
+                assert!(text.starts_with("[API-017] "), "rejection is API-017");
+            }
+        }
+        assert!(pq.with_max_iterations(0.0).is_ok(), "zero passes through");
+        assert!(
+            pq.with_max_iterations(-0.0).is_ok(),
+            "negative zero is zero"
+        );
     }
 
     #[wasm_bindgen_test]

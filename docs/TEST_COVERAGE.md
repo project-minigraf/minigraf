@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,111 | 2,149 |
+| **Active** | 2,112 | 2,150 |
 | **Ignored** | 21 | 30 |
-| **Total** | 2,132 | 2,179 |
+| **Total** | 2,133 | 2,180 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863 and #871 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871 and #872 (Linux). Verification results below identify which suites ran.
 
 **#863 nightly candidates**: four engine unit tests check the `test-hooks`
 path events and memory peaks (both builds). With `test-hooks` only,
@@ -661,12 +661,13 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 - **`OpenOptions::allow_overrides`** (#869; `tests/allow_overrides_test.rs`, 6 tests; `src/overrides.rs`, 2 unit tests; 1 doc test on `OpenOptions::allow_overrides`): the defaults allow `:max-derived-facts` and `:max-results`; an empty list refuses each with `API-025` from `execute`, `query`, `prepare` and `WriteTransaction::execute`, and queries without them still run; a list replaces the defaults; a refused statement leaves the write transaction usable; `DEFAULTS` read back, chained and with duplicates; the list holds on a file database and is not persisted; `:max-derived-facts` is reported first when both keywords are refused. API-025's registration and documentation are checked by the registry tests.
 - **`:query-memory-limit`, limit slots and `PreparedQuery` setters** (#870; `tests/limit_keywords_test.rs`, 17 tests; parser 3 unit tests, `src/overrides.rs` 1 unit test; 2 doc tests on the setters; 1 `#[wasm_bindgen_test]` in `src/browser/mod.rs`): the keyword lowers and raises the database limit (execute, cursor, write transaction); under 0 every stateful query fails with `QRY-012`, while a value-only query over checkpointed facts runs (keyword and setter); it is refused by default with `API-025` (literal and slot, every entry point, `BrowserDb`) and the list replaces the defaults; `INT-012`/`013`/`015` validation; slots on all three keywords change the outcome per execution, with `API-024`/`API-022`/`INT-014`/`INT-015` bind errors and `API-010` on `execute`/`query`; the setters replace the database value, a keyword overrides them, and they are not gated; `check_overrides` order over three keywords; `Count::literal` on a slot is `INT-032`. Grammar corpus: 3 valid, 2 syntax, 2 semantic fixtures; verifier 41 tokens and an `INT-015` witness; one `datalog_parser` fuzz seed.
 - **`:max-iterations`, `OpenOptions::max_iterations` and `PreparedQuery::with_max_iterations`** (#861; `tests/limit_keywords_test.rs`, 8 tests; parser 1 unit test; `src/overrides.rs` order test extended; 1 doc test on the setter; 1 `#[wasm_bindgen_test]` in `src/browser/mod.rs`; `tests/allow_overrides_test.rs` pins the new `DEFAULTS`): a 1,500-round chain passes at the new 1,000,000 default (over the old fixed 1,000); the option, keyword (execute, write transaction) and setter each set the limit up or down, the keyword over the setter, with the 4-edge chain's 5-round boundary checked both ways and `0` failing; rounds are counted per stratum (two 5-round strata pass at 5); `INT-020` names `:max-iterations` and `OpenOptions::max_iterations`; the keyword is in `DEFAULTS` and refused with `API-025` under an empty list (execute, query, prepare); `INT-012`/`013`/`014`/`015` validation; slot outcomes per execution with `INT-014`/`API-024`/`API-022` bind errors and `API-010` on `execute`; the setter is ungated and applies to cursors. Grammar corpus: 2 valid, 2 syntax, 2 semantic fixtures; verifier 42 tokens; one `datalog_parser` fuzz seed.
+- **Copyable `PreparedQuery` and browser setters** (#872; `tests/limit_keywords_test.rs`, 1 test; 2 `#[wasm_bindgen_test]` in `src/browser/mod.rs`): a clone and its source are independent under each of the three setters, in both directions; `BrowserPreparedQuery.withMaxDerivedFacts(1)`/`withMaxIterations(1)` give `INT-020` (execute and cursor) and `withQueryMemoryLimit(16)` `QRY-012` while the receiver still returns every row, with no override keyword in the text; a chained setter keeps the limits not set again and the last value applies, `usize::MAX` and above meaning no limit; a negative, fractional, NaN or infinite argument is `API-017` on every setter, `0` and `-0` pass.
 
 ## Browser and WASI
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 62 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 68 `wasm_bindgen_test` tests (Firefox, 2026-11-10). The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
   - Three committed-memory-backend input-order fixtures: scalar Sort omission, streaming counts with Boolean/float representatives and mixed numeric group order, and partition windows preserving float edges and numeric group classes (#641).
   - Twenty-six for `BrowserDb`, including IndexedDB persistence, the default `allow_overrides` list (#869), the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).

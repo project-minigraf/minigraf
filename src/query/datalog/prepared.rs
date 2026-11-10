@@ -76,6 +76,10 @@ fn bind_value_type_name(bv: &BindValue) -> &'static str {
 /// let young = pq.execute(&[("age", BindValue::Val(Value::Integer(25)))]).unwrap();
 /// let older = pq.execute(&[("age", BindValue::Val(Value::Integer(30)))]).unwrap();
 /// ```
+///
+/// A clone is an independent statement over the same database: a limit
+/// setter applied to one does not change the other (#872).
+#[derive(Clone)]
 pub struct PreparedQuery {
     template: DatalogQuery,
     slot_names: Vec<String>,

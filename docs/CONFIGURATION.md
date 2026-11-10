@@ -141,3 +141,38 @@ let pq = db
     .with_query_memory_limit(16 << 20);
 let rows = pq.execute(&[])?;
 ```
+
+`PreparedQuery` is `Clone` (#872): `pq.clone().with_max_iterations(10)` gives
+a second statement with its own limits and leaves `pq` unchanged.
+
+## Language bindings
+
+From v3.0.0 every binding exposes the override list, its default, the
+`transaction_chunk_facts` and `max_iterations` open options and the three
+setters (#872). Each setter returns a new prepared query and leaves the one
+it was called on unchanged. The default list is read from
+`Overridable::DEFAULTS`, never written out again in a binding. `TxOptions`
+reaches the bindings with binding write transactions (#824).
+
+| Binding | Override list | Default list | Open options | Setters |
+|---|---|---|---|---|
+| Python | `minigraf.open(..., allow_overrides=[Overridable.MAX_DERIVED_FACTS, ...])` | `minigraf.OVERRIDABLE_DEFAULTS` | `transaction_chunk_facts=`, `max_iterations=` | `with_max_derived_facts`, `with_query_memory_limit`, `with_max_iterations` |
+| Java | builder `Minigraf.options().allowOverrides(...)` | `Minigraf.OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
+| Android | `OpenOptions(allowOverrides = ...)` | top-level `OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
+| Swift | `OpenOptions(allowOverrides: ...)` | `Overridable.defaults` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts(n:)`, `withQueryMemoryLimit(bytes:)`, `withMaxIterations(n:)` |
+| Node | `allowOverrides: ['maxDerivedFacts', 'maxResults', 'queryMemoryLimit', 'maxIterations']` | `OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
+| C | `"allow_overrides": ["max_derived_facts", "max_results", "query_memory_limit", "max_iterations"]` in the options JSON | `minigraf_overridable_defaults()` (a JSON array) | `"transaction_chunk_facts"`, `"max_iterations"` | `minigraf_prepared_with_max_derived_facts`, `minigraf_prepared_with_query_memory_limit`, `minigraf_prepared_with_max_iterations` |
+| Browser (`BrowserDb`) | none | none | none | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` on `BrowserPreparedQuery` |
+
+As in Rust, a missing override list means the default list and an empty one
+refuses every override keyword; a list replaces the defaults rather than
+adding to them. Counts are signed in the bindings, and a negative one is
+`API-017`. The no-limit value of a setter is the one each binding already
+uses for `query_memory_limit`: `i64::MAX` in Python, Java, Android and Swift,
+`Number.MAX_SAFE_INTEGER` or more in Node, `SIZE_MAX` in C.
+
+`BrowserDb` takes no open options, so it always runs with the defaults,
+`Overridable::DEFAULTS` among them, and refuses `:query-memory-limit` in
+query text. Its prepared queries' setters take a non-negative integer
+number; at or above the platform's largest `usize` (2^32 − 1) it means no
+limit, and a negative, fractional or non-finite number is `API-017`.
