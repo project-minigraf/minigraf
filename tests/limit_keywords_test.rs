@@ -530,3 +530,24 @@ fn iterations_setter_replaces_the_database_value() {
         .with_max_iterations(1);
     assert_eq!(rows(pq.execute(&[]).expect("keyword wins")), 10);
 }
+
+// ─── Clone (#872) ────────────────────────────────────────────────────────────
+
+#[test]
+fn prepared_query_clone_is_independent() {
+    let db = setup(OpenOptions::new());
+    let pq = db.prepare(REACH).expect("prepare");
+    let low = pq.clone().with_max_derived_facts(1);
+    assert_eq!(code(low.execute(&[])), "INT-020");
+    assert_eq!(rows(pq.execute(&[]).expect("source unchanged")), 10);
+
+    let low = db.prepare(REACH).expect("prepare").with_max_iterations(1);
+    let high = low.clone().with_max_iterations(REACH_ROUNDS as usize);
+    assert_eq!(rows(high.execute(&[]).expect("copy raised")), 10);
+    assert_eq!(code(low.execute(&[])), "INT-020");
+
+    let grouped = db.prepare(GROUPED).expect("prepare");
+    let small = grouped.clone().with_query_memory_limit(64);
+    assert_eq!(code(small.execute(&[])), "QRY-012");
+    assert_eq!(rows(grouped.execute(&[]).expect("source unchanged")), 5);
+}
