@@ -1,4 +1,0 @@
-(query [:find ?e :where [?e :n ?n] (not(e)
-[?e wname ?n] 
-[?e ?_wname ?n] (sssssss=8888 [ :wh (not [au :r])]) [ee :banned e])(not(qu)
-[?e ?_wname ?n])])

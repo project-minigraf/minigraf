@@ -1,0 +1,1 @@
+(query [:where [w: q] (sa[])[p5:?:] (yu)[?x :P:a](ci:)[? p:aei]])

@@ -1,0 +1,1 @@
+(query [: :where [?e n ?n] (not(RR)[(a :)?e](YQ)[(a :_5_sg)?e](Y) [ae d tue])])

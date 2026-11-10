@@ -1,0 +1,1 @@
+(query[:where(u/=A)(u:) (u=-umss)])

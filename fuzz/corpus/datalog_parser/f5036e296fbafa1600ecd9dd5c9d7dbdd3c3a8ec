@@ -1,0 +1,3 @@
+(query[:where [ Aa =?] (not-join[][c:me:z] (qudr
+:))])
+

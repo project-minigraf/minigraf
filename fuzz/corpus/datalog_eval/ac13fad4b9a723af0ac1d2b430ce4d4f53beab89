@@ -1,0 +1,1 @@
+(query [:finclo:where [?e ?lamu ?n](q[ ]) [(<= ?n "Aclie")]])

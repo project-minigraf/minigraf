@@ -1,0 +1,1 @@
+(query [: :where [?e ?namk ?n] [?c?e ?nameO?ne ?OO-oIIind] [(= ?n "Alice")]])

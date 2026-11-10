@@ -1,1 +1,0 @@
-(query [:finw :where [?g ?nRRRRRRame ?n]  :where [?e ?nae ?n] [(= ?n "Alice")]])

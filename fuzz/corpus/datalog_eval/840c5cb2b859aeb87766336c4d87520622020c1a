@@ -1,0 +1,1 @@
+(query [:where(not[on-ije:age >] [not-n 2,r])(IIIe)])

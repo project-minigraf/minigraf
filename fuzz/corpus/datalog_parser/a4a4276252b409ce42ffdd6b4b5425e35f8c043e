@@ -1,0 +1,2 @@
+(query [::where (y [[?:en]])
+[? e ?n] (n :[: []])[?e e ?n] (n bbbbbbbb[?])])

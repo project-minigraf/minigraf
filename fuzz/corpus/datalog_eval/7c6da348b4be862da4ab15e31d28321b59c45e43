@@ -1,0 +1,2 @@
+(query[:?e :where [?l ?Ldoo ?_??s] (or(q:whRq:y=r ?[:finkw])
+ )])

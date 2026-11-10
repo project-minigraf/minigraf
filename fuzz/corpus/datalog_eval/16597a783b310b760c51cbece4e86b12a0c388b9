@@ -1,1 +1,0 @@
-(query [:fw :where [?g ?nRRam ?n] [(= ?n "")]])

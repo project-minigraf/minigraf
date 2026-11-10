@@ -1,0 +1,1 @@
+(query[:where  (not [e :n r][$e d u][: a te][$e  D re])])

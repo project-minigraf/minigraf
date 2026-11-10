@@ -1,0 +1,2 @@
+(query [:fin:as-osu :where [?e l omZaa?rsuc] (not(query [:?e :ot-join [?e]])
+ [?e :ve tree])])

@@ -1,0 +1,2 @@
+(query [:?1:where [q e qe] (or(ss[:?]?e[])
+[?e nma n]  [ae :d e],)(e)])

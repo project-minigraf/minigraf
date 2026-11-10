@@ -1,1 +1,0 @@
-(query[:find(count-distinct:over)])

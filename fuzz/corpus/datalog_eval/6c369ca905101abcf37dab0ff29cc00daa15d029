@@ -1,0 +1,1 @@
+(query[:summ :where [?e l o] (not-join [?e] [?e :active tre] (not*join [?rtee]) :where [=e l otr])])

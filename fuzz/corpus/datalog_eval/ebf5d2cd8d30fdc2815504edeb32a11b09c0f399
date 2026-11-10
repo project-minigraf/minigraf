@@ -1,0 +1,3 @@
+(query [: :where [?l :color ?c] (or(lnZ-t)(ge:whernZ-t);tam77:6e
+ 
+ )])

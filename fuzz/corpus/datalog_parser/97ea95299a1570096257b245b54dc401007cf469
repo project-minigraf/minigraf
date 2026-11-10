@@ -1,0 +1,1 @@
+(query [:where [*r : ] (=?y)(u s:)[(+:th ?y)] ])

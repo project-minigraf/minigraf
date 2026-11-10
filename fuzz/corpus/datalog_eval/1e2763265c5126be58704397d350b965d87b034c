@@ -1,0 +1,1 @@
+(query [ :where [?e ?namefalse ?p]  :mriiiiiiiix  :where [?_ ?name ?n] [ (=?n "alice") ?n]  :where [?e ?name ?n] [(= ?n "Alice")]])

@@ -1,1 +1,0 @@
-(query [:where [q e n](or(LL=t ? ?yLr))(t(d AB)e)])

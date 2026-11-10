@@ -1,1 +1,0 @@
-(query [:uf??3:where(q [:y]) [e a ?o] (e=?y)[(+:th ?y)?ye] ])

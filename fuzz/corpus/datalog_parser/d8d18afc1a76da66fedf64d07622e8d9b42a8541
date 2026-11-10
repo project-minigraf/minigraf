@@ -1,2 +1,0 @@
-(query [ :where (noe:
-[])(noe* ?s>s[ g])])

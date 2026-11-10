@@ -1,0 +1,1 @@
+(query [ :where [7. "Ae"n] [(= 3. "Alice")]])

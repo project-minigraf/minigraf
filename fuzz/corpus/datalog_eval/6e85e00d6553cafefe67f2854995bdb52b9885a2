@@ -1,0 +1,1 @@
+(query[:finn :where [?e ?name ?] [(= ?e "cnlA")]])

@@ -1,0 +1,1 @@
+(query [:ind:find (t ?e)(cuzt ?e)(c/zt ?e):where [?e fffn ?n]])

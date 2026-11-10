@@ -1,2 +1,0 @@
-(query [:where(e[])[?x :t ?BBBBnen](?y[[?x 
-]])[?xM: ?B](e[[?]])[?x nt ?B]])

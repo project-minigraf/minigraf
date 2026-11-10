@@ -1,0 +1,1 @@
+(query [:d :where(nh?:frt)(oe:--5d ?eOOO :we)])

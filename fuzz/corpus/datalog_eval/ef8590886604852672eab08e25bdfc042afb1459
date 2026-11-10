@@ -1,0 +1,1 @@
+(query [:f :where [De :or ?] (nve$tr?ue[e :activ$true])])

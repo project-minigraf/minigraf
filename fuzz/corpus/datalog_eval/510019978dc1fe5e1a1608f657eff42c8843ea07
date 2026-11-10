@@ -1,0 +1,1 @@
+(query [:fin :where (nin d ?n re[e :e])])

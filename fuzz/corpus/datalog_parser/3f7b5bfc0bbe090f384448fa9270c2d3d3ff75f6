@@ -1,0 +1,2 @@
+(query[:where [ A=?] (not-join[?zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzg] (quer))])
+

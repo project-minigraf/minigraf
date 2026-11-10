@@ -1,3 +1,0 @@
-(query[:where [ Ae =?n] (not-join[?zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzg] (quer
-:))])
-

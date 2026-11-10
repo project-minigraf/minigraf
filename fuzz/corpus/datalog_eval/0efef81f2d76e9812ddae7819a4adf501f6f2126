@@ -1,0 +1,1 @@
+(query [:f:where [?e ?__fe ?n]  :where [?ee ?__fe ?n]  :where [?e Ename ?I]])

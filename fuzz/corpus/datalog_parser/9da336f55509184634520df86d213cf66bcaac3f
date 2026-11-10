@@ -1,0 +1,1 @@
+(query [:where (u)(u:f:t==y) (u:)[?x e ?]])

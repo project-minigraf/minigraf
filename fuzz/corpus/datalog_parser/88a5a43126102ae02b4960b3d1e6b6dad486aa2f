@@ -1,0 +1,1 @@
+(query [::where[:e:e ?n](not [:: n]  [:e an:n]) [:e :e?U n]  [:e : ?n] (not [:e  :eؑ n] [:e :n:])])

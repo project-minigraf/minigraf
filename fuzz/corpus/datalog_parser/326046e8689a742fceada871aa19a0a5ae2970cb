@@ -1,4 +1,0 @@
-(query[:where (not-join[] (qu ?x(qr[ fn:b])
-
-[?e [: ,aren:naman ?]])
-[?e :db/valid-toheru])])

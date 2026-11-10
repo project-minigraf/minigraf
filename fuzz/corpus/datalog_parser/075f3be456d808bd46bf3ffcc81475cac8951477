@@ -1,3 +1,0 @@
-(query[:?1:where [q e q](or
-[?eu na e]) (or
-[?e F e])])

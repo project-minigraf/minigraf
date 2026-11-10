@@ -1,0 +1,1 @@
+(query [:dn :where [?:name ?n] [(= nil"Alce")]])

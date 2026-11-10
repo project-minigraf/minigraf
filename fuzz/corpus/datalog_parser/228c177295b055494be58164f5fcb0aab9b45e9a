@@ -1,0 +1,1 @@
+(query[:e:where [e e ?n] (not(y) (uy) (u) (nt=) (ue)) (uy)(u[])])

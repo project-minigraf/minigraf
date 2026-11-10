@@ -1,0 +1,1 @@
+(query [:where[:e:a ?](not [:e::n])])

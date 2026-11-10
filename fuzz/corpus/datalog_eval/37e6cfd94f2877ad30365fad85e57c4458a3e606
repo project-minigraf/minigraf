@@ -1,0 +1,1 @@
+(query [:finnfinn :w :where [?e ?nave ?p][?a ?name ?n]  :where [?e ?naoe ?n] [(> :/ "AAlic ")]])

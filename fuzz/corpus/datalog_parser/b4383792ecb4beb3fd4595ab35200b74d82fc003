@@ -1,0 +1,2 @@
+(query [ :where [?e :n?e ?n] (not(qu-) [ae :bnd rue])(not(qu)
+[?e :db/valid-at eru])])

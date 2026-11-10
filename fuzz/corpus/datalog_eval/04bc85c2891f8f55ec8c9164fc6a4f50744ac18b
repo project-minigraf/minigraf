@@ -1,2 +1,0 @@
-(query [:findsum :where [?e (y [:finde? aa])?rsuc] (not-join 
-[?e] [?])])

@@ -1,0 +1,5 @@
+(query [:find ?e :where [?e :n?-me ?n](not(q=?y)[c?x :pnt ?BBeen] (+*****?*4:[(?y) [?x 
+]])[?x :parent ?Bn] (**aren t=?y
+rle[(?y) ])[c?x :parent ?n] (*****?38
+rle[(?y) [?x 
+]])[c?x :t ?rue])])

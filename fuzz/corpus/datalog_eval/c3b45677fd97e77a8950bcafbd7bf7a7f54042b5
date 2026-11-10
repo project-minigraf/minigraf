@@ -1,0 +1,1 @@
+(query [:fm :where [?e l omaaa?rs] (not-join [?e] (:findnot-join [?e :activ]) :where [?eo1 l r])])

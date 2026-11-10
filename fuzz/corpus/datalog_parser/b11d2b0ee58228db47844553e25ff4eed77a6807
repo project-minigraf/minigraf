@@ -1,2 +1,0 @@
-(query [:where [rnot:name qen] (y[s( 6)]
-)[(-joinn ?y)](p)[(a ?y)]( ?)(p)[(a ?y)]( ?)[(a?y )]])

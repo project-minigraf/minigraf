@@ -1,0 +1,2 @@
+(query[:where (q [])
+[? n ?n](n=y)(a[])])

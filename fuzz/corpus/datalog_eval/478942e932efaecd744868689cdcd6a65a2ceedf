@@ -1,0 +1,1 @@
+(query [:/ :where [?e ?Fame ?n] [(= 7. "Al")]])

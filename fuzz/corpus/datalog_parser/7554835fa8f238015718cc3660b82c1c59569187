@@ -1,0 +1,1 @@
+(query [::where (ss: )[x t BY] (not [?_?e ?_Ke ?_])])

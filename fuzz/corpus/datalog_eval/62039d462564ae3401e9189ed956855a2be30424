@@ -1,1 +1,0 @@
-(query [:finnfinn :w :where [?e  ?n-m ?]  :where [?e ?naname ?n] [(= ?"Alice") ?n]  :where [?e ?nam ?]  :where [?e ?naname?U ?n] [(= ?"Alice")]])

@@ -1,7 +1,0 @@
-(query [:with::where(not [?e ?_an ?n] (noe ?
-2[: [?e :naman?]])
-[?e wname ?n] (neo?ss :
-[: [?e re]])
-[?e wn ?n] (n[: [?e]])
-[?e wnae ?n] (noe ?[: [n ]])
-[?e d true])])

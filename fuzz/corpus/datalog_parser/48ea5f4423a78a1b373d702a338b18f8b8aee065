@@ -1,4 +1,0 @@
-(query [:where (ne  ?
-5)(oe ?
-4)(n ?
-0)])

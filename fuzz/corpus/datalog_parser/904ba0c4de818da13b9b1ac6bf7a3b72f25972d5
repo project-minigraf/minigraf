@@ -1,3 +1,0 @@
-(query[:?1:where(or
-[?e1name a e]) [q -e q](or
-[?e naoe ee]) [q -e q](or[?e naoe e])])

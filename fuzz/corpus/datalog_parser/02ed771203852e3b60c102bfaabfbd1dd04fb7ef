@@ -1,1 +1,0 @@
-(query [:where [q +?-e] (or(nt= =yar=) (-) (uy)(ul ya==yr) (ss:))])

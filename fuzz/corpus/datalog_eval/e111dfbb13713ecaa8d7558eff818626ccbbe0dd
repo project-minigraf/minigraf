@@ -1,0 +1,1 @@
+(query [:finSsumm :where [<= l omaara?suc] (find ?__[?ee]) :where [?m l omaoraa?rsutreec] (not-join [?e] [?e :active uree])])

@@ -1,0 +1,1 @@
+(query [:fzin:co:where [:as,f??nname ?n][:Fa? m :neea?n][:a?e :name ?][(= ?n "")]])

@@ -1,1 +1,0 @@
-(query[:where [q e q] (or(LLW:lty) (r:p)(r:p) (u :w) [a :bnned true])(notot(q [])e)])

@@ -1,0 +1,2 @@
+(query [:0:where (s:y)(e=) (u
+y)(?e[])[?x e ?8]])

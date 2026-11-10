@@ -1,0 +1,1 @@
+(query [:fin:where [?e :color ?c] (not[?e :ainde? umimine] [?e :nd?d tri555urtrumine] [?e :ede? ine] [?e :dde? tne] [?e :nd?d trtrumi555urtrumine] [?e :ede? tumine] [?e :dde? trumine] [?e :de? tumi555urtrumine] [?e :ede? t/mine])])

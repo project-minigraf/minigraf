@@ -1,0 +1,3 @@
+(query [:f :where [?: ?n](y [:])
+ [?e :n?-me ?n] (not(q)
+[?e ? ?n] (n) [:b enEd true])])

@@ -1,3 +1,0 @@
-(query [:ind:where [e ? ?nelse]  [?e :n?ɒe ?n] (not(qu:
-)
-[?e wd tru])])

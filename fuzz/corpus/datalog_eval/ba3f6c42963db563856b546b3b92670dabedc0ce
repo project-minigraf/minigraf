@@ -1,0 +1,1 @@
+(query [:nnfinn :w :where [?ena ?m2e ?p]  :were :where [?E ?name ?o] [?e ?nameEeryenamne ?]  :where [?e ?naname ?n] [(= ?"Alcie")]])

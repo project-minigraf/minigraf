@@ -1,0 +1,1 @@
+(query [::where [q e qee?n] (or(x) (ussa) (y) (=y) (uy)(reny) (u+= uy) (uy) (us) [a:d tru])(tot([?r])e)])

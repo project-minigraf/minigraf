@@ -1,0 +1,1 @@
+(query [:find ?Yd:any-valid-time ?eOIYYYY:where [?e ??ame ?n]])

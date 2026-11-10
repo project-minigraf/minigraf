@@ -1,1 +1,0 @@
-(query [:where [?e me ?](not(u=y) (rent=en) (ul=y) (u27::::)[qx ::bnne])])

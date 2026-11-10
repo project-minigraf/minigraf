@@ -1,0 +1,1 @@
+(query [::where [?e l om?rsuc] (not-join[??IIIoin ?n][?e ?amenot-join ?n][?e ?aot-join ?n][?e ?ame-joind ?IIIIIIIe] [?e :act drue])])

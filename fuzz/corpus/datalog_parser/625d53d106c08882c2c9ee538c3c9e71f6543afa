@@ -1,2 +1,0 @@
-(query[:where [ A=?e2n] (not-join[?_f ?eth ?th ?d] (qu<=g))])
-

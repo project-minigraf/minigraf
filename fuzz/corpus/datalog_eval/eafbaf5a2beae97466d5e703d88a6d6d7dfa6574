@@ -1,0 +1,1 @@
+(query [:finSmm :where  (nI= -IIIIa ?:) :where [?m l omaa] (not-join [? ?][ee :active tree])])

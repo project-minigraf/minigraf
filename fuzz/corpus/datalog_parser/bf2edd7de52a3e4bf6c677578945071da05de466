@@ -1,0 +1,4 @@
+(query [:where [?e :n?-me?-me ?n] (not(qu8) [ae :banned ue])(not[ae :nned true])(not(LLry
+[: [?e n0:]])
+[?e ?_wname ?n] (s)
+[?e :db/valid-at ?n] (o888) )])

@@ -1,0 +1,1 @@
+(query [:with ?e ?x ?p:where [?e a ?](e[])[?x :t ?BB]])

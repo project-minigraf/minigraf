@@ -1,0 +1,1 @@
+(query [ :where [:colO?eA ma olaa?rsuc] (not-join [?e] [?e :active tree]) :where [?e l omaaa] (nt-join [?e] [?e :active tree])])

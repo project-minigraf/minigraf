@@ -1,0 +1,2 @@
+(query [::where(or(Ld ?e ?x)
+[?e e e])(no)])

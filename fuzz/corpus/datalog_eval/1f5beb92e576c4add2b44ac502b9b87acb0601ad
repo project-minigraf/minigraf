@@ -1,0 +1,2 @@
+(query[:?- :where [?l ?d ?c] (or(q:wheueyhere [hteraw])
+ )])
