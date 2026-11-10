@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,087 | 2,125 |
+| **Active** | 2,111 | 2,149 |
 | **Ignored** | 21 | 30 |
-| **Total** | 2,108 | 2,155 |
+| **Total** | 2,132 | 2,179 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861 and #863 (Linux). Verification results below identify which suites ran.
+including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863 and #871 (Linux). Verification results below identify which suites ran.
 
 **#863 nightly candidates**: four engine unit tests check the `test-hooks`
 path events and memory peaks (both builds). With `test-hooks` only,
@@ -219,6 +219,7 @@ These tests compare the database against an independent answer rather than a sin
   - Kills a child process running a seeded workload (multi-valued batches, batched retracts, five checkpoint modes) at a random point.
   - The reopened file must hold exactly the transactions the child logged as committed, or those plus the one in flight.
   - Checked through full-scan, AEVT, AVET, EAVT and `:as-of` queries and `verify`; again after a second reopen; and after a checkpoint plus reopen.
+  - A `PerTxSync` variant (#871, every build) commits every transaction through `begin_write_with` with a sync mode chosen per transaction from the seed (the first `Normal`, the second `Full`) on a database opened `Full`.
   - With `test-hooks`, a `Large` variant makes most transactions large, runs every third one as a `WriteTransaction` of three statements, and rolls back a large statement after writing pages (#550).
 - **Golden-file corpus** (`tests/golden_corpus_test.rs`, #391 *(v2.x)*)
   - `tests/golden/` holds v7 files written by minigraf 2.0.3: one checkpoint, several checkpoints, indexes rebuilt on open, a crash-left WAL, an already-checkpointed WAL, same-transaction multi-values.
@@ -396,6 +397,14 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
   - An append that fails part-way makes every later append `WAL-007`. A rejected oversize fact (`WAL-003`, nothing written) does not.
   - Through `Minigraf`: the failed transaction is not applied, later `transact` and `commit` are `WAL-007`, and a `checkpoint()` makes writes work again.
   - In `tests/wal_test.rs`: a commit made after reopening a crash-left WAL with each kind of torn tail survives a second crash.
+- **Per-transaction options** (full default and `test-hooks` suites passed on the alternate bench machine with Rust 1.89, 2026-11-10; `src/tx_options_tests.rs`, 17 tests; `src/wal.rs`, 2 tests; `src/fault_matrix.rs`, 3 tests; 2 doctests; `src/db.rs`, 1 test rewritten; #871)
+  - `TxOptions` builders and fields; `begin_write_with` fails with `INT-001` and `API-014` as `begin_write` does and leaves the handle usable.
+  - A small commit syncs the WAL exactly when its effective mode is `Full`, for the database modes × `None`/`Full`/`Normal`, whether the commit creates the WAL or appends to it. The mode never stays with the WAL writer: implicit transactions and `begin_write()` follow the database mode after a commit, a rollback or a drop, including after a `Normal` transaction that became large (creating the WAL guard) and was rolled back. The stored-mode test of #302 now checks that a `Normal` database's commits leave the WAL unsynced at both writer call sites.
+  - Test models: a lost sync loses every WAL byte since the last good sync, including whole `Normal` entries; `Minigraf::power_loss` ends a handle with the WAL cut back to its last sync.
+  - On `Full` and `Normal` databases: `Normal` then kill keeps A; `Normal` then power loss keeps a prefix (A lost), with a later commit surviving a kill; `Normal`, `Full`, power loss keeps both; `Full`, `Normal`, power loss keeps A. Every reopen is compared record by record through `fact_log`.
+  - A large `Normal` transaction survives a power loss whole with `verify` clean; a `Normal` commit at the checkpoint threshold still checkpoints; options on an in-memory database change nothing.
+  - `chunk_facts`: `Some(2)` makes three facts large (one statement or staged ones), `Some(1000)` keeps them small on a database with chunk 2, `0` acts as 1 and `usize::MAX` as 1,000,000; it applies to that transaction only; the thread-local test hook still wins. The facts committed by the same statements are the same with any options.
+  - Fault matrix: every fault at every write and sync of a `Full` commit after a `Normal` one, a `Normal` commit on a `Full` database (it makes no sync, so the sync faults never fire there), and a `Full` commit on a `Normal` database. The reopened file must be a prefix of the commit order from the last sync or checkpoint, never part of a transaction; only a lost sync may lose a `Normal` entry; `verify` is clean and a commit after recovery survives a kill.
 - **WAL entries of any size** (`src/wal.rs`, 3 tests, one replacing the 1,000,000-fact cap test; #686)
   - An entry of 1,000,001 facts and the entries after it replay, and reopening the writer cuts none of them off.
   - A fact count the bytes after it cannot hold (one more than a quarter of them, or `u64::MAX`) ends replay at that entry, and reopening the writer cuts the WAL off there.

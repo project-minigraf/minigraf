@@ -21,8 +21,8 @@ code are not gated.
 | `max_results` (deprecated) | no limit of its own | query text: `:max-results N` or `$slot` | Alone, replaces the database value; with `:max-derived-facts`, the lower applies |
 | `query_memory_limit` | no limit | query text: `:query-memory-limit N` or `$slot` (not in `DEFAULTS`); code: `PreparedQuery::with_query_memory_limit` | Replaces the database value for that query, up or down; a keyword overrides the setter |
 | `max_iterations` | 1,000,000 rounds per stratum | query text: `:max-iterations N` or `$slot`; code: `PreparedQuery::with_max_iterations` | Replaces the database value for that query, up or down; a keyword overrides the setter |
-| `transaction_chunk_facts` | 65,536 | — (per-transaction `TxOptions` planned, #871) | — |
-| `synchronous` | `SyncMode::Full` | — (per-transaction `TxOptions` planned, #871) | — |
+| `transaction_chunk_facts` | 65,536 | code: `TxOptions::chunk_facts` with `Minigraf::begin_write_with` | Replaces the database value for that `WriteTransaction` only, up or down, with the same clamp (1..=1,000,000); later transactions and `execute` use the database value |
+| `synchronous` | `SyncMode::Full` | code: `TxOptions::synchronous` with `Minigraf::begin_write_with` | Decides whether that `WriteTransaction`'s WAL entry is synced, either way; later transactions and `execute` use the database value. A `Full` commit also makes earlier `Normal` ones durable. No effect on a large transaction (always durable) or an in-memory database. See [DURABILITY.md](DURABILITY.md) |
 | `wal_checkpoint_threshold` | 1000 | open only | Database-wide checkpoint policy |
 | `page_cache_size` | 256 pages | open only | Shared cache |
 | `allow_unlocked` | `false` | open only | Decided when the file is opened |

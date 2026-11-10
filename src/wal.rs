@@ -211,22 +211,29 @@ pub struct WalEntry {
 /// Appends committed transaction entries to the WAL sidecar file.
 ///
 /// Created by `Minigraf::open()` for file-backed databases.
-/// Not used for in-memory databases.
+/// Not used for in-memory databases. The writer keeps no [`SyncMode`]: each
+/// append is given its own, so one transaction's mode never reaches the next
+/// (#871).
 pub struct WalWriter {
     file: File,
-    sync_mode: SyncMode,
     /// An append failed, so the file may end in a partial entry. Later
     /// appends would land after it, where replay never reaches (#513).
     failed: bool,
-    /// The file's length after the last successful append.
+    /// The file's length after the last successful append (test models only).
+    #[cfg(test)]
     end: u64,
+    /// The file's length at its last successful sync: what a lost sync or a
+    /// power loss leaves of it, in the test models. An append without a sync
+    /// (`SyncMode::Normal`) does not move it.
+    #[cfg(test)]
+    synced: u64,
 }
 
 impl WalWriter {
     /// [`WalWriter::open_or_create_at`] with base generation 1, for tests.
     #[cfg(test)]
-    pub fn open_or_create(path: &Path, sync_mode: SyncMode) -> Result<Self> {
-        Self::open_or_create_at(path, sync_mode, 1)
+    pub fn open_or_create(path: &Path) -> Result<Self> {
+        Self::open_or_create_at(path, 1)
     }
 
     /// Open an existing WAL or create a new one.
@@ -234,11 +241,7 @@ impl WalWriter {
     /// If creating, writes the WAL header with `base_generation`, the generation
     /// of the meta page active now. If opening, validates the header (keeping its
     /// base generation) and seeks to the end for appending.
-    pub fn open_or_create_at(
-        path: &Path,
-        sync_mode: SyncMode,
-        base_generation: u64,
-    ) -> Result<Self> {
+    pub fn open_or_create_at(path: &Path, base_generation: u64) -> Result<Self> {
         // Try atomic create-new first (no TOCTOU window)
         match OpenOptions::new()
             .read(true)
@@ -251,12 +254,15 @@ impl WalWriter {
                 // The header is durable; make the WAL's directory entry
                 // durable too, or a power loss can lose the whole file (#389).
                 sync_parent_dir(path)?;
+                #[cfg_attr(not(test), allow(unused_variables))]
                 let end = file.seek(SeekFrom::End(0))?;
                 return Ok(WalWriter {
                     file,
-                    sync_mode,
                     failed: false,
+                    #[cfg(test)]
                     end,
+                    #[cfg(test)]
+                    synced: end,
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -293,52 +299,79 @@ impl WalWriter {
                 sync_parent_dir(path)?;
             }
         }
+        #[cfg_attr(not(test), allow(unused_variables))]
         let end = file.seek(SeekFrom::End(0))?;
         Ok(WalWriter {
             file,
-            sync_mode,
             failed: false,
+            #[cfg(test)]
             end,
+            // The test models take what an earlier handle left as on disk.
+            #[cfg(test)]
+            synced: end,
         })
     }
 
-    /// The `SyncMode` this writer was opened with. Used only in tests, to
-    /// verify that `SyncMode` reaches `WalWriter` from every call site.
+    /// Whether every byte written to the file has been synced since. Tests
+    /// use it to see whether a commit synced the WAL.
     #[cfg(test)]
-    pub(crate) fn sync_mode(&self) -> SyncMode {
-        self.sync_mode
+    pub(crate) fn is_synced(&self) -> bool {
+        self.synced == self.end
+    }
+
+    /// Cut the file back to its length at its last successful sync, as a
+    /// power loss would leave it (a test model; #871).
+    #[cfg(test)]
+    pub(crate) fn lose_unsynced(&mut self) -> Result<()> {
+        self.file.set_len(self.synced)?;
+        self.end = self.synced;
+        Ok(())
     }
 
     /// Serialize `facts` as a WAL entry and append it to the file.
     ///
     /// The entry is written atomically from the caller's perspective:
     /// a partial write produces a bad CRC32, which the reader discards.
-    /// Then flushes to disk, unless `sync_mode` is `SyncMode::Normal` — see [`SyncMode`].
+    /// Then flushes to disk, unless `sync` is `SyncMode::Normal` — see [`SyncMode`].
+    /// A flush covers every earlier entry too, including ones appended
+    /// without one.
     ///
     /// After a failed write or sync, every later append fails with WAL-007:
     /// the file may end in a partial entry, and replay stops there (#513). A
     /// new writer (after a checkpoint deletes the WAL, or on reopen) starts
     /// clean. Whether the failed entry itself is durable is unknown: it is
     /// replayed on reopen if it reached the disk whole, and lost otherwise.
-    pub fn append_entry(&mut self, tx_count: u64, facts: &[Fact]) -> Result<()> {
+    pub fn append_entry(&mut self, tx_count: u64, facts: &[Fact], sync: SyncMode) -> Result<()> {
         if self.failed {
             bail_coded!(ErrorCode::Wal007);
         }
         let entry_bytes = serialize_entry(tx_count, facts)?;
-        let written = self.write_entry(&entry_bytes);
+        let written = self.write_entry(&entry_bytes, sync);
         if written.is_err() {
             self.failed = true;
         }
         written
     }
 
-    fn write_entry(&mut self, entry_bytes: &[u8]) -> Result<()> {
+    fn write_entry(&mut self, entry_bytes: &[u8], sync: SyncMode) -> Result<()> {
         wal_write(&mut self.file, entry_bytes)?;
-        match self.sync_mode {
-            SyncMode::Full => wal_sync(&mut self.file, false, self.end)?,
-            SyncMode::Normal => {}
+        #[cfg(test)]
+        {
+            self.end = self.end.saturating_add(entry_bytes.len() as u64);
         }
-        self.end = self.end.saturating_add(entry_bytes.len() as u64);
+        if sync == SyncMode::Full {
+            // A lost sync loses every write since the last good one, this
+            // entry and any appended without a sync before it.
+            #[cfg(test)]
+            let synced_len = self.synced;
+            #[cfg(not(test))]
+            let synced_len = 0;
+            wal_sync(&mut self.file, false, synced_len)?;
+            #[cfg(test)]
+            {
+                self.synced = self.end;
+            }
+        }
         Ok(())
     }
 
@@ -556,7 +589,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
 
-        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let _writer = WalWriter::open_or_create(&path).unwrap();
 
         let mut reader = WalReader::open(&path).unwrap();
         let entries = reader.read_entries().unwrap();
@@ -571,8 +604,10 @@ mod tests {
         let alice = Uuid::new_v4();
         let fact = make_fact(alice, ":name", Value::String("Alice".to_string()), 1);
 
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
-        writer.append_entry(1, std::slice::from_ref(&fact)).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer
+            .append_entry(1, std::slice::from_ref(&fact), SyncMode::Full)
+            .unwrap();
 
         let mut reader = WalReader::open(&path).unwrap();
         let entries = reader.read_entries().unwrap();
@@ -594,8 +629,10 @@ mod tests {
 
         // Normal mode skips the per-write flush; the entry must still be
         // durable-within-process (write_all()'d) and correctly replayable.
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Normal).unwrap();
-        writer.append_entry(1, std::slice::from_ref(&fact)).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer
+            .append_entry(1, std::slice::from_ref(&fact), SyncMode::Normal)
+            .unwrap();
 
         let mut reader = WalReader::open(&path).unwrap();
         let entries = reader.read_entries().unwrap();
@@ -616,8 +653,8 @@ mod tests {
             make_fact(alice, ":age", Value::Integer(30), 1),
         ];
 
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
-        writer.append_entry(1, &facts).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer.append_entry(1, &facts, SyncMode::Full).unwrap();
 
         let mut reader = WalReader::open(&path).unwrap();
         let entries = reader.read_entries().unwrap();
@@ -639,7 +676,7 @@ mod tests {
         let alice = Uuid::new_v4();
         let bob = Uuid::new_v4();
 
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         writer
             .append_entry(
                 1,
@@ -649,12 +686,14 @@ mod tests {
                     Value::String("Alice".to_string()),
                     1,
                 )],
+                SyncMode::Full,
             )
             .unwrap();
         writer
             .append_entry(
                 2,
                 &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)],
+                SyncMode::Full,
             )
             .unwrap();
 
@@ -674,7 +713,7 @@ mod tests {
         let bob = Uuid::new_v4();
 
         // First open: create WAL and write entry with tx_count=1
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         writer
             .append_entry(
                 1,
@@ -684,16 +723,18 @@ mod tests {
                     Value::String("Alice".to_string()),
                     1,
                 )],
+                SyncMode::Full,
             )
             .unwrap();
         drop(writer);
 
         // Second open: exercises the fallback branch (file already exists)
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         writer
             .append_entry(
                 2,
                 &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)],
+                SyncMode::Full,
             )
             .unwrap();
         drop(writer);
@@ -750,10 +791,12 @@ mod tests {
 
         std::fs::write(&path, b"MW").unwrap();
 
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         let alice = Uuid::new_v4();
         let fact = make_fact(alice, ":name", Value::String("Alice".to_string()), 1);
-        writer.append_entry(1, std::slice::from_ref(&fact)).unwrap();
+        writer
+            .append_entry(1, std::slice::from_ref(&fact), SyncMode::Full)
+            .unwrap();
         drop(writer);
 
         let mut reader = WalReader::open(&path).unwrap();
@@ -784,8 +827,8 @@ mod tests {
         let fact = make_fact(alice, ":name", Value::String("Alice".to_string()), 1);
 
         // Write a valid entry
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
-        writer.append_entry(1, &[fact]).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer.append_entry(1, &[fact], SyncMode::Full).unwrap();
         drop(writer);
 
         // Append garbage bytes after the valid entry to simulate a partial second write
@@ -804,10 +847,10 @@ mod tests {
 
     /// The bytes of a WAL holding entries `1..=n`.
     fn wal_with_entries(path: &Path, n: u64) -> Vec<u8> {
-        let mut writer = WalWriter::open_or_create(path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(path).unwrap();
         for tx in 1..=n {
             let fact = make_fact(Uuid::new_v4(), ":name", Value::Integer(tx as i64), tx);
-            writer.append_entry(tx, &[fact]).unwrap();
+            writer.append_entry(tx, &[fact], SyncMode::Full).unwrap();
         }
         drop(writer);
         std::fs::read(path).unwrap()
@@ -831,14 +874,14 @@ mod tests {
         let second = two.len() - one_len;
         for cut in [1, 4, 12, 20, second - 1] {
             std::fs::write(&path, &two[..one_len + cut]).unwrap();
-            let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+            let mut writer = WalWriter::open_or_create(&path).unwrap();
             assert_eq!(
                 std::fs::metadata(&path).unwrap().len(),
                 one_len as u64,
                 "the partial entry is cut off on open"
             );
             let fact = make_fact(Uuid::new_v4(), ":name", Value::Integer(7), 7);
-            writer.append_entry(7, &[fact]).unwrap();
+            writer.append_entry(7, &[fact], SyncMode::Full).unwrap();
             drop(writer);
             assert_eq!(tx_counts(&path), [1, 7], "the new entry is reachable");
         }
@@ -856,7 +899,7 @@ mod tests {
         // Damage entry 2; entry 3 after it is unreachable and goes too.
         bytes[one_len] ^= 0xFF;
         std::fs::write(&path, &bytes).unwrap();
-        let writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let writer = WalWriter::open_or_create(&path).unwrap();
         drop(writer);
         assert_eq!(std::fs::metadata(&path).unwrap().len(), one_len as u64);
         assert_eq!(tx_counts(&path), [1]);
@@ -867,7 +910,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
         let bytes = wal_with_entries(&path, 3);
-        let writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let writer = WalWriter::open_or_create(&path).unwrap();
         drop(writer);
         assert!(std::fs::read(&path).unwrap() == bytes, "nothing to cut");
     }
@@ -876,17 +919,17 @@ mod tests {
     fn test_wal_failed_append_refuses_later_appends_with_wal_007() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         let fact = |tx: u64| make_fact(Uuid::new_v4(), ":name", Value::Integer(1), tx);
-        writer.append_entry(1, &[fact(1)]).unwrap();
+        writer.append_entry(1, &[fact(1)], SyncMode::Full).unwrap();
 
         fault::arm(fault::Fault::Torn(10), 0);
         writer
-            .append_entry(2, &[fact(2)])
+            .append_entry(2, &[fact(2)], SyncMode::Full)
             .expect_err("the torn append fails");
         assert_eq!(fault::disarm(), Some(Site::WalWrite));
         let err: crate::error::MinigrafError = writer
-            .append_entry(3, &[fact(3)])
+            .append_entry(3, &[fact(3)], SyncMode::Full)
             .expect_err("later appends are refused")
             .into();
         assert_eq!(err.code(), "WAL-007");
@@ -894,8 +937,8 @@ mod tests {
         assert_eq!(tx_counts(&path), [1], "nothing after the torn entry");
 
         // A new writer cuts off the partial entry and appends normally.
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
-        writer.append_entry(4, &[fact(4)]).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer.append_entry(4, &[fact(4)], SyncMode::Full).unwrap();
         drop(writer);
         assert_eq!(tx_counts(&path), [1, 4]);
     }
@@ -930,7 +973,7 @@ mod tests {
     fn test_wal_rejected_entry_does_not_poison_the_writer() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         let huge = make_fact(
             Uuid::new_v4(),
             ":name",
@@ -938,10 +981,10 @@ mod tests {
             1,
         );
         writer
-            .append_entry(1, &[huge])
+            .append_entry(1, &[huge], SyncMode::Full)
             .expect_err("WAL-003, before anything is written");
         let fact = make_fact(Uuid::new_v4(), ":name", Value::Integer(1), 2);
-        writer.append_entry(2, &[fact]).unwrap();
+        writer.append_entry(2, &[fact], SyncMode::Full).unwrap();
         drop(writer);
         assert_eq!(tx_counts(&path), [2]);
     }
@@ -950,7 +993,7 @@ mod tests {
     fn test_wal_delete_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        WalWriter::open_or_create(&path).unwrap();
         assert!(path.exists());
         WalWriter::delete_file(&path).unwrap();
         assert!(!path.exists());
@@ -964,7 +1007,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
 
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
 
         let entity = Uuid::new_v4();
         let fact = Fact::new(
@@ -975,7 +1018,7 @@ mod tests {
         );
 
         // Write an entry with one fact
-        writer.append_entry(1, &[fact]).unwrap();
+        writer.append_entry(1, &[fact], SyncMode::Full).unwrap();
         writer.file.sync_all().unwrap();
 
         // Overwrite the first fact's length, after the entry's checksum,
@@ -1016,7 +1059,7 @@ mod tests {
         }
 
         // Reopening the writer cuts the WAL off at that entry.
-        drop(WalWriter::open_or_create(&path, SyncMode::Full).unwrap());
+        drop(WalWriter::open_or_create(&path).unwrap());
         assert_eq!(std::fs::metadata(&path).unwrap().len(), one_len as u64);
         assert_eq!(tx_counts(&path), [1]);
     }
@@ -1052,19 +1095,21 @@ mod tests {
         const N: usize = 1_000_001;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(1), 1);
-        writer.append_entry(1, &vec![fact; N]).unwrap();
+        writer
+            .append_entry(1, &vec![fact; N], SyncMode::Full)
+            .unwrap();
         let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(2), 2);
-        writer.append_entry(2, &[fact]).unwrap();
+        writer.append_entry(2, &[fact], SyncMode::Full).unwrap();
         drop(writer);
         let len = std::fs::metadata(&path).unwrap().len();
 
         // Reopening cuts off nothing, and an append lands after both.
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().len(), len);
         let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(3), 3);
-        writer.append_entry(3, &[fact]).unwrap();
+        writer.append_entry(3, &[fact], SyncMode::Full).unwrap();
         drop(writer);
 
         let entries = WalReader::open(&path).unwrap().read_entries().unwrap();
@@ -1077,7 +1122,7 @@ mod tests {
     fn test_wal_writer_open_fails_in_a_missing_directory() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("missing").join("test.wal");
-        assert!(WalWriter::open_or_create(&path, SyncMode::Full).is_err());
+        assert!(WalWriter::open_or_create(&path).is_err());
     }
 
     #[test]
@@ -1089,7 +1134,7 @@ mod tests {
         std::fs::write(&path, torn).unwrap();
 
         fault::arm(fault::Fault::Eio, 0);
-        assert!(WalWriter::open_or_create(&path, SyncMode::Full).is_err());
+        assert!(WalWriter::open_or_create(&path).is_err());
         assert_eq!(fault::disarm(), Some(Site::WalTruncate));
         assert!(std::fs::read(&path).unwrap() == torn, "nothing was cut");
         assert_eq!(tx_counts(&path), [1]);
@@ -1148,13 +1193,13 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("oversized.wal");
-        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
 
         let entity = Uuid::new_v4();
         let huge_string = "a".repeat(MAX_VALUE_BYTES + 1);
         let fact = Fact::new(entity, ":test".to_string(), Value::String(huge_string), 1);
 
-        let result = writer.append_entry(1, &[fact]);
+        let result = writer.append_entry(1, &[fact], SyncMode::Full);
         let err = result.expect_err("oversized fact should be rejected");
         let minigraf_err: crate::error::MinigrafError = err.into();
         assert_eq!(minigraf_err.code(), "WAL-003");
@@ -1168,8 +1213,7 @@ mod tests {
         use uuid::Uuid;
 
         let dir = tempfile::tempdir().unwrap();
-        let mut writer =
-            WalWriter::open_or_create(&dir.path().join("ident.wal"), SyncMode::Full).unwrap();
+        let mut writer = WalWriter::open_or_create(&dir.path().join("ident.wal")).unwrap();
         let e = Uuid::new_v4();
         let at = |n: usize| format!(":{}", "a".repeat(n - 1));
         let ok = Fact::new(
@@ -1178,11 +1222,11 @@ mod tests {
             Value::Keyword(at(MAX_IDENT_BYTES)),
             1,
         );
-        writer.append_entry(1, &[ok]).unwrap();
+        writer.append_entry(1, &[ok], SyncMode::Full).unwrap();
         let long_attr = Fact::new(e, at(MAX_IDENT_BYTES + 1), Value::Integer(1), 2);
         let long_kw = Fact::new(e, ":a".into(), Value::Keyword(at(MAX_IDENT_BYTES + 1)), 2);
         for f in [long_attr, long_kw] {
-            let err = writer.append_entry(2, &[f]).unwrap_err();
+            let err = writer.append_entry(2, &[f], SyncMode::Full).unwrap_err();
             assert_eq!(crate::error::MinigrafError::from(err).code(), "WAL-003");
         }
     }
@@ -1213,7 +1257,7 @@ mod tests {
         let path = dir.path().join("test.wal");
         take_sync_log();
 
-        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let _writer = WalWriter::open_or_create(&path).unwrap();
 
         let log = take_sync_log();
         assert_eq!(
@@ -1237,10 +1281,10 @@ mod tests {
         use crate::storage::dir_sync::take_sync_log;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        drop(WalWriter::open_or_create(&path, SyncMode::Full).unwrap());
+        drop(WalWriter::open_or_create(&path).unwrap());
         take_sync_log();
 
-        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let _writer = WalWriter::open_or_create(&path).unwrap();
 
         assert!(
             take_sync_log().is_empty(),
@@ -1258,7 +1302,7 @@ mod tests {
         std::fs::write(&path, b"MW").unwrap();
         take_sync_log();
 
-        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let _writer = WalWriter::open_or_create(&path).unwrap();
 
         let log = take_sync_log();
         assert_eq!(
@@ -1277,7 +1321,7 @@ mod tests {
         use crate::storage::dir_sync::take_sync_log;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        drop(WalWriter::open_or_create(&path, SyncMode::Full).unwrap());
+        drop(WalWriter::open_or_create(&path).unwrap());
         take_sync_log();
 
         WalWriter::delete_file(&path).unwrap();
@@ -1320,10 +1364,10 @@ mod tests {
     fn test_wal_v2_header_records_base_generation() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("base.wal");
-        drop(WalWriter::open_or_create_at(&path, SyncMode::Full, 42).unwrap());
+        drop(WalWriter::open_or_create_at(&path, 42).unwrap());
         assert_eq!(WalReader::open(&path).unwrap().base_generation(), Some(42));
         // Reopening for append keeps the original base generation.
-        drop(WalWriter::open_or_create_at(&path, SyncMode::Full, 99).unwrap());
+        drop(WalWriter::open_or_create_at(&path, 99).unwrap());
         assert_eq!(WalReader::open(&path).unwrap().base_generation(), Some(42));
     }
 
@@ -1337,8 +1381,8 @@ mod tests {
         std::fs::write(&path, header).unwrap();
         assert_eq!(WalReader::open(&path).unwrap().base_generation(), Some(1));
         // A v2.x WAL can still be appended to.
-        let mut w = WalWriter::open_or_create_at(&path, SyncMode::Full, 5).unwrap();
-        w.append_entry(1, &[]).unwrap();
+        let mut w = WalWriter::open_or_create_at(&path, 5).unwrap();
+        w.append_entry(1, &[], SyncMode::Full).unwrap();
         drop(w);
         let mut r = WalReader::open(&path).unwrap();
         assert_eq!(r.read_entries().unwrap().len(), 1);
@@ -1350,5 +1394,56 @@ mod tests {
         let path = dir.path().join("short.wal");
         std::fs::write(&path, [0u8; 5]).unwrap();
         assert_eq!(WalReader::open(&path).unwrap().base_generation(), None);
+    }
+
+    /// #871: a lost sync loses every write since the WAL's last good sync,
+    /// so a `Normal` entry before a `Full` one whose sync is lost goes too.
+    #[test]
+    fn test_lost_sync_loses_earlier_normal_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lost.wal");
+        let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(1), 1);
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer
+            .append_entry(1, std::slice::from_ref(&fact), SyncMode::Full)
+            .unwrap();
+        writer
+            .append_entry(2, std::slice::from_ref(&fact), SyncMode::Normal)
+            .unwrap();
+        assert!(!writer.is_synced(), "a Normal append does not sync");
+        fault::arm(fault::Fault::SyncLost, 0);
+        assert!(
+            writer
+                .append_entry(3, std::slice::from_ref(&fact), SyncMode::Full)
+                .is_err(),
+            "the lost sync fails the append"
+        );
+        assert_eq!(fault::disarm(), Some(Site::WalSync));
+        drop(writer);
+        assert_eq!(tx_counts(&path), vec![1], "only the synced entry is left");
+    }
+
+    /// #871: a `Full` append syncs every entry before it; the power-loss
+    /// model cuts only what was written after the last sync.
+    #[test]
+    fn test_full_append_syncs_earlier_normal_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("full.wal");
+        let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(1), 1);
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        assert!(writer.is_synced(), "the header is synced");
+        writer
+            .append_entry(1, std::slice::from_ref(&fact), SyncMode::Normal)
+            .unwrap();
+        writer
+            .append_entry(2, std::slice::from_ref(&fact), SyncMode::Full)
+            .unwrap();
+        assert!(writer.is_synced(), "a Full append syncs the whole file");
+        writer
+            .append_entry(3, std::slice::from_ref(&fact), SyncMode::Normal)
+            .unwrap();
+        writer.lose_unsynced().unwrap();
+        drop(writer);
+        assert_eq!(tx_counts(&path), vec![1, 2]);
     }
 }

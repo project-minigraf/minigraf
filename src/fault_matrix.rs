@@ -15,8 +15,13 @@
 //! - commits once more, kills, reopens, and finds that commit too.
 //!
 //! `k` runs from 0 until the operation finishes without reaching the fault.
+//!
+//! The mixed-mode operations ([`Mix`], #871) commit `X` through
+//! `begin_write_with` with a WAL sync mode other than the database's, or
+//! after entries committed without a sync. A lost sync may then lose those
+//! entries, so their reopen check is the prefix guarantee instead.
 
-use crate::db::{Minigraf, OpenOptions};
+use crate::db::{Minigraf, OpenOptions, SyncMode, TxOptions};
 use crate::fact_log::FactFilter;
 use crate::storage::fault::{self, Fault, Site};
 use std::path::Path;
@@ -157,6 +162,12 @@ fn bulk(prefix: &str, n: usize) -> String {
 /// `TransactNewWal`, two entries pending in the WAL.
 fn build(path: &Path, op: Op) -> Minigraf {
     let db = open(path, op);
+    fill(&db, op);
+    db
+}
+
+/// The commits of [`build`], on `db`.
+fn fill(db: &Minigraf, op: Op) {
     if let Op::Large {
         one_slot: true,
         wal,
@@ -168,7 +179,7 @@ fn build(path: &Path, op: Op) -> Minigraf {
             db.execute(r#"(transact [[:e1 :p/tag "c"] [:e3 :p/ref :e1]])"#)
                 .unwrap();
         }
-        return db;
+        return;
     }
     db.execute(&bulk("a", 150)).unwrap();
     db.execute(r#"(transact [[:e1 :p/tag "a"] [:e1 :p/tag "b"] [:e2 :p/n 1]])"#)
@@ -183,7 +194,6 @@ fn build(path: &Path, op: Op) -> Minigraf {
         db.execute(r#"(transact [[:e1 :p/tag "c"] [:e3 :p/ref :e1]])"#)
             .unwrap();
     }
-    db
 }
 
 /// The records `after` has beyond `before`, if `before` is all in `after`.
@@ -545,4 +555,216 @@ fn no_commit_after_a_failed_meta_fsync() {
         db.kill();
         reopen_and_check(&path, Op::Checkpoint, &live, false);
     }
+}
+
+// ─── Mixed WAL sync modes (#871) ─────────────────────────────────────────────
+
+/// A mixed-mode operation: `X` committed through `begin_write_with`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mix {
+    /// (i) On a `Full` database whose WAL ends in an entry committed with
+    /// `Normal`, `X` commits with `Full`.
+    FullAfterNormal,
+    /// (ii) On a `Full` database whose WAL holds synced entries, `X` commits
+    /// with `Normal`.
+    NormalOnFull,
+    /// (iii) On a `Normal` database whose WAL holds unsynced entries, `X`
+    /// commits with `Full`.
+    FullOnNormal,
+}
+
+impl Mix {
+    fn db_mode(self) -> SyncMode {
+        match self {
+            Mix::FullAfterNormal | Mix::NormalOnFull => SyncMode::Full,
+            Mix::FullOnNormal => SyncMode::Normal,
+        }
+    }
+
+    fn x_mode(self) -> SyncMode {
+        match self {
+            Mix::FullAfterNormal | Mix::FullOnNormal => SyncMode::Full,
+            Mix::NormalOnFull => SyncMode::Normal,
+        }
+    }
+}
+
+/// The states a file may come back in: the records after each commit, in
+/// commit order, and the first one every reopen must reach.
+struct History {
+    states: Vec<Vec<Rec>>,
+    /// The last state at a successful WAL sync or a checkpoint: what even a
+    /// lost sync keeps.
+    durable: usize,
+}
+
+impl History {
+    fn push(&mut self, db: &Minigraf) {
+        self.states.push(snapshot(db));
+        // No WAL: the last commit was a checkpoint.
+        if db.wal_synced().is_none_or(|synced| synced) {
+            self.durable = self.states.len() - 1;
+        }
+    }
+}
+
+fn commit_with(db: &Minigraf, mode: SyncMode, stmt: &str) -> Result<(), crate::MinigrafError> {
+    let mut tx = db.begin_write_with(TxOptions::new().synchronous(mode))?;
+    tx.execute(stmt)?;
+    tx.commit()
+}
+
+/// Run `mix` with `f` at every call index. Returns how many indexes hit.
+fn run_mixed(mix: Mix, f: Fault) -> u64 {
+    let op = Op::Transact;
+    let mut hits = 0;
+    for k in 0u64.. {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f.graph");
+        let open_db = || {
+            OpenOptions::new()
+                .synchronous(mix.db_mode())
+                .wal_checkpoint_threshold(1000)
+                .path(&path)
+                .open()
+                .expect("open")
+        };
+        let db = open_db();
+        // Two checkpoints, then two entries in the database mode.
+        fill(&db, Op::TransactNewWal);
+        let mut history = History {
+            states: Vec::new(),
+            durable: 0,
+        };
+        history.push(&db);
+        db.execute(&bulk("c", 20)).unwrap();
+        history.push(&db);
+        db.execute(r#"(transact [[:e1 :p/tag "c"] [:e3 :p/ref :e1]])"#)
+            .unwrap();
+        history.push(&db);
+        if mix == Mix::FullAfterNormal {
+            commit_with(&db, SyncMode::Normal, r#"(transact [[:n1 :p/n "normal"]])"#).unwrap();
+            history.push(&db);
+        }
+        assert_eq!(
+            db.wal_synced(),
+            Some(mix == Mix::NormalOnFull),
+            "the WAL before X"
+        );
+        let before = snapshot(&db);
+
+        fault::arm(f, k);
+        let result = commit_with(&db, mix.x_mode(), X);
+        let tripped = fault::disarm();
+
+        let live = snapshot(&db);
+        let applied = extra(&before, &live).expect("the handle lost a fact");
+        assert!(
+            applied.is_empty() || is_whole_x(&applied, op),
+            "the handle applied part of a transaction"
+        );
+        if result.is_ok() {
+            assert!(
+                is_whole_x(&applied, op),
+                "a committed transaction is missing"
+            );
+            history.push(&db);
+        } else {
+            assert!(applied.is_empty(), "a failed commit was applied");
+        }
+
+        // A later write succeeds, or is refused as failed.
+        let live = match db.execute(r#"(transact [[:y :p/y "later"]])"#) {
+            Ok(_) => {
+                history.push(&db);
+                snapshot(&db)
+            }
+            Err(e) => {
+                let c = code(e);
+                assert!(c == "WAL-007" || c == "STG-046", "later write: {c}");
+                assert!(result.is_err(), "a write refused after a success");
+                live
+            }
+        };
+        db.kill();
+
+        // Reopen: a prefix of the commit order, from the durable state on.
+        let db = open_db();
+        let reopened = snapshot(&db);
+        let at = history.states.iter().rposition(|s| *s == reopened);
+        // A failed X's entry may still have reached the file whole: then
+        // every transaction before it is there too.
+        let failed_x_on_disk =
+            result.is_err() && extra(&before, &reopened).is_some_and(|more| is_whole_x(&more, op));
+        assert!(
+            at.is_some_and(|at| at >= history.durable) || failed_x_on_disk,
+            "the reopened file is not a prefix of the commit order from its last sync"
+        );
+        if f == Fault::SyncLost && tripped == Some(Site::WalSync) {
+            // X's lost sync takes every unsynced entry before it too: the
+            // file is back at the last synced state, below the one before X.
+            let before_x = history.states.len() - 1;
+            assert!(
+                at == Some(history.durable) && history.durable < before_x,
+                "a lost sync kept an unsynced entry"
+            );
+        }
+        if f != Fault::SyncLost {
+            // Only a lost sync may lose an entry committed without one.
+            assert!(
+                extra(&live, &reopened).is_some(),
+                "a fact the handle held was lost without a lost sync"
+            );
+        }
+        assert!(
+            db.verify().unwrap().problems.is_empty(),
+            "verify after reopen"
+        );
+
+        // One more commit after recovery must survive a kill.
+        db.execute(r#"(transact [[:z :p/z "after"]])"#).unwrap();
+        let with_z = snapshot(&db);
+        db.kill();
+        let db = open_db();
+        assert!(snapshot(&db) == with_z, "a commit after recovery was lost");
+        assert!(db.verify().unwrap().problems.is_empty(), "verify after Z");
+        db.kill();
+
+        if tripped.is_none() {
+            assert!(result.is_ok(), "failed without a fault");
+            break;
+        }
+        hits += 1;
+    }
+    hits
+}
+
+fn run_all_mixed(mix: Mix) {
+    for f in FAULTS {
+        let hits = run_mixed(mix, f);
+        // A `Normal` commit to an existing WAL makes no sync for a sync
+        // fault to hit; every other fault fires.
+        let syncs = mix.x_mode() == SyncMode::Full;
+        let sync_fault = matches!(f, Fault::SyncEio | Fault::SyncLost);
+        if sync_fault && !syncs {
+            assert_eq!(hits, 0, "a Normal commit synced the WAL");
+        } else {
+            assert!(hits > 0, "the fault never fired");
+        }
+    }
+}
+
+#[test]
+fn faults_during_a_full_commit_after_a_normal_one() {
+    run_all_mixed(Mix::FullAfterNormal);
+}
+
+#[test]
+fn faults_during_a_normal_commit_on_a_full_database() {
+    run_all_mixed(Mix::NormalOnFull);
+}
+
+#[test]
+fn faults_during_a_full_commit_on_a_normal_database() {
+    run_all_mixed(Mix::FullOnNormal);
 }

@@ -187,13 +187,13 @@ cargo run < demos/demo_negation.txt
 
 5. **`src/repl.rs`** — Interactive REPL; TTY-aware (suppresses prompts/banner for piped input)
 
-6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`), `OpenOptions::query_memory_limit` (#549: `QRY-012`, off by default), `OpenOptions::transaction_chunk_facts` (#550), `OpenOptions::max_iterations` (#861: rounds per stratum, default 1,000,000), `OpenOptions::allow_overrides` (#869: which query keywords may override settings, `API-025`; see `docs/CONFIGURATION.md`)
+6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/begin_write_with/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `TxOptions` (#871: one transaction's `synchronous` and `chunk_facts`; `None` = the database value; the WAL writer keeps no mode, each append gets its transaction's; no effect on a large transaction, whose WAL guard is always synced), `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`), `OpenOptions::query_memory_limit` (#549: `QRY-012`, off by default), `OpenOptions::transaction_chunk_facts` (#550), `OpenOptions::max_iterations` (#861: rounds per stratum, default 1,000,000), `OpenOptions::allow_overrides` (#869: which query keywords may override settings, `API-025`; see `docs/CONFIGURATION.md`)
    - `src/overrides.rs`: `Overridable` (`DEFAULTS`, `keyword`; `QueryMemoryLimit` not in `DEFAULTS`, #870; `MaxIterations` in it, #861) and `check_overrides`, called after parsing at every query entry point (`BrowserDb` uses `DEFAULTS`)
    - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); pulls engine queries one internal batch at a time (`close`/drop stops the work; a read error after some rows comes on the next call), other queries computed at open; holds a `Snapshot` (one state of the store, its committed generation pinned, #543) until dropped
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation (`storage::pins`), so checkpoints run but do not reuse its pages (`API-013` deprecated, #543)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
-7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery. Like `storage::verify` and `storage::dir_sync`, not compiled for wasm32 (no file backend there)
+7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery; `append_entry` takes the `SyncMode` of each append (#871), and in tests the writer tracks its synced length (lost-sync fault, `Minigraf::power_loss`). Like `storage::verify` and `storage::dir_sync`, not compiled for wasm32 (no file backend there)
 
 8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`. `MinigrafError::invalid_argument` (API-017) and `MinigrafError::closed` (API-018) exist for language bindings
 
@@ -250,7 +250,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2108 tests** (2087 active, 21 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2132 tests** (2111 active, 21 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.

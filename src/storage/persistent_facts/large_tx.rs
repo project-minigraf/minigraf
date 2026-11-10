@@ -1247,9 +1247,7 @@ mod tests {
         db.kill();
         // A WAL every entry of which is checkpointed (none here): only its
         // header, as a large transaction's guard leaves it.
-        let _ =
-            crate::wal::WalWriter::open_or_create_at(&wal_of(&path), crate::db::SyncMode::Full, 2)
-                .unwrap();
+        let _ = crate::wal::WalWriter::open_or_create_at(&wal_of(&path), 2).unwrap();
         let db = Minigraf::open(&path).unwrap();
         db.checkpoint().unwrap();
         assert_eq!(db.generation(), 3);
