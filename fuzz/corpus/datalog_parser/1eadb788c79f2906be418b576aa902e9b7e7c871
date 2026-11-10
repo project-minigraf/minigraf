@@ -1,0 +1,3 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](transact[][?e:db/vlid (quer[r:?y ue])]):with ?e  ?e ?:where [?	 :Name ?n](transact[:db/valid (query [e])])
+:find  ?e ?:where [?P	 :Name ?n3](transacunt ?e) ;wwi?erue])])
+:find (count ?e) :where [?e:fae ?n]])

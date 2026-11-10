@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e :Name ?n] (not [cot?e :aaaa ?_][?e aaa ?_][Ce a eeeeecccc?_][?e aa ?_][?e aaa ?_][Ce a ?_][?e aa------- :4n_][?e aaa ?_][Ce ?_ ?_][?e aaaaa---------aaa :5n_][?e aaa ?_][Ce ?_a ?_][?e aaaaaa :5nal?_][?e aOAAAsaa--d cc?_][?e:db/valid AAAAC/][?e:db/valid-from eeeeerue])])

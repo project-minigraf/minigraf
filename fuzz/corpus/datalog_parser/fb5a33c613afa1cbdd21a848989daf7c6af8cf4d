@@ -1,2 +1,0 @@
-(query [:with ?e :where [?/ :Name In](not-join[][false?_?e:db/vali(que[:?erue])])
-:find (count ?e) :where [?e:nae ?n]])

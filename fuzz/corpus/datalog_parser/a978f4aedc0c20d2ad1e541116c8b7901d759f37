@@ -1,4 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :Name ?n](transant ?e) ;wrue])])
-:find  ?e ?:where [?	 :Name ?n](tranasct[][?e:db/ve:db/valid (que?iry [:?rue])])
-:find (count ?e) ;wrywrue])])
-:find  ?e ?:where [?	 :Name ?n](trant ?e?e) :where [?e:nae ?n]])

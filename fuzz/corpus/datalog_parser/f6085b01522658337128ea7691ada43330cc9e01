@@ -1,3 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :Name ?n](transact[][?eid (query [:?rue])])
-:find (count ?e) ;where [?e:/valid (query)])
-:find (count ?e) :where [?e:nae ?n]])

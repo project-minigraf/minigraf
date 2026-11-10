@@ -1,0 +1,1 @@
+(query [:where (pd ?e:Qh)(n:__)(E:frur)(A:w)])

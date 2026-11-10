@@ -1,0 +1,1 @@
+(query [:where[boo(*#{"EAA6"0} 2)?_]:where[(*#{"EAA6"0} 2)?_]])

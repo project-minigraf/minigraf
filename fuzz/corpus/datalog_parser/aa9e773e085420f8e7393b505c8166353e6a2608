@@ -1,0 +1,2 @@
+(query [:find  ?e :where [?e:nae ?n]:find (count ?e) :where [?e:nae ?n](transact[:valid (qu[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

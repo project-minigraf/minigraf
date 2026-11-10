@@ -1,0 +1,4 @@
+(query [:find ?e :where(not-join [?e] [e ?_ctivez ?chAre](qu[?e ?w]q
+)(ue*u [?e ?w]q
+)(ue*B))]
+)

@@ -1,0 +1,3 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](or-join[?r][?:db/valid (mi3342equ522ry [:?rue])])
+:find (co44i ?e) ;$wt ?e) ;wrwt[ hiy:rue])])
+:find (coqntount ?e) :where [?e:nae ?n]])

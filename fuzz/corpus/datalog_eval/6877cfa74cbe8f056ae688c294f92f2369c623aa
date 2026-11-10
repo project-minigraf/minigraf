@@ -1,0 +1,1 @@
+(query [:find ?e :where   [?_?e ?l ?k]  [?d ?lyn6772764176710315ynnueF130785e ?_] [?e ?n ?k]  [?d ?lyn67720315e ?n]  (or-join[][e?=ae])])

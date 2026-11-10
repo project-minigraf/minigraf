@@ -1,0 +1,5 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](transat[][?e:db/valid (q)])
+:find (count ?e) ;wry [:wrue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[]
+[?e :name ccccc?_][?e aa ?_][?e aaa ?_][CeCe a ?_][e :name ?nccccccccccccc?_][?e aa ?_][?e aaa ?_][CeCe a ?_][?e aaaaaccccccccccccccccccccccccccvalid (q?ywry wry i[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

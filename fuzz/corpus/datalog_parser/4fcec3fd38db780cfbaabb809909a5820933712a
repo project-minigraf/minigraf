@@ -1,0 +1,1 @@
+(query [:with ?eA  ?e ?:where [?	 :Name ?n](or-join[?r][?e:db/v:rue]A2)])

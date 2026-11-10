@@ -1,0 +1,1 @@
+(query [:where [?e :Nae n] (or-join [?ejjjj ? an:ne ]u):er(nms[?e true:n])])

@@ -1,2 +1,0 @@
-(query [ :where [(=:rue"ide") ?n/ ]:where [(=:re"Alide") ?u ][( = ?n:actie)?_0][(!= ?n:ac)]])
-

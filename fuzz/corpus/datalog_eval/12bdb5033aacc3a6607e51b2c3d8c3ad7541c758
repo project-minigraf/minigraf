@@ -1,0 +1,2 @@
+(query [:where [oror /C] (_:Finot(q<quer)) (not(q<r))(not(q<er))]
+)

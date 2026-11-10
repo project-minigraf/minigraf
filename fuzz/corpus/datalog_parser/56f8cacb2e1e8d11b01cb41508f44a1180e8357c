@@ -1,0 +1,7 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](rnstaact[][?e:db/valid (query [:?rue])])
+:find (count ?e) ;act[][])
+:find (count ?e) ;[l])])
+:find (count ?e) ;wrd )])
+:find (count ?e) ;[:?rue])])
+:find (count ?)
+:find (count ?e) :where [?e:nae ?n]])

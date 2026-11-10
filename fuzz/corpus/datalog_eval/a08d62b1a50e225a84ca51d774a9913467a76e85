@@ -1,0 +1,2 @@
+(query [:find ?c:limit:wh[?lor ?c] (nrt[?r ?c] (ia [:find ?]-))]
+)

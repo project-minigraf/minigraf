@@ -1,0 +1,2 @@
+(query[:where [?d :n"i"][:鑉/7 :d ?_][?e a c][?e aa ?_][?3 :db/valid-to"e---"][:en
+t ?y]])

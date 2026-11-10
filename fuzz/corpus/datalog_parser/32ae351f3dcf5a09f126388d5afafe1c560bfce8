@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	?yName ?n](or-join[][?e:db/valid (mi3342equ)])
+:find (count ?e) :where [?e:nae ?n]])

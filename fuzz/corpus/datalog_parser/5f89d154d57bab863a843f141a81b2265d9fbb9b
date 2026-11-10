@@ -1,0 +1,1 @@
+(query [:where [?:Jname ?n](mt ?[eW])[?e :name ?n](nmt ?[:aue]):where (nmp ?[true?e])(not [?efalse:b hban])])

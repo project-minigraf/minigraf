@@ -1,0 +1,6 @@
+(query [:with ?  ?e ?:where  [m?	:Nae ?n](not-join[?e][?e:db/nalid (query [:?rue])])
+:find (count ?e) ;wry [nt rue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])] ()c
+ount ?e) ;wy [:?rury ?nW(transact[]])])
+:find (count ?e) :where [?e:nae ?n],,])
+,,

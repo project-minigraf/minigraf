@@ -1,1 +1,0 @@
-(query [:where [? vit ?][$e:dvalea ?_][$e:db/valid-to :a]])

@@ -1,2 +1,0 @@
- (query [:where(or(or(eCD 72)(AA 9)) (q[ ] ))])
-

@@ -1,1 +1,0 @@
-(query [:find ?n :where  [?_?e:db/valid-at:?c]  [?e ?n ?c]  [?e ?l6EEEEEEEEEEEEEEyelFnnueFEEEEEEEEEEEqff ?c]  [?_?e ?6e ?n] [(>=?n "e")]])

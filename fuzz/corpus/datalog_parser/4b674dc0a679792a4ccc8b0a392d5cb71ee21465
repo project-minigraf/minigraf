@@ -1,2 +1,0 @@
-(query [:with ?e  ?e :where [?/ :Nme ?n](transact[][0?e:db(query [:?ere])])
-:find (count ?e) :where [?e:nae ?n]])

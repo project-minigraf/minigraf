@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](not-join[?efind  ?e ?:where [?	?n](not-join[? (query [:?rue])])
+:find (cu,,,,)][?:e/dbnalid (qry [:?rue])])
+ [?e:nae ?n],,])
+,,

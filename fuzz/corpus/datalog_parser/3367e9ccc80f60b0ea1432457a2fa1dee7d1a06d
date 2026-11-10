@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e al"e"][:u/1:nae "Ale"][:u/1 :vale"Aleea"][??y1 :db/valid-to":n"][:m/
-t ?y]])

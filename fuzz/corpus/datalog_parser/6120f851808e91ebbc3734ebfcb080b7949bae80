@@ -1,1 +1,0 @@
-(query [:where [?e :name n] (or (and(q1338675)(qu2038676)(ddd) ) ) [0xaent ?y]])

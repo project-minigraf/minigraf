@@ -1,0 +1,2 @@
+(query [:find ?e :where (r(qr)
+9)(AAC ?e 6)(d ewre 3967[])])

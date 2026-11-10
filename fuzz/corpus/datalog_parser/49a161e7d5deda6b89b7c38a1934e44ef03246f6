@@ -1,1 +1,0 @@
-(query [:find ?find ?e :limit$e :limit$0[:y]])

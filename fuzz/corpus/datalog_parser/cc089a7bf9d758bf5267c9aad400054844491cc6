@@ -1,2 +1,0 @@
-(query [:find ?e  ?e :where [?e :Name ?n](transact[?lid (query [ccerue])])
-:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,1 @@
+(query [:where[? vd-to ?_][$0?aa _][$0? ?_][$0?aa ?][$e:db/valid-to _]])

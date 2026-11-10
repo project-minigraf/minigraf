@@ -1,1 +1,0 @@
-(query [ :where (not [?_ b:n?] (e)(q)(e)[03--()])])

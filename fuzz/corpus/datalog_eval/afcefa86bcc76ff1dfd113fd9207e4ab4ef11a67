@@ -1,1 +1,0 @@
-(query [:find ? :where [?e ?FFFFNFFFFF ?c] (not-join [?e ?_?e ?FFFFFNFwwwwwwwwwwwwwwwwwwtwwwwwwwwFFr?e] [=ei_ ?eeiree])])

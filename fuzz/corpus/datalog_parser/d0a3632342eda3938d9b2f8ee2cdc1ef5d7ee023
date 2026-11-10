@@ -1,0 +1,1 @@
+(query[:where[?vd:/dm _] [?:db/valid-at _]])

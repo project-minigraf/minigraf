@@ -1,0 +1,1 @@
+(query[ :where [(=:run:a)?_0][(!= :w?:ite)]])

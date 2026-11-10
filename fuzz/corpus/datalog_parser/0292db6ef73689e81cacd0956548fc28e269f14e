@@ -1,1 +1,0 @@
-(query [:find ?e  :where [?e :e   ?n](ne ?y:T)[(fx :nale2y) ?n] (dTTn TTTTTTTTTT)[(integer? ?y)  ?n] (ndy:X)])

@@ -1,0 +1,3 @@
+(query [:with ?ind ?e ?:where [?	 :Name ?n](not-join[]
+[?e :ne ?ncccc][?e a ?_][?e aaa ?_][CeC])
+  [?e:nae ?n]])

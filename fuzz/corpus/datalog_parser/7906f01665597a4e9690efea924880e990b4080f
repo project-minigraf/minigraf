@@ -1,0 +1,2 @@
+(query [:where [? :name n] (or(ud) [?e :e ?n](and(q)(q205338675)(A>)
+) [?e?n] ) [3xy]])

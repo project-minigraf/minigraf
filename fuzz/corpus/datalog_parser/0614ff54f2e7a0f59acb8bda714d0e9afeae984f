@@ -1,1 +1,0 @@
-(query [ :order-by[(x ?y)  ?:orn] (nd X)])

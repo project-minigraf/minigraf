@@ -1,1 +1,0 @@
-(query [:find ?ee:where[?e 3e] (not [?:db/tx-id ?e]):where [e Cname ?n]])

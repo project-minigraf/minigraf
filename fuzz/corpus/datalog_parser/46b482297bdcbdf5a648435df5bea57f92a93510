@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :ame ?n] (ony3$00T)[(in?fqxx :y)] (nd t:T)[(in?f1x? n?)] (d oAAy) [?x :t ?y]])

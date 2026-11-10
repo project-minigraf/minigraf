@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e :name ?n] (ony3A$i334522i33452221$3$mi$T)[(in?fxx ?y)  ?n] (nd t:T)[(in?f1xx ?y)  ?n] (nd $003445571234nd t:T)[(en?f1xx ?y)  ?n] (nd tAA1ne$rte u2(query[:find []])22223$0034455:T)[(in?f1xx ?y)  ?n] (nd tAA1ne$rte u2(quefid:yr[n []])222$______4557 t3$00347$___5(rule [(pa1v,Fn t?x33)])
- ?y) [?x :t ?y]])

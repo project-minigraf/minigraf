@@ -1,1 +1,0 @@
-(query [:find ?n:distinct :where [?e ?nmEEEEMEEEVu ?EEfna]  [?e ?ynsufun ?]  [?e ?l2e ?n] [(>=?n "e")?]])

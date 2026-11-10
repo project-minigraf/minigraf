@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :nale ?n] (o713$i$T)[(in?fxx ?y)  ?n] (nd33654im4690min34442$-3l$T)[(in?fxx ?y)  ?n] (nd t:T)[(in?fxx ?y )?n  ](nd tA) [?x :t ?y]])

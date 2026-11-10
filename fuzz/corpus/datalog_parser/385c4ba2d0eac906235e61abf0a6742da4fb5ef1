@@ -1,0 +1,2 @@
+(query [:with ?e  ?e :where [?/Z:Nme ?n](tsakt[?e:db(que [:?ere])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,3 @@
+(query [:with ?e  ?e ?:where [?	?iName ?n](transact[][?e:db/valid ([:w])])
+:find (count ?e) ;wryw?e  ?e  )
+ ?:where [?	?iName ?n](trsactt ?e) :where [?e:no2n ?n]])

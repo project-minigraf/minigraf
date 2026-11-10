@@ -1,0 +1,1 @@
+(query [:where [?_?:e ?n] (or[?:0b ?])])

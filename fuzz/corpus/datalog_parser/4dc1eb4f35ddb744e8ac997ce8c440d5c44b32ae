@@ -1,1 +1,0 @@
-(query [:where [he:name _] (or(enodh tru)[(none-in? +y)  ?x] (nta) )])

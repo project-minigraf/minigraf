@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	 :me ?n](or-join[][?e:db/d (query [:?rue])])
+:find (count ?e) ;wry [:])])
+:find  ?e ?:where [?	 :Name ?n](not-koin[]
+[?e :name ?ncccctrue]):where [?e:nae ?n]])

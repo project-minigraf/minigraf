@@ -1,0 +1,3 @@
+(query [:with ?d  ?e ?:where [?	 :Name ?n](not-join[][?e:db/tx-id (qu)])
+:find (count ?e) ;i 
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,3 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n] [?	 :Name ?n](not-join[]
+[?e :name nccccccccc?_][?e ccccccvalid n] [(fx ?y)  ?n] (nnd t)[(fTx ?y)A?n(fx ?yA?-  ?e  wry i[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,1 @@
+(query[,:where (d :w#{:dcou})(p th#{0})])

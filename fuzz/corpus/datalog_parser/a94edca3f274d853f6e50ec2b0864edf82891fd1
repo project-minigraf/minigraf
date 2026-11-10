@@ -1,0 +1,1 @@
+(query [:where (or[?:e n] (and(q2)(d) ) [ty])])

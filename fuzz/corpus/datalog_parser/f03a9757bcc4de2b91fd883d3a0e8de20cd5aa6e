@@ -1,1 +1,0 @@
-(query [:order-by[:e/1 ?it ?]])

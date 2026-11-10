@@ -1,0 +1,4 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/ (query ?y) ] (y:T)[(fx ?y) ] (ne ?y:T)[(fx ?y)  ?n] (nd tOqqqqqqqqqqqqq6w)[(fx ?y)  ?n] (nd dOheOhegAAAO3O)[( [:?rue])])
+ (co5nt ?e) ;wry t[]query [:?rue])])
+e [?e:nae],,])
+,,

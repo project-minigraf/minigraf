@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](transact[ ([euyq e])])
+:find (count ?e) (count ?e) :where [?e:na ?n]])

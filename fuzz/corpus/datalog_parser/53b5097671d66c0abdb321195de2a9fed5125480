@@ -1,0 +1,1 @@
+(query [ :where [?e 0e?] (ne ?y)[(nil? ?y) ] (e ?qqq*X)])

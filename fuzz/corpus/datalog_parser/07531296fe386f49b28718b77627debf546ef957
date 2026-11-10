@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](transact[]ert44(rule a[pp(TTTTTTx31)])? ? ?ed ?ique>>wre 33696t>>TT4u 4?ert ?yTTTTTTTT ?trTTTTTTT4u 4?ert44(rule a[p(TpTTTTTx31)])? ppp?pyAA?-ppnXXXXXXXcount ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[](query [:where (A#{}s) 0])[?e:db/valid (query [:?rue])])
+:find (count ?e) ;ind (count ?e) ;wrerue])])
+:find (count ?e) :where [?e:nae ?n]])

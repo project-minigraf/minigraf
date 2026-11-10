@@ -1,0 +1,1 @@
+,(query [:find ?n :where [?e ? ?c] :order-by [?e ?X?n] [(>=?n "e")]])

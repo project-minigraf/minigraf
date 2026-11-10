@@ -1,0 +1,1 @@
+(query [:where (or(e:e)(A?:e0)(A:e09e)(A?:e/n))])

@@ -1,0 +1,1 @@
+(query [:where [? :N ?] (o t[])[?e :nAm ?n] (not [?e ted ؑ߉])])

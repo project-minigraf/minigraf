@@ -1,0 +1,1 @@
+(query [:with ?e0:where [p:nam ?_] (or(enTTT)[(matches? 7:frey)  ?n] ) [ y]])

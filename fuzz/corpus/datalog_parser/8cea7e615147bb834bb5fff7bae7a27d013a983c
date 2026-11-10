@@ -1,0 +1,1 @@
+(query[:where [e :na ?n] (r() )[6e ?n] (or(e y))[7xe y]])

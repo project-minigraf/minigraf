@@ -1,2 +1,0 @@
-(query [:where [? :talseoi ?n] (oq):order-by[?  ??8n] ])
-;

@@ -1,1 +1,0 @@
-(query [:where [? :oe ?n] (or(eno,?y ?) )])

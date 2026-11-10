@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e nae "licPe"][:0000000000e/1 :nannnnil-rfam ?0000000191026][?:df/vqlid-from ?e?_?y]])

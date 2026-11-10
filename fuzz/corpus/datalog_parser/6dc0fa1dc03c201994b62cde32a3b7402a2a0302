@@ -1,0 +1,5 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][?e:id (query)])
+:find (count ?e) ;wry [nt :db/vFlid-from ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Namme ?n](not-join[?ejj161jjjjjjyqjjjjjjjjjjj?_jjj ??d ?ejjjjjjjjjjjjjhjjqjjj ??e/ +il?nw] (ow(enm,?110y ?Hn) )[? :va(transact[][?:as-of?erue])])
+:find (count ?m) :where [?e2nae ?n],,])
+,,

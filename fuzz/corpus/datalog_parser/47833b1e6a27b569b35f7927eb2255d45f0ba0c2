@@ -1,0 +1,3 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?f](tac[e:db/valid (qu [:?rue])]):with ?e  ?e ?:where [?	 :Name ?n](tt[db/valiq( dryue [:?rue])])
+:find (count ?e) ;wry [:with
+:find (count ?e) :where [?e:fae ?n]])

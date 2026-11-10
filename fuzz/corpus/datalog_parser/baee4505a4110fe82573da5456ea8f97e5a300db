@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :name ?n] (o1$7$3$m2223$mi$e$rteu$3453$10$m*i$6848(ru[(x4)])?y)])

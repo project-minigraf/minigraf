@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e ?:enm2] (not[?:d:E2]) [?:?n:n] (not [])])

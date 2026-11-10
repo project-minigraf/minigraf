@@ -1,0 +1,1 @@
+(query [:with ?e  ?e ?:where [?	me ?n](not-join[][?e:db/valid (query [:?rue])][][?e:db/alid ()])whuery wi[:?erue]])

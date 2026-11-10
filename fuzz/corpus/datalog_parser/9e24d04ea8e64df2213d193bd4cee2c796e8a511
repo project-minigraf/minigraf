@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where[?e ?a:nm ] (not [?e :dt eue])[?:?n:n] (not [?e :ɝd true])])

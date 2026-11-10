@@ -1,2 +1,0 @@
-(query [:where [?e :c ?c] (not-join [?erc] (nj ))]
-)

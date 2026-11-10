@@ -1,1 +1,0 @@
-(query[:find ?e :where (mt)(q:t)(q:e>>3AAAe>>37)(q:t-3*?e>0037)(q>>)])

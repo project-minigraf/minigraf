@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e FFF ?c] (not-join [] [?__:?ivteez ?chere1e](que:dbtx-id))]
-)

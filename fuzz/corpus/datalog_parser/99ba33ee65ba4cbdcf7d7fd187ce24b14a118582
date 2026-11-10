@@ -1,0 +1,11 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](transact[][?e:db/valid (query [:?rue])])
+:find (count  ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])])
+ (count ?et ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])])
+:find (count ?e) ;wry ?n](trane) ;e:])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/nalid (query [:?rue])])
+:find (count ?e) ;wry ,,,,,,)y:find (count ?e) ;wry ?n]t(ransact[][?e:db/valid (qu,,ee) ;wry [:withwhe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/nalid (query [:?rue])])
+:find (count ?e) :where [?e:nae ?n],,])
+,,

@@ -1,2 +1,0 @@
-(query [:where (n33t(q<<:CCC)) (not(q(q<<er)) (not,qCCAer))]
-)

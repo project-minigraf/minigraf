@@ -1,0 +1,1 @@
+(query [:find ?n:distinct :where [?e ?l2e ?n] [(uquen"e")?]])

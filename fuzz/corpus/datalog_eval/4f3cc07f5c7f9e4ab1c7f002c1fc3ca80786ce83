@@ -1,0 +1,2 @@
+(query [ :where [?mmmmmmmmmmmmmmmmme ?tunufn ?a]  [?- ?lynnuenEEEqfn ?c]  [?e ?lysnufn ?HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHc]  [?equqqq?e ?lunufn ?c]  [?e ?lynnueqfn ?c]  [?m ?lynEEEEEEzcolor ?c] (not-join [?lysnufn ?c]  (query [:find ?___e]))
+])

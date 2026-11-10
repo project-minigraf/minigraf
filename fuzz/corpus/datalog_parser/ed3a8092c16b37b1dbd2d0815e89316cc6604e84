@@ -1,0 +1,2 @@
+(query [:find ?e:where [?e ae "Alt"][:e/1 no"e"][:e/1 :db/tx-id"A"][:e/en
+t ?y]])

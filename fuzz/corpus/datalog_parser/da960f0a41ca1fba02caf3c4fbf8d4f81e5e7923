@@ -1,1 +1,0 @@
-(query [:where [?e:e ?n] (or[n?:ee ?n][n?:eme? me] (n)[n] )-])

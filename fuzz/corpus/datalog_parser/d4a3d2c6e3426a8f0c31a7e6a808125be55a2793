@@ -1,0 +1,1 @@
+(query [ :where [?e 0n ] (ne ?y)[(x ?y)  ?n] (Ie AA*)])

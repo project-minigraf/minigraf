@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e?e ?un:----c]  [?e ?lnV63333332e ?n] [(>=?n "e")]])

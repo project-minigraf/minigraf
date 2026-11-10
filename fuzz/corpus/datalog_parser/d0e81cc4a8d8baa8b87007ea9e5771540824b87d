@@ -1,1 +1,0 @@
-(query [:where(AAC ?e:bwre5)(AA ?e 79)(AA=?8)(AA* ?e)])

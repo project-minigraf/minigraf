@@ -1,0 +1,1 @@
+(query [ :where [?mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmme ?lunufn ?a]  [?e ?lynnqfn ?a]  [?e ?ynsufundEEqfn ?E?g]  [?e ?n ?c]  [?e ?lynnyfn ?g]  [$e:db/tx-id ?c]  [?e ?lyn ?c]  [?m ? ?c] (Bot-join [?lysnufn:nam ?cenEEEEEEEEEEdEEdEEqfn ?g]  [?e ?lynEEqEEEEEEE ?fn?e e])])

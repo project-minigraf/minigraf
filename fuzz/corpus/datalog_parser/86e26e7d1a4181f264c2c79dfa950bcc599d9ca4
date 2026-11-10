@@ -1,1 +1,0 @@
-(query [:where(A ?ee:e02)(AA ?e 79)(AAMd ?8)(AA ?e :wre )])

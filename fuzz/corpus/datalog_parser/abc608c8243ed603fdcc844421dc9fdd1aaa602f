@@ -1,0 +1,1 @@
+(query [:find ?e0:where[?e0:nm ?](ov(d?) 2ma) [6m ?n] (or(p) ) [6x?n:with] (or(e ) ) [6t ?y]])

@@ -1,2 +1,0 @@
-(query [:where [?e e ?](not(wre A)(q:h)(act)
-)])

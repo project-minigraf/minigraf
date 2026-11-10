@@ -1,0 +1,5 @@
+(query [:with ?e :where [?	 :Name ?n];wry [:fAAA])
+:find (count ?e) 
+ ?e ?:where [?	 :Name  ?n](ransact[][4e:d(q)])
+:find (count ?) ;wrueryW)
+:find (count ?e)?:where [?e:nae ?n]])

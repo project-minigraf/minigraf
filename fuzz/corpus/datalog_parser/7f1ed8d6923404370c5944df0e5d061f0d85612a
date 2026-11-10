@@ -1,0 +1,4 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][?e:d ?] (n:T)[(fx 36)  ?n]  (n:T)[(fx 16)  ] (n:T)[(fx 35) ] (n:T)[(fh 35)  ?n]  (n:Tn:T)[(fx 70)  ] (n:T)[(fx 53)   ??n] (nehe73 ?y)[(fx ?y)  ?n] (nd tOhewIe gOO)[?xf (y? ) n] (n6666666666666666666666h geIewOO)[?xf (y? )jjjjjjjjjjjjjjjjjjj ??e/ ?nlljjjj ??e/d ?e])
+:find  ?e ?:where [?	 :Name ?n](n,,,,,,) ;wry [:wc[:?er]ue)])
+:find (count ?e) :where [?e:nae ?n],,])
+,,

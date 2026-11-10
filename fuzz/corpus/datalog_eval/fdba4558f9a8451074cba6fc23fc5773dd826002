@@ -1,1 +1,0 @@
-(query [:where [:e :lor ?c]  :where [:e :nzue00r ?c] (nj-[?])(ej-[?e])])
