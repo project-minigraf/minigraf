@@ -21,7 +21,11 @@
 //! This also covers the original #308 report (a kill mid-checkpoint left a
 //! header checksum mismatch): every round must reopen.
 //!
-//! With the `test-hooks` feature a sixth variant makes most transactions
+//! A sixth variant commits every transaction through `begin_write_with`
+//! with a WAL sync mode chosen per transaction from the seed, on a database
+//! opened `SyncMode::Full` (#871): `Normal` and `Full` entries share one WAL.
+//!
+//! With the `test-hooks` feature a seventh variant makes most transactions
 //! large (#550): they write pages and commit as a checkpoint, with no WAL
 //! entry, and every fourth one is followed by a large statement that fails
 //! after writing pages and rolls back. Every third runs as a
@@ -38,7 +42,7 @@
 //! Design: docs/superpowers/specs/2026-10-08-crash-kill-data-check-design.md
 #![cfg(not(target_arch = "wasm32"))]
 
-use minigraf::db::{Minigraf, OpenOptions, SyncMode};
+use minigraf::db::{Minigraf, OpenOptions, SyncMode, TxOptions};
 use minigraf::{QueryResult, Value};
 use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
@@ -181,6 +185,10 @@ enum Variant {
     AutoCheckpoint,
     /// As `CheckpointEvery3`, with `SyncMode::Normal` (no WAL fsync).
     NormalSync,
+    /// Every transaction through `begin_write_with`, its sync mode chosen
+    /// per transaction ([`tx_sync_mode`]) on a `Full` database (#871);
+    /// `checkpoint()` after every fifth.
+    PerTxSync,
     /// Statements of more than [`LARGE_CHUNK`] facts are large (#550), a
     /// failing large statement follows every fourth transaction, every third
     /// is a `WriteTransaction` ([`in_write_tx`]); `checkpoint()` after every
@@ -195,9 +203,25 @@ const VARIANTS: &[Variant] = &[
     Variant::WalOnly,
     Variant::AutoCheckpoint,
     Variant::NormalSync,
+    Variant::PerTxSync,
     #[cfg(feature = "test-hooks")]
     Variant::Large,
 ];
+
+/// The `PerTxSync` variant's sync mode for transaction `k`, from the seed:
+/// the first is `Normal` and the second `Full`, so both occur.
+fn tx_sync_mode(rng: &mut Rng, k: u64) -> SyncMode {
+    let normal = match k {
+        1 => true,
+        2 => false,
+        _ => rng.below(2) == 0,
+    };
+    if normal {
+        SyncMode::Normal
+    } else {
+        SyncMode::Full
+    }
+}
 
 /// The chunk size of the `Large` variant's child.
 #[cfg(feature = "test-hooks")]
@@ -235,6 +259,7 @@ impl Variant {
             Variant::AutoCheckpoint => opts.wal_checkpoint_threshold(2),
             Variant::NormalSync => opts.synchronous(SyncMode::Normal),
             Variant::CheckpointEach | Variant::CheckpointEvery3 => opts,
+            Variant::PerTxSync => opts.synchronous(SyncMode::Full),
             #[cfg(feature = "test-hooks")]
             Variant::Large => opts,
         }
@@ -245,6 +270,7 @@ impl Variant {
             Variant::CheckpointEach => true,
             Variant::CheckpointEvery3 | Variant::NormalSync => k % 3 == 0,
             Variant::WalOnly | Variant::AutoCheckpoint => false,
+            Variant::PerTxSync => k % 5 == 0,
             #[cfg(feature = "test-hooks")]
             Variant::Large => k % 5 == 0,
         }
@@ -501,17 +527,27 @@ fn crash_kill_child_entrypoint() {
     #[cfg(feature = "test-hooks")]
     let _chunk = large.then(|| minigraf::__tx_chunk_facts(Some(LARGE_CHUNK)));
     let mut rng = Rng::new(seed);
+    // A separate stream, so the workload (and so the model) is unchanged.
+    let mut sync_rng = Rng::new(seed.rotate_left(29));
+    let per_tx = matches!(variant, Variant::PerTxSync);
     let mut live = BTreeSet::new();
     for k in 1.. {
         let (stmt, next) = next_tx(&mut rng, &live);
-        #[cfg(feature = "test-hooks")]
-        if large && k % 3 == 0 {
-            in_write_tx(&db, &stmt);
+        if per_tx {
+            let opts = TxOptions::new().synchronous(tx_sync_mode(&mut sync_rng, k));
+            let mut tx = db.begin_write_with(opts).expect("child begin_write_with");
+            tx.execute(&stmt).expect("child statement");
+            tx.commit().expect("child commit");
         } else {
+            #[cfg(feature = "test-hooks")]
+            if large && k % 3 == 0 {
+                in_write_tx(&db, &stmt);
+            } else {
+                db.execute(&stmt).expect("child transaction");
+            }
+            #[cfg(not(feature = "test-hooks"))]
             db.execute(&stmt).expect("child transaction");
         }
-        #[cfg(not(feature = "test-hooks"))]
-        db.execute(&stmt).expect("child transaction");
         log.write_all(format!("{k}\n").as_bytes())
             .expect("child logs transaction");
         live = next;
