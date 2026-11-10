@@ -700,6 +700,15 @@ fn run_mixed(mix: Mix, f: Fault) -> u64 {
             at.is_some_and(|at| at >= history.durable) || failed_x_on_disk,
             "the reopened file is not a prefix of the commit order from its last sync"
         );
+        if f == Fault::SyncLost && tripped == Some(Site::WalSync) {
+            // X's lost sync takes every unsynced entry before it too: the
+            // file is back at the last synced state, below the one before X.
+            let before_x = history.states.len() - 1;
+            assert!(
+                at == Some(history.durable) && history.durable < before_x,
+                "a lost sync kept an unsynced entry"
+            );
+        }
         if f != Fault::SyncLost {
             // Only a lost sync may lose an entry committed without one.
             assert!(
@@ -734,10 +743,14 @@ fn run_all_mixed(mix: Mix) {
     for f in FAULTS {
         let hits = run_mixed(mix, f);
         // A `Normal` commit to an existing WAL makes no sync for a sync
-        // fault to hit.
+        // fault to hit; every other fault fires.
         let syncs = mix.x_mode() == SyncMode::Full;
         let sync_fault = matches!(f, Fault::SyncEio | Fault::SyncLost);
-        assert!(hits > 0 || (sync_fault && !syncs), "the fault never fired");
+        if sync_fault && !syncs {
+            assert_eq!(hits, 0, "a Normal commit synced the WAL");
+        } else {
+            assert!(hits > 0, "the fault never fired");
+        }
     }
 }
 

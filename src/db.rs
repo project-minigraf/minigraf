@@ -435,6 +435,7 @@ impl OpenOptions {
 /// plus the builder methods.
 ///
 /// ```no_run
+/// # #[cfg(not(target_arch = "wasm32"))] {
 /// use minigraf::{OpenOptions, SyncMode, TxOptions};
 ///
 /// let db = OpenOptions::new().path("bulk.graph").open().unwrap();
@@ -444,6 +445,7 @@ impl OpenOptions {
 ///     .unwrap();
 /// tx.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
 /// tx.commit().unwrap();
+/// # }
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -1189,12 +1191,14 @@ impl Minigraf {
     ///
     /// Acquires the write lock; held until `commit()`, `rollback()`, or drop.
     ///
-    /// ```no_run
-    /// use minigraf::{OpenOptions, SyncMode, TxOptions};
+    /// ```
+    /// use minigraf::{Minigraf, SyncMode, TxOptions};
     ///
-    /// let db = OpenOptions::new().path("app.graph").open().unwrap();
-    /// // This transaction's commit is not synced, and it is written a chunk
-    /// // of 10,000 facts at a time once it passes that many.
+    /// // On a file database this commit is not synced, and the transaction
+    /// // is written a chunk of 10,000 facts at a time once it passes that
+    /// // many; in memory (as here, so the example runs everywhere) the
+    /// // options change nothing.
+    /// let db = Minigraf::in_memory().unwrap();
     /// let opts = TxOptions::new()
     ///     .synchronous(SyncMode::Normal)
     ///     .chunk_facts(10_000);
