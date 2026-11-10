@@ -157,8 +157,9 @@ reaches the bindings with binding write transactions (#824).
 | Binding | Override list | Default list | Open options | Setters |
 |---|---|---|---|---|
 | Python | `minigraf.open(..., allow_overrides=[Overridable.MAX_DERIVED_FACTS, ...])` | `minigraf.OVERRIDABLE_DEFAULTS` | `transaction_chunk_facts=`, `max_iterations=` | `with_max_derived_facts`, `with_query_memory_limit`, `with_max_iterations` |
-| Java, Android | builder `allowOverrides(...)` | `Minigraf.OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
-| Swift | `allowOverrides` | `Overridable.defaults` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
+| Java | builder `Minigraf.options().allowOverrides(...)` | `Minigraf.OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
+| Android | `OpenOptions(allowOverrides = ...)` | top-level `OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
+| Swift | `OpenOptions(allowOverrides: ...)` | `Overridable.defaults` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts(n:)`, `withQueryMemoryLimit(bytes:)`, `withMaxIterations(n:)` |
 | Node | `allowOverrides: ['maxDerivedFacts', 'maxResults', 'queryMemoryLimit', 'maxIterations']` | `OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` |
 | C | `"allow_overrides": ["max_derived_facts", "max_results", "query_memory_limit", "max_iterations"]` in the options JSON | `minigraf_overridable_defaults()` (a JSON array) | `"transaction_chunk_facts"`, `"max_iterations"` | `minigraf_prepared_with_max_derived_facts`, `minigraf_prepared_with_query_memory_limit`, `minigraf_prepared_with_max_iterations` |
 | Browser (`BrowserDb`) | none | none | none | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` on `BrowserPreparedQuery` |
