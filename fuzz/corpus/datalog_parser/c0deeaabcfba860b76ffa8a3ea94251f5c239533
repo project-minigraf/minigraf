@@ -1,0 +1,1 @@
+(rule [(p)[(an ?y)](p)[(contains? ?oi ?yy)][(W ?y)](p)[(contains? ?WWWW ?y)][(contains? ?Wa ?y)]])

@@ -1,0 +1,1 @@
+(query [:fin :w :where [?ea ?name ?n?O]  :where [?e ?naoe ?n] [(> :/ "AAlic ")]])

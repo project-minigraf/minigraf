@@ -1,0 +1,1 @@
+(query [:where [?e::] (o 2[e]) [w:n t](yl[]?)[x?e e 8]])

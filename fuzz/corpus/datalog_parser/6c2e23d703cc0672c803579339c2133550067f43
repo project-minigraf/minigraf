@@ -1,0 +1,1 @@
+(query [:t:where (not[a :a t]) (uy)(not[a:br:te])])

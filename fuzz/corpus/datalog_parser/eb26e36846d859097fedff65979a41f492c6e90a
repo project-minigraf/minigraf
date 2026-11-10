@@ -1,4 +1,0 @@
-(query [:f:where [?e :n?-me ?n] (not(n)
-[?e wname ?n] (noe ?ssss4s)
-[?e wame ?l] (noe ?s)
-[?e wname ?] (noe ?en) [ae :nd tnt])])

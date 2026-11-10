@@ -1,0 +1,2 @@
+(query[:y:where  (or(Lt)( s0)):where (e:?)])
+

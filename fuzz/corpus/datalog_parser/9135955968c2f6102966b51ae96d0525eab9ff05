@@ -1,0 +1,2 @@
+(query [: :where [?e :n ?n] (not [?e :ned tru])(que:r[ ])(que:yr[])(que:yr[ te])(que:yr[fin (not)z])
+])

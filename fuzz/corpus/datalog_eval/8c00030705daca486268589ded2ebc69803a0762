@@ -1,0 +1,1 @@
+(query [:where [? euor ?c] (not-join [?eemmsuor ?c]boea? [: te])])

@@ -1,1 +1,0 @@
-(query  [:where [?aq e q?] (or(u:-L$Ls?ntse080) [eL true])(-e)])

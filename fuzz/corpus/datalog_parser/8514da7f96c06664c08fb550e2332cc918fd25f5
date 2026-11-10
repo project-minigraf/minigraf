@@ -1,0 +1,1 @@
+(query [:find(ho ?e)::find (czt ?e):w:find(cuzouzt ?e)(uztot ?e):find (cuzt ?e):where [?e nfff ?n]])

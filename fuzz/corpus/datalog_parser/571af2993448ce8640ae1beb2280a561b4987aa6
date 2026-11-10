@@ -1,0 +1,1 @@
+(query [:where (or(not(e) [-a:(l)]))[?1:wr(( [e]))]])

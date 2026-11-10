@@ -1,1 +1,0 @@
-(query [:fintmu :where [?e l omaauc] (not-join [?e] [?e :ae tree][?e :e tree]YYYYY)])

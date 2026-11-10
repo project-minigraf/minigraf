@@ -1,2 +1,0 @@
-(query [:where [?:db/valid-at ?]( M[00]) [ :
-e ?] (f[])])

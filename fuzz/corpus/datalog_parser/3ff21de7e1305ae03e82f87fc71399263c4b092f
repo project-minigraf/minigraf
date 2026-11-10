@@ -1,2 +1,0 @@
-(query [:where (n)(que:yr[])(que:yr[])(que:yr[])
-])

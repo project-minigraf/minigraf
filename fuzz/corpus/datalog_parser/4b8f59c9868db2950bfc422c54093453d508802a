@@ -1,0 +1,1 @@
+(query [:where(e=?y) (u s:u s:)[(<:th ?y)?]:?0:where(e=?s)[(<:th ?y)?]:?0:where(es:u s:)[(<:th ?y)?]:?0:where(es)[(<:t ?y)?e] ])

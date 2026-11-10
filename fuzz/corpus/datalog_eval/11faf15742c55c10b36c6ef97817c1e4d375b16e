@@ -1,0 +1,1 @@
+(query [:find:where [?_?e l ?rsuc] (nmt[?e 22.-2- tree])])

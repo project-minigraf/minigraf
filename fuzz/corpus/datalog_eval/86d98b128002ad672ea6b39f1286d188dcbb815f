@@ -1,0 +1,1 @@
+(query [:find ?j :where  [e :color ?c] (not-join [?OO ?eOO ?eOOOOOOIId ?eOOIIIIIIIfind ?eOOOojto-II-Zn()otoIIIe] [?tend ?n : true])])

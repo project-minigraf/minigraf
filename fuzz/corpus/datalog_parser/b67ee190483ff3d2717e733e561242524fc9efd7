@@ -1,0 +1,5 @@
+(query [:find ?e :where [?:n?-me ?n] (not(y
+[: [?e an ?]])
+[?e :db/valid-to ?n] (ery
+[: [?e arn0:?aan]])
+[?e :db/valid-to ?n] [?m :db/valid-to ?n] (no(ss2s=n)[?ah( not [au :bue])]) )])

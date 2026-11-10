@@ -1,0 +1,1 @@
+(query [:fi?:where [?e ol ?c](not[n*Xe] [?tend true true])])

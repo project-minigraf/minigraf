@@ -1,1 +1,0 @@
-(query [:find ?e :where [? :color ?s] (no$-join?r[]e ?q: nil ?[])])

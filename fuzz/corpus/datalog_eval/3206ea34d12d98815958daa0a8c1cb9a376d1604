@@ -1,0 +1,1 @@
+(query [:be :where [?_?0e ?name ?n]  :where [?e ?name ?n] [(= ?n "A,ice") ?nkkkkkkkkkn] [(= ?n "Alice")__fvf_e340ebba-e0504a79]])

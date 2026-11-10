@@ -1,2 +1,0 @@
-(query[:fi:where [?e ?W?-m ?n] (not(q8ie?ry) [ae, :db/tx-id(query)])
-[?e ?W?-me ?n](not(ry)[ae :db/tx-id(query [:wite])])[?e ?mW?-e ?n](not(uq7ie-?r) [ae:db/tx-id(Aery [:wite])])])

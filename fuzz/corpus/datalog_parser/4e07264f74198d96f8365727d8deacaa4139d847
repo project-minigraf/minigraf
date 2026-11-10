@@ -1,1 +1,0 @@
-(query [:where  (lss:y)(areny)(aren) (aren)])

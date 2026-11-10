@@ -1,1 +1,0 @@
-(query [::where[? -me ?n] (not(qM?_??_??_) [a ?e :ru])])

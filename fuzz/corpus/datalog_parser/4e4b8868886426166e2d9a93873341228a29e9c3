@@ -1,2 +1,0 @@
-(query[:where [A e e] (not-join[ ](quer:ss=y) (or(qB)))])
-

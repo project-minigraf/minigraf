@@ -1,0 +1,4 @@
+(query [:where [rnot:nt ?] (sssuc[[?x 
+]])	[?x as ?] (se[[x 0]])[?x :passnt ?] (s?ye[[<x 
+]])[?x :trt ?] (sss[[?x 
+]])[?x sst ?a]])

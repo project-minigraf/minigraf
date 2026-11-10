@@ -1,1 +1,0 @@
-(query[::where[?e m l] (not [?e ?integer?_ann-9d e])])

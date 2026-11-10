@@ -1,0 +1,1 @@
+(query [:fin :where [?e sm ?J](not-join [?e] (query  whr)e [e])])

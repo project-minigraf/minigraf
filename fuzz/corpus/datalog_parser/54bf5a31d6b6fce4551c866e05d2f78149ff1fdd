@@ -1,0 +1,1 @@
+(rule [(p)[(string? ?y)]( p)[(string? ?W)](p)[(string? ?yW)]])

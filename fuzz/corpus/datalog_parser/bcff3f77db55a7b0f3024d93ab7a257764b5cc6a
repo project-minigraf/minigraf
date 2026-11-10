@@ -1,2 +1,0 @@
-(rule [(?y) (/ :re)(not(ssLLi) (?yLL) [ae?(y) [ ?
-]])[?x are ?1]])

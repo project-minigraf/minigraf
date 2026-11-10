@@ -1,0 +1,2 @@
+(query [::where (or(L:r B
+)[?e ad vre])(t()e)])

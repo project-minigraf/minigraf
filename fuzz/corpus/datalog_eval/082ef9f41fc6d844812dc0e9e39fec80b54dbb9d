@@ -1,0 +1,1 @@
+(query [:where [?e ?FFFFFFF ?c1] (not-join [?e ?_cHHHHc]  [?e ?lu?lyn6DDD2FEEeVFn2nyeFFFf-fn ?kqe])])

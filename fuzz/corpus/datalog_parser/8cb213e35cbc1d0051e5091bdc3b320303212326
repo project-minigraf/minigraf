@@ -1,4 +1,0 @@
-(query[:?1:where [q -e q](or
-[?e me e])(query [:fi ])
-:where [?e :n?-me ?n] (not(q-)
-[?e :db/valid-to ?_?n] (noerL) [ain ?e :wheru])])

@@ -1,0 +1,1 @@
+(query [:fnd:where [?e ??n ___?n][:?0744000e ??a ?n][:db/tx-id e98sua-join ?n][?0e h]])

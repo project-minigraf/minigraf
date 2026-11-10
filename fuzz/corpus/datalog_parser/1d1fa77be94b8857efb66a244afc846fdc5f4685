@@ -1,2 +1,0 @@
-(query [:where[: ee ?](not [:2 t ?](_) )(n ?
-1)])

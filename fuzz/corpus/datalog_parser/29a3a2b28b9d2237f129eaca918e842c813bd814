@@ -1,0 +1,3 @@
+(query [:where [rnot:name qee](cye[[/?x 
+]])[?x t ?BB][?x :parent ?B] [?x :p ?BBBn][?x :parent ?B] (sssucc[[?x 
+]])[?x ssSsss1t B?BB]])

@@ -1,0 +1,1 @@
+(query [:fin:w :where [?ena ?m2g ?p]  :where [(= 2"Alckndeqae")]])

@@ -1,0 +1,2 @@
+(query [:findsu :where [:coA ma olaa?rsuc] (not(query boolean?gler)
+)])

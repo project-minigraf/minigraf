@@ -1,2 +1,0 @@
-(query [:fiw :where [?e :name ?p]whe7e :wh:where [?e ?name ?n] [(= ?n "Alice")]])
-ry [:fiw :where [?e:n ame ?p]

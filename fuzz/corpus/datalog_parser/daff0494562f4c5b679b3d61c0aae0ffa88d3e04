@@ -1,0 +1,4 @@
+(query [:?1:where [q e qee?n] (or(L ?e :w?
+[])
+[?e we n?] (foe ?e)
+[?e wname n?] (d ?e :))(nmtot(qerye[])e)])

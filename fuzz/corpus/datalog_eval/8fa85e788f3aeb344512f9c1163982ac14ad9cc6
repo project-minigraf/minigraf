@@ -1,0 +1,1 @@
+(query [:fine :where [?e 1?c] (not-join[?e] [?ten true true])])

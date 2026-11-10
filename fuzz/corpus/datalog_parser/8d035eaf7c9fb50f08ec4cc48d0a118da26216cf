@@ -1,0 +1,1 @@
+(rule [(p)[(aq4n ?y)](p)[(contains? ?WW ?y)](p)[(contains? ?WWWn ?y)](p)[(contains? ?WWn ?y)](p)[(contains? WWW,y)]])

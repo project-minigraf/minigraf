@@ -1,0 +1,1 @@
+(query[:where [A e e?n] (not-join[] (rent=)[(+:th ?y)?ye?-mesB] (d)[(+:?y)?ye?-Q=ru])])

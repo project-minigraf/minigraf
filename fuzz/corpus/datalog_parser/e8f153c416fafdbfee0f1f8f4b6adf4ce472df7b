@@ -1,1 +1,0 @@
-(query[:where(query1t=)[(+nil :y)?] :where(t=)[(+nil :y)?y](q=)[(+nil :y)?y] [(+nil :y)?] ])

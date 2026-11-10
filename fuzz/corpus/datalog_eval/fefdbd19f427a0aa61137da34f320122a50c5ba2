@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :lor ?c] (ot-ZageId ?eeOrnZ-t)(oIIIIIIIInd ?eOOIIIiOOIO)])

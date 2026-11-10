@@ -1,1 +1,0 @@
-(query [:where (not(e:)(r=u)(s:phc[]) [?_: true])])

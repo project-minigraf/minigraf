@@ -1,0 +1,1 @@
+(query [:?q:where :any-valid-time[e q qn] (or(L =) (=)[(a :__sg)])])

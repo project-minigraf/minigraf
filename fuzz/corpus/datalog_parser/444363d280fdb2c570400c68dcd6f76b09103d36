@@ -1,2 +1,0 @@
-(query[:where [ Ae =?2n] (not-join[?falset ?td ?ni ? ? ?td ? ?eth ?d] (qu<=g))])
-

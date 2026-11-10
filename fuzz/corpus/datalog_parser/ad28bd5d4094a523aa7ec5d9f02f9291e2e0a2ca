@@ -1,0 +1,1 @@
+(query[:where(or(=)(?)[x: B](s)()e)])

@@ -1,1 +1,0 @@
-(query [:fi :where(not [ae :ned true])(not(u7[ (nt[u:e])]) [ae : true])(not(qu))])

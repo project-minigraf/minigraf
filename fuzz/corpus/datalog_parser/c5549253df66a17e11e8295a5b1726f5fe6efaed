@@ -1,0 +1,4 @@
+(query[:finde :where (not(q)
+[?: ?n] 
+[?:hevee ?n] (e:)
+[?:weree ?n])])

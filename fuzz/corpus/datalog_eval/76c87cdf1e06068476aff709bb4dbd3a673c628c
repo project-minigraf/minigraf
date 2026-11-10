@@ -1,0 +1,1 @@
+(query [:be :where [?0e ?name ?n]  :where [?e ?name ?n] [(= ?n "A,ice") ?nkkkkkkkkkn] [(= ?n "Alice")]])

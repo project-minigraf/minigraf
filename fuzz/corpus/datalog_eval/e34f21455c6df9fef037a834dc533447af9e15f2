@@ -1,0 +1,1 @@
+(query [:finfnin :w :where [?e ?name ?p]  :ere :where [?e ?nema ?n]  :where [?e ?name ?n] [(< ?n "Alice$) ?]  :w[(= ?n MAlice")]])

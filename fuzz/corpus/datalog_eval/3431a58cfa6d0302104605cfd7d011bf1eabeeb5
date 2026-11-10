@@ -1,0 +1,1 @@
+(query [:fi :where [?e :cor ?c] (nojto-in nil[coloh nil K]$z[])])

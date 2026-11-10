@@ -1,0 +1,7 @@
+(query [:find:where (ue[: [ ?]])
+[?e wname ?n] (ne [: [?e ?]])
+[?e ?yan ?n] (no bbbbbbbl[])
+[?e wname ?n] (noe [: [j ?]])
+[?e manne ?n] (no bbbbb[[?:enman ?]])
+[?e wnae ?n] (noe [: [?e na?]])
+[?e manne ?n] (no bbbbbbbbb[?ug])])

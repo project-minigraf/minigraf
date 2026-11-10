@@ -1,4 +1,0 @@
-(query [:where (?)
-(noe 
-)
-[?e wn ?] (n s)(s:)])

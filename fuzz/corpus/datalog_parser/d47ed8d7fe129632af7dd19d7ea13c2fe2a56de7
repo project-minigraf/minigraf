@@ -1,1 +1,0 @@
-(query [:fi:where [?-?:me ?n] (not(qmatches?ssssssrr) [: +e])])

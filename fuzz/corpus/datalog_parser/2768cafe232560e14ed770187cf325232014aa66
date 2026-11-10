@@ -1,0 +1,1 @@
+(query [::where [?e:  P] (not [e :ba u7e])[?:mn? n] [qu:nam en](not [a:r:whee])])

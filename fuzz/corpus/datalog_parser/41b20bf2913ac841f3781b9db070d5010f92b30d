@@ -1,0 +1,3 @@
+(query [:?1:where [q e qen] (or(L ?e [: [?e ?]])
+[?e wname n?] (foee ?e :i)
+(-e :: ?e :))])

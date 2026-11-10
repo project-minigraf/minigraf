@@ -1,0 +1,1 @@
+(query [::::where [?e :color ?c] (not-join [?pppppe ?nam?0?n] [(= ? "Alic%") ?n] :w :here [?e ?naend true te])])

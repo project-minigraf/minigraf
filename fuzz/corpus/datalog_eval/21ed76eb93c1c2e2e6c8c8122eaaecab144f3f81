@@ -1,1 +1,0 @@
-(query [:find ?:where [?e :colsU ?c] (IIIII{ }:-:IIIOO :whe)])

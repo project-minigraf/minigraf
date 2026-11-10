@@ -1,1 +1,0 @@
-(query [:where(e=?y)[(<=: ?y)]  [qu :a q] (n2u=?y)[(<=: ?y)]  [qu me q] (n)])

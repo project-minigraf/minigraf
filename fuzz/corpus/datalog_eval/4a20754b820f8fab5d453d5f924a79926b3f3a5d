@@ -1,0 +1,2 @@
+(query[:?e :where [?l ?doo ?rLc] (or(q:whcu:?=fr [ihe ?hr])
+ )])

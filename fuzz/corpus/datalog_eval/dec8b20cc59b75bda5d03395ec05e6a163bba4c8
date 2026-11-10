@@ -1,1 +1,0 @@
-(query ![:finnere [?e ?nam1e ?+] [?e ?name ?n] [(e [?cZ 'name ?n]  :ce")]:/])

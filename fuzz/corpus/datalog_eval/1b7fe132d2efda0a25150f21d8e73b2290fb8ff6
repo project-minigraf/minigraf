@@ -1,1 +1,0 @@
-(query [:find ?id ?e :find ?e :find ?e ])

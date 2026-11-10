@@ -1,1 +1,0 @@
-(query [:?:where[q e q](or(Lque ?e s)[?e n e])])

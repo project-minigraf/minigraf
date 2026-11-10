@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :m ?-en] (not(qcQ06) )(not(q943) )(not(qu-) [ae :baned true])(not(qus) [ae :bned true])(not(q[: [?e /]])
+[?e wa t0pu])])

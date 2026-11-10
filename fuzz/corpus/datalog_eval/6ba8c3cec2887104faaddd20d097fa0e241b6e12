@@ -1,0 +1,1 @@
+(query [:where (j [?E] ?a: e[cc::::*:3:])])

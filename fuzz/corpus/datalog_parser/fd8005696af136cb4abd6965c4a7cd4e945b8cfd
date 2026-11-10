@@ -1,2 +1,0 @@
-(query [:?1:where [q e qGn] (or(L
-[?])(not(q) [eh (not )]) [e :nnu e])])

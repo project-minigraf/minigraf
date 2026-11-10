@@ -1,2 +1,0 @@
-(query [:find ?e :where [e?n ?-me ?ne?nfa?_e]  [?e me ?n] (not(que:[: [em:ana n ?]])
-[?e wmd t])(not[?e wneed tru])])

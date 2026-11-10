@@ -1,0 +1,2 @@
+(query  [:where (or(LH  ?e)):?er?0:where (orot [:n:?n])[ssssssss :db/valid-to ?n] (nose[?e :wh
+er])])

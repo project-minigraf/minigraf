@@ -1,1 +1,0 @@
-(query [:where(e=?y) (u s:)[(<:th ?y)?]:where[(<:t ?y)?e] ])

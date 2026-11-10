@@ -1,0 +1,4 @@
+(query [:where (y:
+[: []]):where (ue:r[:[??]])
+[?e wname ?n] (noe [?ug])
+[?e wn ?n] (n ?sm[:f])])

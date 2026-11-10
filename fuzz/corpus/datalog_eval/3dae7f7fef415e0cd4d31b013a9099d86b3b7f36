@@ -1,1 +1,0 @@
-(query [::clo:where [?e :name ?n] [(>= ?n"Aclie")?l]])

@@ -1,3 +1,0 @@
-(query [:where [?o :n?-m ?]  [?e :n ?n] (not(q
-[: [ ?]])
-[?e ame ?n][ae:ed tre])])

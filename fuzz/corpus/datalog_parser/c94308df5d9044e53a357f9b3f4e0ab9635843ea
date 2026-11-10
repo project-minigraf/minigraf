@@ -1,0 +1,5 @@
+(query [:where [? :n ?n]  [?e :n?-me ?n] (not(q
+[: [?em:an]])
+[?e false ?n] (n) [ae :bann true])(not(quassss)
+[?e e ?n](nos)
+[?e wname ?n] [ae anned true])])

@@ -1,1 +1,0 @@
-(query [:find ?f :where [?e:name(= "Al")]])

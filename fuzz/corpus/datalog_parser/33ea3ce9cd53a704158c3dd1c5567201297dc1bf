@@ -1,0 +1,1 @@
+(query  [:where [q e un?](or(u:-- [])(n:r_bb [  ]) [es true])(-t(q[?r])e)])

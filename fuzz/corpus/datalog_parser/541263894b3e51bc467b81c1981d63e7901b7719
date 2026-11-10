@@ -1,0 +1,1 @@
+(rule [(p)[(qnnot-oin ?y)](pt?y)[(aW-join ?y)](p)[(W ?y)](p)[(aW-join ?y)](p)[(WWoin ?y)][(aW-join ?y)](p)[(a ?y)](?)[(-j-jWWy)]])

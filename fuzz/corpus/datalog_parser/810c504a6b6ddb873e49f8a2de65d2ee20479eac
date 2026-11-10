@@ -1,1 +1,0 @@
-(query [:where [q e q] (or(y) (yvvh( o)) [a:db/tx-id t])(n)])
