@@ -1,1 +1,0 @@
-(query [:where (query[8])[? ?nl ?n] [(- :_r"e")]])

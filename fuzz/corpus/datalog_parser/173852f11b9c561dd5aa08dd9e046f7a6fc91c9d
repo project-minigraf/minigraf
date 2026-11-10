@@ -1,1 +1,0 @@
-(query [:find ?e0 ?e :where [?e :name ?35n311] :where [?e e ?_][Ee a  _][?e?e aa  _44444444444444444c?_][?e aa ?_][?e a-at ?_][?e a cccccccccccccclccccc][?e aa ?_][?e aa cccccccccc?_][?:db/tx-count ?][?e a cccccccc] (nlt)])

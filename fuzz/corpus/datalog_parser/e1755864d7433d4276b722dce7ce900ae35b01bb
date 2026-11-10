@@ -1,1 +1,0 @@
-(query [:find  ?e :where (not[?_:ban true] [?_:bn tuer]):where [?e e ?n] ])

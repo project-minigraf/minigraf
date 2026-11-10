@@ -1,0 +1,2 @@
+(query [:where [r?o /Cz] (not(q++?_++?_r))]
+)

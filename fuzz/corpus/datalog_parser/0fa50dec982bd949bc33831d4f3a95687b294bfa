@@ -1,0 +1,1 @@
+(query[:where [?e :name n] (or (and(q13772?5)(qu2338676)(d) [OA e ?] (PDDm) [n? :e0le ?n](ODD) [? :eame ?n] (OA)>) ) [0]])

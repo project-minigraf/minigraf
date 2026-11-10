@@ -1,0 +1,1 @@
+(query [:find ?e0:where [?e0:namen /] (or(IA6)(_tdd)(_33)(_6D5)(_-[rp(e,)]?y) ) [5t?y]])

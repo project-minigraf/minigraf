@@ -1,0 +1,1 @@
+(query [:where (or(eTTTT)[(integer? :?)  ?n] (nT)[(integer? ?y)] (nruTAAA)[(integer? ?y) ] (nd t) ) [?y]])

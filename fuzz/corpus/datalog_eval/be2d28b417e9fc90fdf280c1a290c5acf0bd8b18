@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?ysne true]  [?e6 ?l6e ?n] [(>?n "e")]])

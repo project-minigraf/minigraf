@@ -1,2 +1,0 @@
-(query [:where (not[(r:x)])(quer [:wh])
-])

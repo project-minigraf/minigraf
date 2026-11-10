@@ -1,1 +1,0 @@
-(query [:with ?e0:where(or(enoOO:t)[(boolean? ?y)  ?n] )(or(enoOO:t)[(boolean? y)  ?n] )any-in? [6xaY]])

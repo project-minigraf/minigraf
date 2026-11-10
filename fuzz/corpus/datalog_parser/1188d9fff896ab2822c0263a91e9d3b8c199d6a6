@@ -1,0 +1,1 @@
+(query [:where[? ?ye#{7true}] (or(e:-) )])

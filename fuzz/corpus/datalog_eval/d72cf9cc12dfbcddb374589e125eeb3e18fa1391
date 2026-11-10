@@ -1,0 +1,1 @@
+(query [ :where [?eo ozrlc ?A] (not-join [?e] [_YYYYY og e]):where [?e zcor ?c] (not-join [?e] [i o?ic e])])

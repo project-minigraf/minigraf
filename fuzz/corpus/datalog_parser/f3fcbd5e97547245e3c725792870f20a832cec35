@@ -1,2 +1,0 @@
-(query [:with ?e  ?e  ?e ?:where [?	 :Name ?n](tr[?e:db/valid (query [:?rue])])
-:find (count ?e) :where [?e:nae ?n]])

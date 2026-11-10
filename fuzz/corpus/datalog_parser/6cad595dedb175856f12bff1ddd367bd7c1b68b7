@@ -1,1 +1,0 @@
-(query[:find ?e :where [?e me ?yv] (not [?e? a _][?e a eeeeerue])])

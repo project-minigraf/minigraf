@@ -1,0 +1,1 @@
+(query [:where(ACAOO ?y:e)[(x 5.) ?n][(fx ?y) ?] ])

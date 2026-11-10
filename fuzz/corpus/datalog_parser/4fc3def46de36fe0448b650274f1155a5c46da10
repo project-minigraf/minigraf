@@ -1,1 +1,0 @@
-(query [:where [?:g ?aaaaaaaan]  [?e:name ?n] (not [?e :nd tretcaue])])

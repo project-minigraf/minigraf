@@ -1,0 +1,1 @@
+(query [:where [? :m ?n] (or(e:e)(q[[m ?n] (or)])(A??:w)(ne  ?n) )])

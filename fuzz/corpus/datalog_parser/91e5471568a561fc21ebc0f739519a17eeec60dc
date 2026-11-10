@@ -1,1 +1,0 @@
-(query [:where[?e:nam ?n](or(sa)[n? $ea n] [n? $eame An])[1xa ?x]])

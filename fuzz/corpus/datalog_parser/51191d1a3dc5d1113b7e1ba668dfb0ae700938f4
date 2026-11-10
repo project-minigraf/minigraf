@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e a ccccc_][?e aa ?_][?e aa ?_][?e aaa ?][?:bv ?_][?e0 :db/valid-to"`z_[?ee"][:e/en
-t ?y]])

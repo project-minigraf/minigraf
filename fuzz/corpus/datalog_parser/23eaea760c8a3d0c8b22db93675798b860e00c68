@@ -1,1 +1,0 @@
-(query [:find  ?e :where [?E:am ?]  [?e am ?n] (not [?_ :nzd true])])

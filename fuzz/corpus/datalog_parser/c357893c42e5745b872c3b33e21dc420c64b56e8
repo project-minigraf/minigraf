@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :e ???n] (nehe{}{}{}{}38 ?y)[(fx 1.)  ?n]  (nehe75 X)])

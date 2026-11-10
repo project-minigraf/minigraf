@@ -1,1 +1,0 @@
-(query [:where (A#{}s):limit 0])

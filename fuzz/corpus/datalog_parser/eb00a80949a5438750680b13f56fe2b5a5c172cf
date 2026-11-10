@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?E :Name ?n] (nonot[_ :ba True])(not [A2 :banle true]):where [?e :namename ?n] (not[_ :ba true])(not [?e :ban true])])

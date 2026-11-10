@@ -1,1 +1,0 @@
-(query [:find ?e :where [?:Nale ?n]:where [?e :naenjme ?n] (not[:e :zd true])])

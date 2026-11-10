@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?nfye ?n] [(none-in?>rue"e")]])

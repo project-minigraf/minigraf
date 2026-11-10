@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where [?:e ?n](n([(p)($i)])):where [?e :n ?n](not [?e :bannd t])])

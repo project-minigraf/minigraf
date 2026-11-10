@@ -1,0 +1,1 @@
+(query [:where [?e 4e??n ] (ne ?y)[(fx nil )?] (nA)[(fx nil )?y] (dt)])

@@ -1,0 +1,2 @@
+(query [:with ?e  ??:where [?	 :Name ?n](or-join[][?e:d/+valid (mi334522ry [:?])])
+[?e:nae ?n]])

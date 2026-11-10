@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e ?a:nm ](not[?e :nt eue])(not [?e ɝd ue])])

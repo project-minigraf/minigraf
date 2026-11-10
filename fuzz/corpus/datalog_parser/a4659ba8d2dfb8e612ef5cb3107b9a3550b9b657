@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	 :e ?n](transact[][(query [:?le "ee"])])
+:find  ?e ?:where [?	 :Name ?n](not-join[]
+[?e :name nccccccccc?_][?e ccccccvalid n] [(fx ?y)  ?n] (A?nAnnd n)[(f i[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,2 @@
+(query [:where[(=:n:?de)?c]  [?e ?lynFqfn ?c]])
+

@@ -1,2 +1,0 @@
-(query [:with ?n  ?e ?:where [?	 :Name ?n](traact[][alid ( [:ue])])
-:find (counp ?e) :where [?e:nae n]])

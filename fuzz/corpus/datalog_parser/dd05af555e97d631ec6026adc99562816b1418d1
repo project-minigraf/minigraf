@@ -1,0 +1,1 @@
+(query [:find  ?e :where [?e :me ?n](not [?e ?_inaa ?_][?e aY2 ?_][?_a aaatret rue])])

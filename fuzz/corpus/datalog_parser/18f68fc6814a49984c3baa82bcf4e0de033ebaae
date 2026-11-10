@@ -1,0 +1,1 @@
+(query [:find ?e  ?e:where [?e :e ?] (ne ?y)[(nx ?y)  ?n](ne ?)])

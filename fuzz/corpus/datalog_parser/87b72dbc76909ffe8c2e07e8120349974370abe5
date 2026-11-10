@@ -1,0 +1,4 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][jjjjjjjjjjjjj ??d ?e ][?jjjjjjjjjjjjjjjjjhjjqjjj ??e/ ?nw] (ow(enm,?q32219y ?Hn) )[? :db/tx-id ?e ][?jjjjj ??e/d ?e])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (quey r[:?rue]e:wi[:?erue])])
+:find (count ?e) :where [?e:nae ?n],,])
+,,

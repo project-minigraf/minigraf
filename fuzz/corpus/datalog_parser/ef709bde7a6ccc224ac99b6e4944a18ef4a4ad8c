@@ -1,0 +1,2 @@
+(query [:with ?e :where [z?/ :Name In](not-join[][fals?_?e:db/vali()])
+:find (co ?e) :where [?e:nae ?n]])

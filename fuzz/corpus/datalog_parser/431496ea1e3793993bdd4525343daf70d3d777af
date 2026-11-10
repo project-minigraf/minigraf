@@ -1,0 +1,4 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/nalid (query  ?y) ] (y:T)[(fx ?y) ] (ne ?y:T)[(fx ?y)  ?n] (nd tOqqqqqqqqqqqqq6w)[(fx ?y)  ?n] (nd tOhegAAAO6O)[(fx ?y)  ?n] (Ie O)[(fx ?y)  ?n] (nne ?y:T)[(fx ?y)  ?n] (nd tOqqqqqqqqqqqqq2w)[(fx ?y)  ?n] (nd tOhegAAAO6O?y:T)[(fx ?y)  ?n] (nd tOqqqqqqqqqqqqq2w)[(fx ?y)  ?n] (nd tOhegAAAO6O)[( [:?rue])])
+ :db/valid-to(cou ?e) ;whe?erue])])
+:find e [?e:nae ?n],,])
+,,

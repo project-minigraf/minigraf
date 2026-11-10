@@ -1,0 +1,4 @@
+(query [:where(ACA1d ?eA038911542068:?߉)(E:fren0)(AAA1542068:n0)(AAA3  :nil0)(A351531n44043?nA:?߉)(G:fpen0OAAD)(AAcount ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[][?e:db/valid (qu ?e  [:?rue])])
+:find (count ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](n:nil0)(A351531n44043?nA:?߉)(G:fpen0OAAD)(AAA0 :wnil0)(A?a?2_nA:?߉l0)(A1AAA3  :nil043?nA:0)(A?a:?߉l0)(A?a?a_nA:?߉)(qAueOKO ?y:e)[(fx ?y) ?n] ])

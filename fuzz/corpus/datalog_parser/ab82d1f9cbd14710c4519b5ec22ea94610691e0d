@@ -1,0 +1,1 @@
+(query [:where(or(or(D 4<)(AAA 7<)(AAAAC 7<)(AAAAA 7<)(A1=)) ) ])

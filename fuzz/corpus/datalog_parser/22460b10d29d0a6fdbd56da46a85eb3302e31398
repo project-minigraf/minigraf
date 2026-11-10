@@ -1,0 +1,3 @@
+(query[:with ?e  ?e ?:where [?	Name ?n](nsa""""""""""""""""t ?e) ;A?nAA?nA])])
+:where [?	 :Name ?n](not-join[?e][?e:db/nali (qujry [:?rue])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,1 @@
+(query[:where (p?e 2)(nA:_b)(E:e)])

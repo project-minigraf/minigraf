@@ -1,0 +1,1 @@
+(query [:with ?n :where [?e ?nm ?c][?e ?lylid-to:findrc][TTTTTT:db/valid-to:b]  [?e ?(>=?n "e")]])

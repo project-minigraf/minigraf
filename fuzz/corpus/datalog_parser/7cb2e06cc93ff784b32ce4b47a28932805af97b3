@@ -1,0 +1,1 @@
+(query [:find ?ee :where [? 3"Afc"][? aa a_](not [?:band ?e?]):where(not [?:db/tx-id ?e?e]):where [?e Cname ?nuuid]])

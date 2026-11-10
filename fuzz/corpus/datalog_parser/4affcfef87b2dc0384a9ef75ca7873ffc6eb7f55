@@ -1,1 +1,0 @@
-(query [:where [? e ?n](or(enD) [n? eame ?n] (D) [n? :e napn]) ])

@@ -1,1 +1,0 @@
-(query [:find ?e8:where [?0:namen ?](or(pp)[(x ?y)] ( a[r]??y) ) ])

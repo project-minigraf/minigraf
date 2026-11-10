@@ -1,1 +1,0 @@
-(query [:where [? aie ?n] (not [?e :nDct ?_][?e a ccccc_][?e a cc_][?e aaaaaa ?_][?e aaaoaaaoinaa ?ccccccccccccccca_][Ce a ?_][?e aaaaaa ?_][?e aaaaaoinaa ?_][?e aaa ?_][$0?a ?_][$e:db/valid-to ?__][?e tned z])])

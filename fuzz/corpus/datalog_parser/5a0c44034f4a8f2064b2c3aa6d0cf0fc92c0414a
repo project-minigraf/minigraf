@@ -1,0 +1,1 @@
+(query [:where (not(u0d ?z) ) [6t ?y]])

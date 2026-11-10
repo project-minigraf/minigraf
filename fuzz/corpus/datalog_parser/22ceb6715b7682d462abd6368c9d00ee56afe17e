@@ -1,1 +1,0 @@
-(query [:where (r? 5.e 7.4)z(AA)])

@@ -1,0 +1,1 @@
+(rule [(f)[(collect-set tr:e)][]])

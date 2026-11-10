@@ -1,1 +1,0 @@
-(query [:where [?:d ?z,] (not [0:b ?_6])(not [ ?:b ?_?])[?:nae "",] (Jnot [ 02b])])

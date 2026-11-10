@@ -1,1 +1,0 @@
-(query [ :where [?()  ?n]:order-by[(x ?y)  ?n] (nd X)])

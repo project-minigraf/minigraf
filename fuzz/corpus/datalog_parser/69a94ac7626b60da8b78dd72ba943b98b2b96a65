@@ -1,1 +1,0 @@
-(query [:where [?:nae ?,] :where (not [ ?:b ?_?])[9:nae ?,]  [?:nad ?,] (not [? :4824451b ?_?])])

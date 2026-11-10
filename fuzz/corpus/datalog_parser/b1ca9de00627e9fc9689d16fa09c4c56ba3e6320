@@ -1,0 +1,1 @@
+(query [:where [?e a ?_][?e t _][?e :-5o""][:2 :db/valid-to"baee"][:e:8e ?y]])

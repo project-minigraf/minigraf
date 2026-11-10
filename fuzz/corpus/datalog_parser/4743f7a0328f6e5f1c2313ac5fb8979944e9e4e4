@@ -1,1 +1,0 @@
-(query[:find (count ?e):where(cou ?e)[?e :ae ?]])

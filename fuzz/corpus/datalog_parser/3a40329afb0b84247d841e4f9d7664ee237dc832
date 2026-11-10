@@ -1,0 +1,1 @@
+(query[:find ?e :where (q:t)(q:e>>>>e >>> e>>3AAAe>>37)(q:t->>*?e>003)(q)])

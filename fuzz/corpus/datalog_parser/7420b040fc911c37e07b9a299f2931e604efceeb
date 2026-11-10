@@ -1,0 +1,1 @@
+(query [:with ?e0:where  [?e :e ?n] (not(t)[(f ?y)  ?n] ) [9xent ?y]])

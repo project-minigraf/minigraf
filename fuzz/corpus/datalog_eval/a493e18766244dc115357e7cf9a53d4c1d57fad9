@@ -1,0 +1,2 @@
+(query [ :where [(nil?([:w]))
+]])

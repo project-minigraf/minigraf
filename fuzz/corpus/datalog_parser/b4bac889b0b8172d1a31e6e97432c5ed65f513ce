@@ -1,0 +1,2 @@
+(query [:with ?e  ?  ?e ?:where [?	 :Nme ?n](tr[?id (query [:?rue])])
+:find (count ?e) :where [?e:nqe ?n]])

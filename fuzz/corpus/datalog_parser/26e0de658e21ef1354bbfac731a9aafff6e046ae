@@ -1,0 +1,5 @@
+(query [:with ?e  ?e ?:where [?	 :NXLe ?n](transact[][?e:5 ([:?rue])])
+:find (count ?e) ;wry([ ;e) :where [?eue])])
+:find  ?e ?:where (not-join[]
+[?e :name ?ccccc?_][?e ?ccccccvalid (q?yue [:?rue])])
+:find (count ?e) :where [?e:nae ?n]])

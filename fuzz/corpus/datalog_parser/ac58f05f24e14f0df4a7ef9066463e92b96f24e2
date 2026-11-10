@@ -1,0 +1,2 @@
+(query [ :any-valid-time:where [?e :Ne ?n] (nmt [d gggot_?e (query [:find ?e :where ])])[:e/1 ?inelo"e"][:e/1 :db/valid-to"]Y:e/."][:een
+t ?y]])

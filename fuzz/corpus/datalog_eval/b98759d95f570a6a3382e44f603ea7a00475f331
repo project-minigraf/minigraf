@@ -1,0 +1,1 @@
+(query [:where [:e :lor ?c]  :where [:e :r ?c] :where [:e :lor ?c] :where [:e :co ?c] (nj-[?n]) :where [:e :r ?c] :where [:e :lor ?c] :where [:e :co ?c] (nk-[?n]) :where [:e :cohor ?c] (n [:j ])(ej-[?m])])

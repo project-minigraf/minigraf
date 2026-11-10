@@ -1,0 +1,2 @@
+(query[:where [?e:s true][:nt ?
+y]])

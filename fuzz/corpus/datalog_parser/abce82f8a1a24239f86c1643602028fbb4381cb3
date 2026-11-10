@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e 8n ] (ne ?y:T)[(fx ?y) ] [(fx ?y)  ?n] (nd tOqqqqqqqqqd:T)[(fx ?y) ] (ne ?y)[(fx ?y)  ?n] (nd tOqqqqqq X)])

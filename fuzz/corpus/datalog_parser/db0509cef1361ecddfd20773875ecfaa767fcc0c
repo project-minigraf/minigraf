@@ -1,0 +1,1 @@
+(query [:find ? :where[?e 	?_ldl"e"][:e/3:d/ ?]])

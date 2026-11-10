@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [W?	 :NXme ?_?n](or-join[][:db/valid-to?e:db/vald (query [:?rue])])
+:find (couunt ?e) :where [?e:nFae ?n]])

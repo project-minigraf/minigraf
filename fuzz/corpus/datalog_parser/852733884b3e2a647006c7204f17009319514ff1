@@ -1,0 +1,7 @@
+(query [:with ?e ?:where [?	 :NXmme ?n](not-join[]
+[?e :name ?nccccccccccccc?_][?e ccccccvalid (q?yuery [:?rue])])
+:find (count ?we) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[]
+[?e :name ?ncccccccccccc?_][?e ccccccvalid (q?yuery [:?rue])])
+:find (coun ?e) ;wry]:?erue])i[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

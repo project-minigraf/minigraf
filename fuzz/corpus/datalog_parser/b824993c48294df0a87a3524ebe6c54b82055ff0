@@ -1,1 +1,0 @@
-(query [:where [?00 :oe ?n] (or(no,?y ?u) )])

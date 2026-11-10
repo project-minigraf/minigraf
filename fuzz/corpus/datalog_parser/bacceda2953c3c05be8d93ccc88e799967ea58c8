@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :jjjjto 64.][:3:n2222 64.][:3:ne ""][:e :n 64.][:3e/en
+t ?y]])

@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e 4n ] (ne ?y:T)[(fx ?y) ] (ne ?y)[(fx ?y)  ?n] (Ie O)[(fx ?y)  ?n] (nd:T)[(fx ?y) ] (ne ?y:T)[(fx ?y)  ?n] (nd tOqqqqqOqqqq:db/vodb/vqlid-fromw)[(fx ?y)  ?n] (nd tOhd:T)[(fx ?y) ] (ne ?y:T)[(fx ?y)  ?n] (nd tOqhewIe AAAA2AO6O)[(fx ?y)  ?n] (Ie O)[(fx ?y)  ?n] (nd:T)[(fx ?y) ] (ne ?q X)])

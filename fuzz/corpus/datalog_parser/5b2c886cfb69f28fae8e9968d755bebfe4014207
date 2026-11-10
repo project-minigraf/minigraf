@@ -1,5 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :NXme ?n](transact[][?e:db/valid eu (yr[q:?rue])])
-:find (count ?e) ;wry [:e])])
-:find  ?e ?:where [?	 :Name ?n](not-join[][?e:db/valid (query [:?rue])])
-:find (count ?e) ;wry [LLLLLLLL (co,nt ?e) ;act[]
-:find (count ?e) :where [?e:nae ?n]])

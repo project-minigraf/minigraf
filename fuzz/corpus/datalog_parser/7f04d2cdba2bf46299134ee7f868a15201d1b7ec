@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :Name ?n] (nt D[?e :d true]):where [?e :cme ?n] (or [?e :banne true]):where [?eN:OOOOOOOOOOme ?n] (n:where [?e :Nzd true])])

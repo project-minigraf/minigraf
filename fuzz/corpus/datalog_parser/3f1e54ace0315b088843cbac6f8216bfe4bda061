@@ -1,0 +1,8 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](transacount ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+:find (count ?e) ;wry [;wre mi3344e [?	  ?e ?:where [?	 :Name ?n]])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+:find (count ?e) ;wry [ ;wre mi334e) ;wry [:with ?e  ?e  [:?rue])])
+:find (count ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](nunt ?e) ;wry [:wi[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

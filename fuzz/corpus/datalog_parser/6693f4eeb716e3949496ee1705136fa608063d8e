@@ -1,0 +1,2 @@
+(query[:find ?e :where [?e a"Ae"][:----:-
+o]])

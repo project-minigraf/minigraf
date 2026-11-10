@@ -1,0 +1,1 @@
+(query [ :where [TTTe ol orc][:db/tx-count :ec?ololor ?ej] (njoin [?uqe ?fn ?] )])

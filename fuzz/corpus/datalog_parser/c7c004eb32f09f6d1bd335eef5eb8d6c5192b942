@@ -1,1 +1,0 @@
-(query [:where(e :O:fidOne):where(qVOO ?y:e)[(fx:AAAAJt?y) ?n][(fx ?y) ?n] ])

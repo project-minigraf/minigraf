@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e 4:nil0e??n ] (ne ?y:T)[(Cx ?y)  ?n][(fx ?y)  ?n] (Ie AAAAAI)[(fx ?y)  ?n] (nd X)])

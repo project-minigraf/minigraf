@@ -1,1 +1,0 @@
-(query[:where (or(z ?:nad))  (or(r3 ?0036ad))  (or(r3 8))])

@@ -1,0 +1,1 @@
+(query [:where (pd 61#{}0),:where (pd ?1{}0)])

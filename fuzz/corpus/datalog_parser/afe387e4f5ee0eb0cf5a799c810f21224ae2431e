@@ -1,1 +1,0 @@
-(query [:where [? :m ?n] (or(e:e)(query [:whe [m ?n] (or)])(A??:w)(name  ?n) )])

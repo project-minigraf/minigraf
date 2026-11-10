@@ -1,0 +1,1 @@
+(query [:find ?e :where (ru ?e true:hwere AAAAA0)(AAAACd e true:hwere AAAA>>)(AAAACd ?e true:q)(AAAAKd ?e true>n>>>)(_ACd ?e true>>>)(AACd ?e true:ue>>)(AAAACEAACd ?e true:hwere) [?x :e/0nt ?y]])

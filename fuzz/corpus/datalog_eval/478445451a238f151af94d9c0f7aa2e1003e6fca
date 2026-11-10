@@ -1,0 +1,1 @@
+(query [:where (not [-?*n][Ge :ac:u] [G :c?ol or][oT:c?ol :u] [G?e :ac:u])])

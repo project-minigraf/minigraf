@@ -1,0 +1,3 @@
+(query [:with ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/nali/ (query [:?rue])])
+:find (count ?e) ;wry [nt  ?e) ;whe?erue])]/
+:find  ?e ?:where [?	 :Namme ?n](not-join[?ejj161jjyqjjjjjjyqjjjjjjjjjjjj ??d ?ejjjjjjjjjjjjjhjjqjjj ??e/ ?nw] ?ecount ?e) :where [?e:nae ?n],,])

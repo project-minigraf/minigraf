@@ -1,0 +1,1 @@
+(query [:find ?e :where[?e 2?n ] (e ?y:Td)[(/1 ?y)  ?n](Ie AAAI)[(/1 ?y)  ?n] (nd X)])

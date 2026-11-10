@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n?n](not-join[?e][?:e/dbnalid (AAA_nA[:?rue])])
+:find (count ?e) ;wr ;wry [:with
+:find (count ?e) :where [?e:nae ?n],,])
+,,

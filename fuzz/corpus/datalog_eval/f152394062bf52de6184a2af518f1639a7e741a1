@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e FF?FFFF ?c] (not-join [?e] [TooTTTTT:c ?rloorc][ooooTTTTT:c ?rlooc][TTTToooooo?e ?_ctiver ?])])

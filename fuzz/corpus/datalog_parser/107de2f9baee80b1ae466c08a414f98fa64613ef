@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	?iName ?n](transact[][:d/valid ])
+:find (count ?) :where [?e:oae ?n]])

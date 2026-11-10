@@ -1,0 +1,1 @@
+(query [:where [?e me ?n] (or(edDfin) [n?:ece ?n] (D) [n?J:ame ?n] (OAAD) [n? :eme Hn] (AD) [n me ?n] (DDD) [n?:eame ?n] (D) [n :ee?am n] (OAAD) [n? :eame Hn] (AD) ) [2xa5enet ?y]])
