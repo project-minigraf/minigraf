@@ -10,6 +10,9 @@ mod binds;
 pub mod buffer;
 /// Async IndexedDB backend for browser WASM persistence.
 pub mod indexeddb;
+/// Tests of `BrowserWriteTransaction` (#824).
+#[cfg(all(target_arch = "wasm32", feature = "browser", test))]
+mod tx_tests;
 /// User-defined functions from JavaScript (#180).
 mod udfs;
 
@@ -39,6 +42,24 @@ struct BrowserDbInner {
     /// Free pages whose bytes are kept because an open cursor's generation
     /// may read them (#543); dropped by a later commit once out of force.
     withheld: Vec<u64>,
+    /// Whether a `BrowserWriteTransaction` is open (#824): every other call
+    /// that reads or writes is then `INT-001`.
+    tx_open: bool,
+}
+
+impl BrowserDbInner {
+    /// `INT-001` while a transaction is open.
+    fn refuse_in_tx(&self) -> anyhow::Result<()> {
+        if self.tx_open {
+            crate::error::bail_coded!(crate::error::ErrorCode::Int001);
+        }
+        Ok(())
+    }
+}
+
+/// `INT-001` while a transaction of `db` is open.
+fn refuse_in_tx(db: &RefCell<BrowserDbInner>) -> Result<(), JsValue> {
+    db.borrow().refuse_in_tx().map_err(to_js_error)
 }
 
 /// Browser-only Minigraf database handle backed by IndexedDB.
@@ -73,6 +94,7 @@ impl BrowserDb {
                 pfs,
                 idb: None,
                 withheld: Vec::new(),
+                tx_open: false,
             })),
         })
     }
@@ -107,6 +129,7 @@ impl BrowserDb {
                 pfs,
                 idb: Some(idb),
                 withheld: Vec::new(),
+                tx_open: false,
             })),
         })
     }
@@ -120,6 +143,7 @@ impl BrowserDb {
     /// - Rule: `{"ok": true}`
     #[wasm_bindgen(js_name = execute)]
     pub async fn execute(&self, datalog: String) -> Result<String, JsValue> {
+        refuse_in_tx(&self.inner)?;
         let cmd = parse_datalog_command(&datalog).map_err(to_js_error)?;
         // BrowserDb takes no options: the default override list (#869).
         if let DatalogCommand::Query(q) = &cmd {
@@ -169,6 +193,7 @@ impl BrowserDb {
     /// `[API-010]` for a query with `$slot` bind slots.
     #[wasm_bindgen(js_name = query)]
     pub fn query(&self, datalog: &str) -> Result<BrowserCursor, JsValue> {
+        refuse_in_tx(&self.inner)?;
         let cursor = self.query_inner(datalog).map_err(to_js_error)?;
         Ok(BrowserCursor {
             vars: cursor.vars().to_vec(),
@@ -190,6 +215,7 @@ impl BrowserDb {
     /// ```
     #[wasm_bindgen(js_name = prepare)]
     pub fn prepare(&self, datalog: &str) -> Result<BrowserPreparedQuery, JsValue> {
+        refuse_in_tx(&self.inner)?;
         let query = self.prepare_inner(datalog).map_err(to_js_error)?;
         Ok(BrowserPreparedQuery {
             _db: self.inner.clone(),
@@ -203,6 +229,7 @@ impl BrowserDb {
     /// so `checkpoint()` is only needed after `import_graph()` or explicit bulk ops.
     /// No-op for in-memory databases.
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
+        refuse_in_tx(&self.inner)?;
         let (flush, idb) = {
             let mut inner = self.inner.borrow_mut();
             inner.pfs.save().map_err(to_js_error)?;
@@ -259,6 +286,7 @@ impl BrowserDb {
     /// queryable and all dirty pages are flushed to IndexedDB.
     #[wasm_bindgen(js_name = importGraph)]
     pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
+        refuse_in_tx(&self.inner)?;
         let bytes = data.to_vec();
         if !bytes.len().is_multiple_of(crate::storage::PAGE_SIZE) {
             return Err(JsValue::from_str(
@@ -311,6 +339,42 @@ impl BrowserDb {
         }
         Ok(())
     }
+
+    /// Begin a write transaction (#824): its `execute` stages writes and
+    /// reads them back, `commit()` applies them as one transaction and
+    /// stores it, and `rollback()` discards them.
+    ///
+    /// Synchronous. Takes no options. While it is open, every other call on
+    /// this database that reads or writes (`execute`, `query`, `prepare`,
+    /// `checkpoint`, `importGraph`, another `beginWrite`, and a prepared
+    /// query's `execute`/`query`) throws or rejects with `[INT-001]`, so
+    /// other asynchronous code cannot mistake the database for the
+    /// transaction. A cursor opened before keeps returning its rows. Always
+    /// end it, in a `finally` if need be:
+    ///
+    /// ```js
+    /// const tx = db.beginWrite();
+    /// try {
+    ///   tx.execute('(transact [[:alice :balance 90] [:bob :balance 110]])');
+    ///   const rows = JSON.parse(tx.execute('(query [:find ?b :where [:alice :balance ?b]])'));
+    ///   if (rows.results[0][0] < 0) tx.rollback(); else await tx.commit();
+    /// } finally {
+    ///   tx.rollback(); // does nothing once committed
+    /// }
+    /// ```
+    #[wasm_bindgen(js_name = beginWrite)]
+    pub fn begin_write(&self) -> Result<BrowserWriteTransaction, JsValue> {
+        // Before the mutable borrow: a user function of a transaction's query
+        // calling this gets INT-001, not a borrow panic.
+        refuse_in_tx(&self.inner)?;
+        let mut inner = self.inner.borrow_mut();
+        inner.tx_open = true;
+        let staged = crate::db::Staged::new(inner.fact_storage.current_tx_count());
+        Ok(BrowserWriteTransaction {
+            db: self.inner.clone(),
+            staged: Some(staged),
+        })
+    }
 }
 
 impl BrowserDb {
@@ -332,6 +396,7 @@ impl BrowserDb {
             inner.rules.clone(),
             inner.functions.clone(),
             crate::query::engine::Limits::default(),
+            std::sync::Arc::default(),
         )
     }
 
@@ -398,18 +463,7 @@ impl BrowserDb {
                 })
                 .collect();
 
-            // One batch, so no query sees part of the transaction (#554).
-            inner
-                .fact_storage
-                .load_facts(stamped)
-                .map_err(to_js_error)?;
-
-            inner.pfs.mark_dirty();
-            inner.pfs.save().map_err(to_js_error)?;
-
-            // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows
-            // escape — and drop the pages this commit freed (#440).
-            let flush = take_commit_flush(&mut inner)?;
+            let flush = commit_stamped(&mut inner, stamped)?;
 
             let json = if is_retract {
                 format!(r#"{{"retracted":{}}}"#, tx_id)
@@ -434,6 +488,167 @@ impl BrowserDb {
 
         Ok(result_json)
     }
+}
+
+/// Apply stamped facts as one transaction and save: what an `execute` write
+/// and a transaction's commit share. Returns what to send to IndexedDB.
+fn commit_stamped(
+    inner: &mut BrowserDbInner,
+    stamped: Vec<crate::graph::types::Fact>,
+) -> Result<Flush, JsValue> {
+    // One batch, so no query sees part of the transaction (#554).
+    inner
+        .fact_storage
+        .load_facts(stamped)
+        .map_err(to_js_error)?;
+
+    inner.pfs.mark_dirty();
+    inner.pfs.save().map_err(to_js_error)?;
+
+    // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows
+    // escape — and drop the pages this commit freed (#440).
+    take_commit_flush(inner)
+}
+
+// ── BrowserWriteTransaction ─────────────────────────────────────────────────
+
+/// A write transaction from `BrowserDb.beginWrite()` (#824).
+///
+/// `execute` is synchronous: a `transact`/`retract` is staged and returns
+/// `{"ok":true}`; a `query` reads the committed facts plus the staged ones
+/// and returns `BrowserDb.execute`'s JSON; a `rule` is registered at once,
+/// and stays after a rollback. A statement that fails stages nothing and
+/// leaves the transaction open.
+///
+/// `commit()` returns a `Promise`: the staged facts are applied as one
+/// transaction (one `tx_count`) when it is called, and the promise resolves
+/// once they are stored in IndexedDB. `rollback()`, or freeing the object
+/// while open, discards them. After either, the transaction is finished:
+/// `execute` and `commit` fail with `[API-018]`, and `rollback` does nothing.
+#[wasm_bindgen]
+pub struct BrowserWriteTransaction {
+    db: Rc<RefCell<BrowserDbInner>>,
+    /// `None` once finished.
+    staged: Option<crate::db::Staged>,
+}
+
+#[wasm_bindgen]
+impl BrowserWriteTransaction {
+    /// Run one Datalog command inside the transaction; see the type's docs.
+    pub fn execute(&mut self, datalog: &str) -> Result<String, JsValue> {
+        let Some(staged) = self.staged.as_mut() else {
+            return Err(finished());
+        };
+        tx_execute(&self.db, staged, datalog)
+            .map(query_result_to_json)
+            .map_err(to_js_error)
+    }
+
+    /// Apply the staged facts as one transaction and store it. The promise
+    /// resolves after the IndexedDB flush, and rejects as a failed flush of
+    /// `BrowserDb.execute` does. The transaction is finished either way: a
+    /// commit that is refused (for example `[API-019]`, a valid time that
+    /// ended before the commit time) discards the staged facts.
+    pub fn commit(&mut self) -> js_sys::Promise {
+        let Some(staged) = self.staged.take() else {
+            return js_sys::Promise::reject(&finished());
+        };
+        let committed = {
+            let mut inner = self.db.borrow_mut();
+            inner.tx_open = false;
+            tx_commit(&mut inner, staged).map(|flush| {
+                (
+                    flush,
+                    inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
+                )
+            })
+        };
+        match committed {
+            Err(e) => js_sys::Promise::reject(&e),
+            Ok((flush, idb)) => wasm_bindgen_futures::future_to_promise(async move {
+                if let (Some(flush), Some(idb)) = (flush, idb) {
+                    idb.write_pages(flush.puts, flush.deletes).await?;
+                }
+                Ok(JsValue::UNDEFINED)
+            }),
+        }
+    }
+
+    /// Discard the staged facts and finish the transaction. Does nothing on a
+    /// finished one.
+    pub fn rollback(&mut self) {
+        if self.staged.take().is_some() {
+            self.db.borrow_mut().tx_open = false;
+        }
+    }
+}
+
+impl Drop for BrowserWriteTransaction {
+    fn drop(&mut self) {
+        if self.staged.take().is_some()
+            && let Ok(mut inner) = self.db.try_borrow_mut()
+        {
+            inner.tx_open = false;
+        }
+    }
+}
+
+/// `[API-018]`: a call on a finished transaction.
+fn finished() -> JsValue {
+    JsValue::from_str(&crate::MinigrafError::closed("write transaction").to_string())
+}
+
+/// A transaction's `execute`, as the native transaction's on an in-memory
+/// database: stage a write, read the staged state, or register a rule.
+fn tx_execute(
+    db: &RefCell<BrowserDbInner>,
+    staged: &mut crate::db::Staged,
+    datalog: &str,
+) -> anyhow::Result<QueryResult> {
+    use crate::error::{ErrorCode, bail_coded};
+    use crate::query::datalog::parser::statement;
+
+    if let Some(kind) = statement::kind_of(datalog) {
+        let chunk = statement::tx_chunk_facts(statement::DEFAULT_TX_CHUNK_FACTS);
+        let statement = statement::read_statement(datalog, kind, staged.next_tx_id(), chunk)?;
+        let facts = statement.facts()?;
+        crate::graph::storage::check_one_window_per_triple(&facts)?;
+        staged.stage(facts);
+        return Ok(QueryResult::Ok);
+    }
+    let cmd = parse_datalog_command(datalog)?;
+    let inner = db.borrow();
+    let mut executor = DatalogExecutor::new_with_rules_and_functions(
+        inner.fact_storage.clone(),
+        inner.rules.clone(),
+        inner.functions.clone(),
+    );
+    match cmd {
+        DatalogCommand::Transact(_) | DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api002),
+        DatalogCommand::Query(ref q) => {
+            crate::overrides::check_overrides(q, crate::Overridable::DEFAULTS)?;
+            crate::query::datalog::prepared::reject_unbound_slots(q)?;
+            let snapshot = inner.fact_storage.snapshot()?;
+            executor.set_snapshot(snapshot.with_staged(staged.read_view()));
+            executor.execute(cmd)
+        }
+        DatalogCommand::Rule(_) => executor.execute(cmd),
+    }
+}
+
+/// A transaction's commit: `None` when nothing was staged.
+fn tx_commit(
+    inner: &mut BrowserDbInner,
+    staged: crate::db::Staged,
+) -> Result<Option<Flush>, JsValue> {
+    let facts = staged.pending_facts;
+    if facts.is_empty() {
+        return Ok(None);
+    }
+    let (facts, tx_id) = crate::db::Staged::checked_for_commit(facts).map_err(to_js_error)?;
+    let tx_count = inner.fact_storage.allocate_tx_count();
+    let stamped = crate::db::Staged::stamp(facts, tx_id, tx_count);
+    commit_stamped(inner, stamped).map(Some)
 }
 
 // ── BrowserCursor ───────────────────────────────────────────────────────────
@@ -512,6 +727,7 @@ impl BrowserPreparedQuery {
     /// type, `[API-022]` for a missing slot and `[API-024]` for a bind value
     /// of the wrong kind.
     pub fn execute(&self, bindings: JsValue) -> Result<String, JsValue> {
+        refuse_in_tx(&self._db)?;
         let binds = binds::read_bindings(&bindings)?;
         self.query
             .execute(&as_slice(&binds))
@@ -522,6 +738,7 @@ impl BrowserPreparedQuery {
     /// Run the query with `bindings` and return a cursor over its rows. The
     /// answer is fixed when the cursor opens. Throws as `execute` does.
     pub fn query(&self, bindings: JsValue) -> Result<BrowserCursor, JsValue> {
+        refuse_in_tx(&self._db)?;
         let binds = binds::read_bindings(&bindings)?;
         let cursor = self
             .query
@@ -1158,7 +1375,7 @@ mod tests {
     // ── #411 / #440: migrated pages are stored, free pages hold no bytes ──
 
     /// Open `name` with its object store emptied, so earlier runs leave nothing.
-    async fn empty_store(name: &str) -> IndexedDbBackend {
+    pub(super) async fn empty_store(name: &str) -> IndexedDbBackend {
         let idb = IndexedDbBackend::open(name).await.expect("idb open");
         let keys: Vec<u64> = idb
             .load_all_pages()

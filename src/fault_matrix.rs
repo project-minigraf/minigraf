@@ -20,6 +20,10 @@
 //! `begin_write_with` with a WAL sync mode other than the database's, or
 //! after entries committed without a sync. A lost sync may then lose those
 //! entries, so their reopen check is the prefix guarantee instead.
+//!
+//! The transaction cases run again through an `OwnedWriteTransaction`
+//! (#824), which shares the borrowed transaction's staging and commit but
+//! holds the write lock differently: [`with_owned`].
 
 use crate::db::{Minigraf, OpenOptions, SyncMode, TxOptions};
 use crate::fact_log::FactFilter;
@@ -116,9 +120,57 @@ const X_TX_AFTER: &str =
     r#"(transact [[:x1 :p/x 2 {:valid-from "2020-01-01T00:00:00Z"}] [:x10 :p/x 10] [:x9 :p/x 9]])"#;
 const X_TX_FACTS: usize = 12;
 
+thread_local! {
+    /// Run the transaction cases through `begin_write_owned_with` (#824).
+    static OWNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with the transaction cases using an `OwnedWriteTransaction`.
+fn with_owned(f: impl FnOnce()) {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            OWNED.with(|o| o.set(false));
+        }
+    }
+    OWNED.with(|o| o.set(true));
+    let _reset = Reset;
+    f();
+}
+
+/// A transaction of either kind, as [`with_owned`] chose.
+enum AnyTx<'a> {
+    Borrowed(crate::db::WriteTransaction<'a>),
+    Owned(crate::db::OwnedWriteTransaction),
+}
+
+impl AnyTx<'_> {
+    fn begin(db: &Minigraf, options: TxOptions) -> Result<AnyTx<'_>, crate::MinigrafError> {
+        if OWNED.with(std::cell::Cell::get) {
+            db.begin_write_owned_with(options).map(AnyTx::Owned)
+        } else {
+            db.begin_write_with(options).map(AnyTx::Borrowed)
+        }
+    }
+
+    fn execute(&mut self, stmt: &str) -> Result<crate::QueryResult, crate::MinigrafError> {
+        match self {
+            AnyTx::Borrowed(tx) => tx.execute(stmt),
+            AnyTx::Owned(tx) => tx.execute(stmt),
+        }
+    }
+
+    fn commit(self) -> Result<(), crate::MinigrafError> {
+        match self {
+            AnyTx::Borrowed(tx) => tx.commit(),
+            AnyTx::Owned(tx) => tx.commit(),
+        }
+    }
+}
+
 /// Run the `WriteTransaction` of `Op::Large { tx: true, .. }`.
 fn large_write_tx(db: &Minigraf) -> Result<(), crate::MinigrafError> {
-    let mut tx = db.begin_write()?;
+    let mut tx = AnyTx::begin(db, TxOptions::default())?;
     tx.execute(X_TX_BEFORE)?;
     tx.execute(X_LARGE)?;
     match tx.execute(X_TX_FAILS) {
@@ -448,6 +500,50 @@ fn faults_during_a_large_write_transaction_on_a_new_file_with_a_wal() {
     });
 }
 
+#[test]
+fn faults_during_a_large_owned_write_transaction() {
+    with_owned(|| {
+        run_all(Op::Large {
+            one_slot: false,
+            wal: true,
+            tx: true,
+        });
+    });
+}
+
+#[test]
+fn faults_during_a_large_owned_write_transaction_that_creates_the_wal() {
+    with_owned(|| {
+        run_all(Op::Large {
+            one_slot: false,
+            wal: false,
+            tx: true,
+        });
+    });
+}
+
+#[test]
+fn faults_during_a_large_owned_write_transaction_on_a_new_file() {
+    with_owned(|| {
+        run_all(Op::Large {
+            one_slot: true,
+            wal: false,
+            tx: true,
+        });
+    });
+}
+
+#[test]
+fn faults_during_a_large_owned_write_transaction_on_a_new_file_with_a_wal() {
+    with_owned(|| {
+        run_all(Op::Large {
+            one_slot: true,
+            wal: true,
+            tx: true,
+        });
+    });
+}
+
 /// The disk fills part-way through a checkpoint: every write from then on
 /// fails. The checkpoint fails, the handle refuses writes with STG-046, and
 /// after space is freed a reopen holds every committed fact.
@@ -609,7 +705,7 @@ impl History {
 }
 
 fn commit_with(db: &Minigraf, mode: SyncMode, stmt: &str) -> Result<(), crate::MinigrafError> {
-    let mut tx = db.begin_write_with(TxOptions::new().synchronous(mode))?;
+    let mut tx = AnyTx::begin(db, TxOptions::new().synchronous(mode))?;
     tx.execute(stmt)?;
     tx.commit()
 }
@@ -767,4 +863,19 @@ fn faults_during_a_normal_commit_on_a_full_database() {
 #[test]
 fn faults_during_a_full_commit_on_a_normal_database() {
     run_all_mixed(Mix::FullOnNormal);
+}
+
+#[test]
+fn faults_during_an_owned_full_commit_after_a_normal_one() {
+    with_owned(|| run_all_mixed(Mix::FullAfterNormal));
+}
+
+#[test]
+fn faults_during_an_owned_normal_commit_on_a_full_database() {
+    with_owned(|| run_all_mixed(Mix::NormalOnFull));
+}
+
+#[test]
+fn faults_during_an_owned_full_commit_on_a_normal_database() {
+    with_owned(|| run_all_mixed(Mix::FullOnNormal));
 }

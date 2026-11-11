@@ -1,5 +1,5 @@
 use crate::cursor::Cursor;
-use crate::error::{ErrorCode, MinigrafError, bail_coded, err_coded};
+use crate::error::{ErrorCode, MinigrafError, bail_coded};
 use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
@@ -89,6 +89,8 @@ pub struct PreparedQuery {
     /// The database's `max_iterations`, `max_derived_facts` and
     /// `query_memory_limit`, or the setters' values (#870, #861).
     limits: crate::query::engine::Limits,
+    /// The database's owned-transaction begin thread, for `INT-001` (#824).
+    owner: Arc<crate::db::TxOwner>,
 }
 
 impl std::fmt::Debug for PreparedQuery {
@@ -173,9 +175,7 @@ impl PreparedQuery {
     /// - Missing bind value for a slot present in the query.
     /// - Type mismatch (e.g. `Val` supplied for an `:as-of` slot).
     pub fn execute(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult, MinigrafError> {
-        if crate::db::is_write_tx_active() {
-            return Err(err_coded!(ErrorCode::Int001).into());
-        }
+        self.owner.refuse_reentry()?;
         self.fact_storage
             .snapshot()
             .and_then(|snapshot| self.execute_inner(bindings, snapshot))
@@ -190,9 +190,7 @@ impl PreparedQuery {
     /// # Errors
     /// The same as [`PreparedQuery::execute`].
     pub fn query(&self, bindings: &[(&str, BindValue)]) -> Result<Cursor, MinigrafError> {
-        if crate::db::is_write_tx_active() {
-            return Err(err_coded!(ErrorCode::Int001).into());
-        }
+        self.owner.refuse_reentry()?;
         let run = || {
             let snapshot = self.fact_storage.snapshot()?;
             let (executor, command) = self.bind(bindings, snapshot.clone())?;
@@ -247,6 +245,7 @@ pub(crate) fn prepare_query(
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<Functions>,
     limits: crate::query::engine::Limits,
+    owner: Arc<crate::db::TxOwner>,
 ) -> Result<PreparedQuery> {
     validate_no_attribute_slots(&query)?;
     let slot_names = collect_slot_names(&query);
@@ -257,6 +256,7 @@ pub(crate) fn prepare_query(
         rules,
         functions,
         limits,
+        owner,
     })
 }
 

@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Configurable recursion round limit** (#861, part of #862). `OpenOptions::max_iterations` sets the most rounds one stratum of a rule query may run (default 1,000,000, see Breaking changes); `:max-iterations N` or `$slot` replaces it for one query, up or down (INT-012/013/014/015 as for `:max-derived-facts`), gated by the new `Overridable::MaxIterations`, which **is** in `Overridable::DEFAULTS`; `PreparedQuery::with_max_iterations` replaces it for one statement, ungated, and an allowed keyword still overrides it. Rounds are still counted per stratum. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+- **Owned write transactions and browser transactions** (#824). `Minigraf::begin_write_owned()` and `begin_write_owned_with(TxOptions)` return an `OwnedWriteTransaction`: `execute`, `commit` and `rollback` with the borrowed `WriteTransaction`'s results and errors, but it is `Send` and `'static`, keeps the database open, and may begin on one thread and run, commit, roll back or be dropped on another. Dropping it open rolls it back. While it is open the calls a `WriteTransaction` refuses are `INT-001` on the thread that began it (per database, whichever thread uses it meanwhile); other threads' writes, checkpoints and begins wait until it finishes, and their queries read the committed state without waiting. A user function in one of its statements that calls the database gets `INT-001` on whichever thread runs the statement. Every language binding's transaction is built on it. `BrowserDb.beginWrite()` returns a `BrowserWriteTransaction` with a synchronous `execute`, a `commit()` that applies the staged facts as one transaction and resolves after the IndexedDB flush, and a `rollback()`; freeing it open rolls it back. While it is open, `BrowserDb`'s `execute`, `query`, `prepare`, `checkpoint`, `importGraph`, a second `beginWrite` and a prepared query's `execute`/`query` throw or reject with `[INT-001]`; a finished one's `execute` and `commit` are `[API-018]`. No new error codes; no file format change.
+
 ### Changed
+
+- **INT-001 text** (#824): `a WriteTransaction is already in progress on this thread; use tx.execute() instead` now reads `a write transaction is already in progress on this thread; use tx.execute() instead`, since owned and browser transactions raise it too. The code and the calls that raise it for a borrowed transaction are unchanged.
 
 - **INT-015 text** (#870): `{} must be a positive integer` is now `{} must be a non-negative integer`, because `:query-memory-limit` accepts 0. The code and when `:max-derived-facts`/`:max-results` raise it are unchanged.
 
@@ -37,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backport, window behavior, ordered-group eligibility, or storage change.
 
 ### Testing
+
+- **Owned and browser transaction tests** (#824): `tests/owned_tx_test.rs` checks that an owned transaction leaves the database as a borrowed one given the same statements and options (commit, rollback, drop; small and large; file and in-memory, after reopening), the threads rules and the begin refusals; the fault matrix runs its large-transaction and mixed-sync-mode cases through the owned transaction too. `src/browser/tx_tests.rs` (`wasm-bindgen`) checks the browser transaction against the native one over fixed statement sequences, its IndexedDB commit, rollback, drop and failed-flush paths, and the `[INT-001]`/`[API-018]` rules.
 
 - **Acceptance execution gaps** (#837): nonlinear and multistratum recursive
   scaling, custom transaction chunk/clamp bounds, mandatory Linux RSS assertions,

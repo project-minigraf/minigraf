@@ -241,7 +241,7 @@ with no `CodedError` anywhere in its chain.
 | API-024 | Bind slot type mismatch | Database API |
 | API-025 | Query option override not allowed | Database API |
 | INT-000 | Unclassified internal error | Internal |
-| INT-001 | WriteTransaction already in progress on this thread | Internal |
+| INT-001 | Write transaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
 | INT-003 | Invalid value (API layer) | Internal |
 | INT-004 | Invalid timestamp | Internal |
@@ -3557,7 +3557,7 @@ let mut log = src.fact_log(&FactFilter::new())?;
 
 **Error text**: `{} is closed`
 
-**Cause**: A language binding object was used after it was closed or finished, for example `append` or `finish` on a log writer after `finish` or `close`. Rust consumes these objects, so the Rust API never returns this code. Bindings cannot consume an object a caller still holds, so they return this error instead. A cursor or fact log reports the end (no more batches) after `close`, not this error. The `{}` names the object.
+**Cause**: A language binding object was used after it was closed or finished, for example `append` or `finish` on a log writer after `finish` or `close`, or `execute` or `commit` on a write transaction after it committed (or failed to), rolled back, or its database was closed (#824). A finished transaction's `rollback` does nothing instead. Rust consumes these objects, so the Rust API never returns this code. Bindings cannot consume an object a caller still holds, so they return this error instead. A cursor or fact log reports the end (no more batches) after `close`, not this error. The `{}` names the object.
 
 **Resolution**:
 - Create a new object instead of reusing a finished one.
@@ -3704,22 +3704,36 @@ specific code, so this should now be rare.
 **Scenario**: An I/O error from the underlying filesystem propagates through
 `?` without ever being wrapped in a `CodedError`.
 
-### INT-001 WriteTransaction already in progress on this thread
+### INT-001 Write transaction already in progress on this thread
 
-**Error text**: `a WriteTransaction is already in progress on this thread; use tx.execute() instead`
+**Error text**: `a write transaction is already in progress on this thread; use tx.execute() instead`
 
 **Cause**: on the same thread that already holds an active
 `WriteTransaction`, one of these was called: the `Minigraf` methods
-`execute()`, `query()`, `fact_log()`, `begin_write()`, `checkpoint()`,
-`verify()`, `rebuild_indexes()` or `prepare()`, or a `PreparedQuery`'s
-`execute()` or `query()`. Acquiring the write
+`execute()`, `query()`, `fact_log()`, `begin_write()`, `begin_write_owned()`,
+`checkpoint()`, `verify()`, `rebuild_indexes()` or `prepare()`, or a
+`PreparedQuery`'s `execute()` or `query()`. Acquiring the write
 lock again on that thread would deadlock, so this is detected and rejected
 instead. (Before v3.0.0, `checkpoint()`, `verify()` and `rebuild_indexes()`
 did not check and deadlocked, #734.)
 
+The same calls are refused on the thread that began an open
+`OwnedWriteTransaction` of that database (#824), whichever thread uses the
+transaction meanwhile, and on the thread running one of its statements (a
+user function calling back into the database); other threads' writes and begins wait for it
+instead, and other databases are not affected. A binding transaction is an
+owned one, so the same rule applies to every language binding. In the
+browser, every `BrowserDb` call that reads or writes (`execute`, `query`,
+`prepare`, `checkpoint`, `importGraph`, a second `beginWrite`, and a
+prepared query's `execute`/`query`) is refused while a
+`BrowserWriteTransaction` is open, since other asynchronous code could
+otherwise mistake the database for the transaction.
+
 **Resolution**:
-- Use the existing `WriteTransaction`'s `tx.execute()` for further writes
+- Use the existing transaction's `tx.execute()` for further writes
   instead of calling `db.execute()` again on the same thread.
+- End the transaction (`commit()` or `rollback()`) before using the
+  database directly again.
 
 **Scenario**: Code inside a `WriteTransaction` write closure calls
 `db.execute("(transact ...)")` on the outer `db` handle instead of

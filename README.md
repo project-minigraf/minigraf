@@ -159,6 +159,12 @@ let mut tx = db.begin_write()?;
 tx.execute(r#"(transact [[:alice :person/age 31]])"#)?;
 tx.commit()?;
 
+// Owned transaction — Send + 'static, so it can live in an object or move to
+// another thread; every language binding's transaction is one
+let mut tx = db.begin_write_owned()?;
+tx.execute(r#"(transact [[:alice :person/age 32]])"#)?;
+std::thread::spawn(move || tx.commit()).join().unwrap()?;
+
 // Time travel — query as of past transaction counter
 db.execute("(query [:find ?age :as-of 1 :where [:alice :person/age ?age]])")?;
 
@@ -271,7 +277,7 @@ See the [Mobile Integration](https://project-minigraf.github.io/minigraf-docs/la
 
 ### For WASM / Browser
 
-Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
+Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). `BrowserDb.beginWrite()` opens a write transaction (from v3.0.0): `execute` stages and reads back, `await tx.commit()` stores it in IndexedDB, `rollback()` discards it, and the database's other calls throw `[INT-001]` until it ends. The WASI package is the REPL: each command commits on its own, with no explicit transactions. WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
 
 ### For Python / Node.js / Java / C
 
