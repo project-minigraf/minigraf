@@ -425,3 +425,43 @@ async fn rules_stay_after_rollback() {
         .expect("the rule is still registered");
     assert_eq!(sorted_rows(&r).len(), 3);
 }
+
+/// A user function of a transaction's query that calls the database (here
+/// `beginWrite` and `query`) is refused as `[INT-001]` is, so the query fails with
+/// `[QRY-014]`; nothing panics and the transaction stays usable.
+#[wasm_bindgen_test]
+async fn user_function_calling_the_database_inside_a_transaction() {
+    let db = setup().await;
+    let calls = [
+        ("begins?", "db.beginWrite(); return true"),
+        (
+            "queries?",
+            "db.query('(query [:find ?n :where [?e :person/name ?n]])'); return true",
+        ),
+    ];
+    for (name, body) in calls {
+        let other = BrowserDb {
+            inner: db.inner.clone(),
+        };
+        let f = js_sys::Function::new_with_args("db", &format!("return (v) => {{ {body} }}"));
+        let predicate = f
+            .call1(&JsValue::NULL, &JsValue::from(other))
+            .expect("make the predicate");
+        db.register_predicate(name, predicate).expect("register");
+    }
+    let mut tx = db.begin_write().expect("begin");
+    for (name, _) in calls {
+        let q = format!("(query [:find ?n :where [?e :person/name ?n] [({name} ?n)]])");
+        let e = tx.execute(&q).expect_err("a call back into the database");
+        let msg = e.as_string().expect("a message");
+        assert!(
+            msg.starts_with("[QRY-014]")
+                && msg.contains("write transaction is already in progress"),
+            "{name}: {msg}"
+        );
+    }
+    tx.execute(r#"(transact [[:dave :person/name "Dave"]])"#)
+        .expect("still usable");
+    commit(&mut tx).await.expect("commit");
+    assert_eq!(names(&db).await.len(), 4);
+}

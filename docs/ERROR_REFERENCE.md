@@ -3719,7 +3719,8 @@ did not check and deadlocked, #734.)
 
 The same calls are refused on the thread that began an open
 `OwnedWriteTransaction` of that database (#824), whichever thread uses the
-transaction meanwhile; other threads' writes and begins wait for it
+transaction meanwhile, and on the thread running one of its statements (a
+user function calling back into the database); other threads' writes and begins wait for it
 instead, and other databases are not affected. A binding transaction is an
 owned one, so the same rule applies to every language binding. In the
 browser, every `BrowserDb` call that reads or writes (`execute`, `query`,

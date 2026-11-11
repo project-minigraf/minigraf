@@ -471,6 +471,7 @@ fn owned_tx_other_thread_write_waits() {
         }),
         ("checkpoint", Minigraf::checkpoint),
         ("verify", |db| db.verify().map(|_| ())),
+        ("rebuild_indexes", Minigraf::rebuild_indexes),
         ("begin_write", |db| db.begin_write()?.commit()),
         ("begin_write_owned", |db| db.begin_write_owned()?.commit()),
     ];
@@ -647,3 +648,53 @@ fn owned_tx_failed_statement_stays_open() {
     tx.commit().unwrap();
     assert_eq!(rows(&db).len(), 1, "only the good statement");
 }
+
+// ─── User functions off the begin thread ────────────────────────────────────
+
+/// A user function that calls back into the database, from a statement of an
+/// owned transaction run on a thread that did not begin it, gets INT-001
+/// (QRY-014 for the query) instead of locking the write mutex its own thread
+/// holds or reading outside the transaction. The transaction stays usable
+/// and the lock is released when it ends.
+#[test]
+fn owned_tx_user_function_off_the_begin_thread() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(SETUP).unwrap();
+    let w = db.clone();
+    db.try_register_predicate("writes?", move |_| {
+        w.execute(r#"(transact [[:z :person/name "Z"]])"#)
+            .map(|_| true)
+            .map_err(|e| minigraf::UdfError::new(e.code()))
+    })
+    .unwrap();
+    let r = db.clone();
+    db.try_register_predicate("reads?", move |_| {
+        r.execute(NAMES_Q)
+            .map(|_| true)
+            .map_err(|e| minigraf::UdfError::new(e.code()))
+    })
+    .unwrap();
+    let mut tx = db.begin_write_owned().unwrap();
+    tx.execute(r#"(transact [[:dave :person/name "Dave"]])"#)
+        .unwrap();
+    let (got, _) = within(STUCK, move || {
+        let mut errors = Vec::new();
+        for f in ["writes?", "reads?"] {
+            let q = format!("(query [:find ?n :where [?e :person/name ?n] [({f} ?n)]])");
+            let e = tx.execute(&q).expect_err("a call back into the database");
+            errors.push((e.code(), e.to_string().contains("INT-001")));
+        }
+        // Still usable: a statement and the commit.
+        tx.execute(r#"(transact [[:erin :person/name "Erin"]])"#)
+            .unwrap();
+        tx.commit().unwrap();
+        errors
+    });
+    let errors = got.expect("no deadlock");
+    assert_eq!(errors, vec![("QRY-014", true), ("QRY-014", true)]);
+    // The flag is the thread's own: after the statements, nothing is guarded.
+    assert_all(&guarded_calls(&db), None, "after the commit");
+    assert_eq!(rows(&db).len(), 7, "Dave, Erin and Zed with the setup");
+}
+
+const NAMES_Q: &str = "(query [:find ?n :where [?e :person/name ?n]])";

@@ -2533,9 +2533,11 @@ impl Drop for WriteTransaction<'_> {
 /// waits until then, and a query from another thread reads the committed
 /// state without waiting. On the thread that began it, every call on the
 /// database that a `WriteTransaction` refuses is refused (`INT-001`) while
-/// it is open, whichever thread uses the transaction meanwhile. A thread
-/// that did not begin it and writes through the database while using it
-/// waits on its own transaction.
+/// it is open, whichever thread uses the transaction meanwhile, and on the
+/// thread running one of its statements (so a user function that calls back
+/// into the database gets `INT-001`). A thread that did not begin it and,
+/// between its statements, writes through the database waits on its own
+/// transaction.
 ///
 /// ```
 /// use minigraf::Minigraf;
@@ -2587,6 +2589,11 @@ impl OwnedWriteTransaction {
             .write_lock
             .lock()
             .map_err(|_| MinigrafError::from(err_coded!(ErrorCode::Api001)))?;
+        // While the statement runs, this thread holds the write mutex: a user
+        // function it calls must get INT-001 from the database, as on the
+        // begin thread, not lock the mutex again or read outside the
+        // transaction.
+        let _running = RunningHere::enter();
         self.state
             .execute(&mut slot.ctx, inner, input)
             .map_err(MinigrafError::from)
@@ -2641,6 +2648,24 @@ impl OwnedWriteTransaction {
         self.state.rollback(&mut slot.ctx);
         self.db.inner.release_owned(&mut slot);
         self.finished = true;
+    }
+}
+
+/// Marks the current thread as running a transaction statement (the
+/// thread-local flag `refuse_reentry` reads) until dropped, then restores it.
+struct RunningHere(bool);
+
+impl RunningHere {
+    fn enter() -> Self {
+        let was = is_write_tx_active();
+        set_write_tx_active(true);
+        RunningHere(was)
+    }
+}
+
+impl Drop for RunningHere {
+    fn drop(&mut self) {
+        set_write_tx_active(self.0);
     }
 }
 

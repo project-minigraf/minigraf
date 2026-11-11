@@ -364,8 +364,10 @@ impl BrowserDb {
     /// ```
     #[wasm_bindgen(js_name = beginWrite)]
     pub fn begin_write(&self) -> Result<BrowserWriteTransaction, JsValue> {
+        // Before the mutable borrow: a user function of a transaction's query
+        // calling this gets INT-001, not a borrow panic.
+        refuse_in_tx(&self.inner)?;
         let mut inner = self.inner.borrow_mut();
-        inner.refuse_in_tx().map_err(to_js_error)?;
         inner.tx_open = true;
         let staged = crate::db::Staged::new(inner.fact_storage.current_tx_count());
         Ok(BrowserWriteTransaction {

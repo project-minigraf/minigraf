@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,137 | 2,175 |
+| **Active** | 2,138 | 2,176 |
 | **Ignored** | 21 | 30 |
-| **Total** | 2,158 | 2,205 |
+| **Total** | 2,159 | 2,206 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
 including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871, #872 and #824 (Linux). Verification results below identify which suites ran.
@@ -392,14 +392,15 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 
 ## WAL and Recovery
 
-- **Owned write transactions** (#824; `tests/owned_tx_test.rs`, 15 tests; `src/db.rs`, 2 unit tests; `src/fault_matrix.rs`, 7 tests; 1 doctest; full default suite passed on the laptop, 2,137 passed and 21 ignored, 2026-11-10, both bench machines unreachable)
+- **Owned write transactions** (#824; `tests/owned_tx_test.rs`, 16 tests; `src/db.rs`, 2 unit tests; `src/fault_matrix.rs`, 7 tests; 1 doctest; full default suite passed, 2,138 passed and 21 ignored, 2026-11-11)
   - `OwnedWriteTransaction` is `Send + 'static` (compile-time check).
   - `owned_tx_matches_borrowed_tx`: for five statement sequences (writes, retractions, staged reads, rules, `API-011`, parse errors, latest statement wins) × commit/rollback/drop × the database's chunk or a chunk of 2 (large on a file), in memory and on a file, an owned and a borrowed transaction give the same statement outcomes, fact records, rows and `tx_count`, also after reopening. A large owned commit is a checkpoint (no WAL left).
-  - Threads: begun on one thread and run, committed, rolled back or dropped (large) on another; afterwards every guarded call works on every thread. While open: every guarded call (`execute`, `query`, `prepare`, prepared `execute`/`query`, `fact_log`, `checkpoint`, `verify`, `rebuild_indexes`, both begins) is `INT-001` on the begin thread, also while another thread holds the transaction; another thread's `transact`, rule, `checkpoint`, `verify` and both begins wait and then succeed; its `execute` query, cursor, prepared query and fact log read the committed state without waiting; another database is neither guarded nor blocked.
+  - Threads: begun on one thread and run, committed, rolled back or dropped (large) on another; afterwards every guarded call works on every thread. While open: every guarded call (`execute`, `query`, `prepare`, prepared `execute`/`query`, `fact_log`, `checkpoint`, `verify`, `rebuild_indexes`, both begins) is `INT-001` on the begin thread, also while another thread holds the transaction; another thread's `transact`, rule, `checkpoint`, `verify`, `rebuild_indexes` and both begins wait and then succeed; its `execute` query, cursor, prepared query and fact log read the committed state without waiting; another database is neither guarded nor blocked.
   - Begin refusals: `INT-001` inside a borrowed or an owned transaction, `API-014` read-only (file and memory); the handle stays usable. Empty and query-only transactions take no `tx_count`; a failed statement stages nothing and leaves it open; the transaction keeps the database open after its last handle is dropped.
+  - A user function that writes or queries through the database, from a statement run on a thread that did not begin the transaction, fails the query with `QRY-014` (`INT-001` inside) instead of deadlocking or reading outside the transaction; the transaction then commits.
   - Unit tests: a commit refused at commit time (`API-019`) releases the write lock; a poisoned write lock still ends the transaction (`API-001`).
   - Fault matrix: the four large write-transaction cases and the three mixed-sync-mode commits run again through an owned transaction.
-- **Browser write transactions** (#824; `src/browser/tx_tests.rs`, 11 `#[wasm_bindgen_test]`, not counted above): staging and read-your-own-writes, rules registered at once and kept after a rollback, failed statements; a differential check against the native transaction over five sequences (outcomes, current, `:any-valid-time` with `:db/tx-count`, `:valid-at` and `:as-of` results, `tx_count`); one `tx_count` per commit, facts visible before the flush resolves, commit/rollback/drop each across an IndexedDB reopen; a failed IndexedDB flush rejects the commit as it fails `execute`; a commit refused with `API-019` finishes the transaction; every guarded `BrowserDb` call `[INT-001]` while open, a cursor opened before still reading; finished transactions `[API-018]`.
+- **Browser write transactions** (#824; `src/browser/tx_tests.rs`, 12 `#[wasm_bindgen_test]`, not counted above): staging and read-your-own-writes, rules registered at once and kept after a rollback, failed statements; a differential check against the native transaction over five sequences (outcomes, current, `:any-valid-time` with `:db/tx-count`, `:valid-at` and `:as-of` results, `tx_count`); one `tx_count` per commit, facts visible before the flush resolves, commit/rollback/drop each across an IndexedDB reopen; a failed IndexedDB flush rejects the commit as it fails `execute`; a commit refused with `API-019` finishes the transaction; every guarded `BrowserDb` call `[INT-001]` while open, a cursor opened before still reading; finished transactions `[API-018]`; a user function of a transaction's query that calls `beginWrite` or `query` fails the query (`QRY-014`) without a panic.
 - **Torn WAL tail** (#513)
   - Opening a WAL writer cuts off a partial last entry (cut in the checksum, the header or the payload), or an entry with a bad checksum and everything after it, then appends where replay reaches. An intact WAL is left byte for byte.
   - An append that fails part-way makes every later append `WAL-007`. A rejected oversize fact (`WAL-003`, nothing written) does not.
@@ -675,7 +676,7 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 79 `wasm_bindgen_test` tests (Firefox, 2026-11-10, after #824). The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 80 `wasm_bindgen_test` tests (Firefox, 2026-11-11, after #824). The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
   - Three committed-memory-backend input-order fixtures: scalar Sort omission, streaming counts with Boolean/float representatives and mixed numeric group order, and partition windows preserving float edges and numeric group classes (#641).
   - Twenty-six for `BrowserDb`, including IndexedDB persistence, the default `allow_overrides` list (#869), the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
