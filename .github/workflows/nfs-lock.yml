@@ -15,6 +15,13 @@ permissions:
   contents: read
   issues: write
 
+# Test executables can live under target/debug/build/.../out, so their
+# location cannot identify the examples directory. Keep the build destination
+# and the lock suites' helper override in sync (#887).
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  MINIGRAF_PID_NS_HELPER: ${{ github.workspace }}/target/debug/examples/pid_ns_helper
+
 jobs:
   nfs:
     name: NFS lock suite
