@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **v3 binary-size CI budget**: raise the enforced distribution-binary limit from 1,240 to 1,250 KiB (1,280,000 bytes). Unchanged production source measured 1,242 KiB after CI moved to Rust 1.100.0 and a newer runner image; the additional headroom changes no production code or build settings.
+
 - **INT-001 text** (#824): `a WriteTransaction is already in progress on this thread; use tx.execute() instead` now reads `a write transaction is already in progress on this thread; use tx.execute() instead`, since owned and browser transactions raise it too. The code and the calls that raise it for a borrowed transaction are unchanged.
 
 - **INT-015 text** (#870): `{} must be a positive integer` is now `{} must be a non-negative integer`, because `:query-memory-limit` accepts 0. The code and when `:max-derived-facts`/`:max-results` raise it are unchanged.
