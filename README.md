@@ -168,12 +168,16 @@ std::thread::spawn(move || tx.commit()).join().unwrap()?;
 // Time travel — query as of past transaction counter
 db.execute("(query [:find ?age :as-of 1 :where [:alice :person/age ?age]])")?;
 
-// Recursive rule — transitive reachability
-db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
-              (rule [(reachable ?a ?b) [?a :friend ?m] (reachable ?m ?b)])"#)?;
+// Recursive rule — register each clause with a separate execute() call
+db.execute("(rule [(reachable ?a ?b) [?a :friend ?b]])")?;
+db.execute("(rule [(reachable ?a ?b) [?a :friend ?m] (reachable ?m ?b)])")?;
+db.execute("(query [:find ?friend :where (reachable :alice ?friend)])")?;
 
 // Prepared statement — parse + plan once, execute many times
-use minigraf::BindValue;
+use minigraf::{BindValue, EntityId};
+// Keywords map to UUIDv5 IDs in the OID namespace, including the leading colon.
+let alice_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":alice");
+let bob_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":bob");
 let pq = db.prepare("(query [:find ?name :as-of $tx :where [$entity :person/name ?name]])")?;
 let r1 = pq.execute(&[("tx", BindValue::TxCount(1)), ("entity", BindValue::Entity(alice_id))])?;
 let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entity(bob_id))])?;

@@ -3422,6 +3422,7 @@ db.execute("(rule [(ancestor ?x ?y) [?x :parent ?y]])")?;
 - Prepare the query and supply a value for every slot:
 
 ```rust
+let alice_id = minigraf::EntityId::new_v5(&minigraf::EntityId::NAMESPACE_OID, b":alice");
 let pq = db.prepare("(query [:find ?status :as-of $tx :valid-at $date \
                      :where [$entity :employment/status ?status]])")?;
 let result = pq.execute(&[
