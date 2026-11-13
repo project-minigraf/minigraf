@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- Fix the Rust Quick Start (#884): register recursive rule clauses in separate `execute()` calls and define the keyword entity IDs used by prepared queries. Clarify the entity ID in the prepared-query error example.
 - Correct ordinary aggregate examples and lists (#777): v2 supports `count`, `count-distinct`, `sum`, `sum-distinct`, `min` and `max`; `avg` requires `:over`. Query behavior is unchanged.
 - Retire production-readiness tracker #383 in favor of the v3.0.0 milestone, preserving its release gates there.
 
