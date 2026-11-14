@@ -38,6 +38,27 @@ jobs:
       - name: wasm-bindgen tests (lib, incl. BrowserDb and IndexedDB)
         run: wasm-pack test --headless --${{ matrix.browser }} --features browser
 
+  browser-worker:
+    name: Browser worker tests (headless ${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, chrome]
+    env:
+      # wasm-bindgen configures the whole lib test binary for a dedicated
+      # worker; the browser job above retains main-thread coverage.
+      RUSTFLAGS: --cfg minigraf_browser_worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: wasm-bindgen worker tests (OPFS and IndexedDB)
+        run: wasm-pack test --headless --${{ matrix.browser }} --features browser --lib
+
   wasi:
     name: WASI tests (Wasmtime)
     runs-on: ubuntu-latest

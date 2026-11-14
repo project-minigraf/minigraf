@@ -208,6 +208,7 @@ with no `CodedError` anywhere in its chain.
 | STG-045 | File shorter than one page and not a new database | Storage |
 | STG-046 | Earlier checkpoint failed on this handle | Storage |
 | STG-047 | WAL is from a later checkpoint | Storage |
+| STG-048 | Browser storage operation failed | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -240,6 +241,8 @@ with no `CodedError` anywhere in its chain.
 | API-023 | Bind slot not permitted in attribute position | Database API |
 | API-024 | Bind slot type mismatch | Database API |
 | API-025 | Query option override not allowed | Database API |
+| API-026 | OPFS mode is not available here | Database API |
+| API-027 | Database is busy | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | Write transaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -3167,6 +3170,21 @@ Nothing committed is lost. Every committed transaction is still in the WAL, and 
 
 ---
 
+### STG-048 Browser storage operation failed
+
+**Error text**: `browser storage operation failed: {} ({})`
+
+**Cause**: An OPFS operation failed: opening an entry, acquiring its sync access handle, reading, writing, flushing, checking size, truncating, or staging an import. The message names the operation and the browser exception (for example `QuotaExceededError`), or a short read/write. Short transfers are never accepted as complete pages. Lock contention uses STG-026; an unavailable OPFS context uses API-026.
+
+**Resolution**:
+- Check the operation and exception name, available origin quota and browser permissions.
+- After a commit may have written, later writes fail with STG-046. Call `close()` and reopen. Reads may still include the unconfirmed transaction; a rejected commit does not prove it is absent on disk.
+- An import failure at publication closes the database; reopen to recover the complete old or new image.
+
+**Scenario**: Origin quota is exhausted while a worker writes a data page; `execute()` rejects with STG-048 naming the write and `QuotaExceededError`.
+
+---
+
 ## WAL — Write-Ahead Log Errors
 
 WAL errors relate to the sidecar `.wal` file written alongside the `.graph` file.
@@ -3664,6 +3682,32 @@ ValueSet::new(vec![inner]) // API-021
 - Or, if the embedder means to let queries override it, add the `Overridable` variant to `OpenOptions::allow_overrides`. The list replaces the defaults; chain `Overridable::DEFAULTS` to add to them.
 
 **Scenario**: An application opens its database with `OpenOptions::new().allow_overrides([])` so that query text from its users cannot raise `max_derived_facts`; a user query ending in `:max-derived-facts 100000000` is refused with API-025.
+
+---
+
+### API-026 OPFS mode is not available here
+
+**Error text**: `OPFS mode is not available here: {}`
+
+**Cause**: `BrowserDb.openOpfs(name)` requires a secure context and a dedicated Web Worker with OPFS and sync access handles. It is unavailable on the main thread, in shared/service workers, when the APIs are absent, or when the browser denies access to the origin directory (for example `SecurityError`). It never falls back to IndexedDB.
+
+**Resolution**:
+- Run the call in a dedicated worker served over HTTPS or localhost.
+- Check browser support and origin access policy. Choose `BrowserDb.open(name)` explicitly if IndexedDB suits the application.
+
+**Scenario**: A page calls `BrowserDb.openOpfs('memory')` on its main thread.
+
+### API-027 Database is busy
+
+**Error text**: `the database is busy: {}`
+
+**Cause**: A call starts work while an OPFS import is in progress, or `BrowserDb.close()` is called reentrantly while a database operation is running. Busy calls change nothing. Closed objects (API-018) take precedence over busy; busy takes precedence over an open transaction (INT-001). Disposal operations remain permitted.
+
+**Resolution**:
+- Await `importGraph()` before making other calls, including `close()` or another import.
+- Call `close()` after the current operation returns, rather than inside its UDF.
+
+**Scenario**: A worker calls `query()` while `importGraph()` is awaiting staging I/O.
 
 ---
 
