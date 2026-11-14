@@ -48,6 +48,8 @@ import input, v7 migration, a transaction's facts, pages and quarantine metadata
 held for long-open cursors, and recovery scans. Browser-side IndexedDB memory,
 OS cache state and cold-start latency are not measured.
 
+Build-size results and exact toolchains are recorded in [build-sizes.md](build-sizes.md).
+
 ## Browser execution record
 
 The preceding implementation session reported 101 Firefox worker and 81

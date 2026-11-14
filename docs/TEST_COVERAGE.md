@@ -13,8 +13,19 @@ including #441, #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863
 
 **#441 verification (2026-11-14)**: the full native default suite passes
 (2,147 active, 22 ignored), including the grammar verifier and seven new
-WAL-less/image unit tests. The WASI suite passes (1,222 active, seven ignored).
+WAL-less/image unit tests. The WASI suite passes (1,222 active, seven ignored). The CI-equivalent
+nightly branch-coverage run passes 2,125 tests with 18 ignored (doctests excluded),
+95.71% line / 86.64% branch coverage, and every module floor. Its first attempt
+omitted the lock helper override and failed two helper lookups; rebuilding the
+helper and supplying `MINIGRAF_PID_NS_HELPER` resolved that harness setup error.
 Native all-feature lib and browser/WASI lib strict clippy pass, as does formatting.
+The broader `--all-targets` lint fails on existing test-code lints on both the base
+and this branch (including 21 library-test diagnostics); it is not reported as
+passing. Rust 1.99.1's distribution binary is 1,269,568 bytes, below the unchanged
+1,280,000-byte gate; [build sizes](benchmarks/441-opfs/build-sizes.md) record the
+older compiler's oversized base/control and the wasm increase. A nightly build
+with wasm atomics enabled fails with E0277 because the JS handle is not
+`Send + Sync`, preserving worker confinement.
 The preceding implementation session reported 101 Firefox worker and 81
 main-thread tests passing; this continuation compiled the worker suite but could
 not run it because the sandbox refuses localhost sockets (`EPERM`). No fresh

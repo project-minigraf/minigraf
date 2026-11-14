@@ -1,6 +1,7 @@
 // Usage: node measure.mjs <built-package-dir> <fixture-dir> [chromium|firefox|webkit]
 // Install Playwright 1.55.0 and the selected engine in this script's directory.
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +9,8 @@ import { chromium, firefox, webkit } from 'playwright'
 
 const [packageDir, fixtureDir, engine = 'chromium'] = process.argv.slice(2)
 if (!packageDir || !fixtureDir) throw new Error('expected package directory and fixture directory')
-const here = fileURLToPath(new URL('.', import.meta.url))
+const here = resolve(fileURLToPath(new URL('.', import.meta.url)))
+const wasmSha256 = createHash('sha256').update(await readFile(join(packageDir, 'minigraf_wasm_bg.wasm'))).digest('hex')
 const fixtures = ['4mib.graph', '40mib.graph']
 const sizes = Object.fromEntries(await Promise.all(fixtures.map(async (name) => [name, (await stat(join(fixtureDir, name))).size])))
 if (sizes[fixtures[0]] < 4 * 1024 ** 2 || sizes[fixtures[1]] < 40 * 1024 ** 2) throw new Error('undersized fixture')
@@ -55,7 +57,7 @@ try {
   }
   const opfs = measurements.filter((row) => row.mode === 'opfs')
   const delta = opfs[1].memoryHighWaterBytes - opfs[0].memoryHighWaterBytes
-  console.log(JSON.stringify({ engine, version: browser.version(), measurements, opfsMemoryDeltaBytes: delta,
+  console.log(JSON.stringify({ engine, version: browser.version(), wasmSha256, buildLabel: process.env.BUILD_LABEL ?? 'not specified', measurements, opfsMemoryDeltaBytes: delta,
     within4MiB: delta <= 4 * 1024 ** 2 }, null, 2))
   if (delta > 4 * 1024 ** 2) process.exitCode = 1
 } finally {
