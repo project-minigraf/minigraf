@@ -127,7 +127,9 @@ fn check_golden(db: &Minigraf) {
 /// the golden/integrity tests; no checksum is recomputed on the damaged page.
 fn newest_meta(bytes: &[u8]) -> &[u8] {
     bytes
-        .chunks_exact(4096)
+        .as_chunks::<4096>()
+        .0
+        .iter()
         .take(2)
         .filter(|page| &page[..4] == b"MGRF" && &page[8..12] == b"META")
         .max_by_key(|page| u64::from_le_bytes(page[16..24].try_into().unwrap()))

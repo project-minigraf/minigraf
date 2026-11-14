@@ -1426,7 +1426,7 @@ impl FactStorage {
     ) -> Result<Option<Value>> {
         let relevant_facts = self.get_facts_by_entity_attribute(entity_id, attribute)?;
         let mut net = net_asserted_facts(relevant_facts);
-        net.sort_by(|a, b| b.tx_count.cmp(&a.tx_count));
+        net.sort_by_key(|f| std::cmp::Reverse(f.tx_count));
         Ok(net.first().map(|f| f.value.clone()))
     }
 

@@ -26,13 +26,14 @@ pub fn valid_time_filter_simd(valid_from: &[i64], valid_to: &[i64], ts: i64) -> 
     let ts_v = i64x4::splat(ts);
     let mut count = 0usize;
 
-    for (vf_chunk, vt_chunk) in valid_from.chunks_exact(4).zip(valid_to.chunks_exact(4)) {
-        let [vf0, vf1, vf2, vf3] = *vf_chunk else {
-            unreachable!()
-        };
-        let [vt0, vt1, vt2, vt3] = *vt_chunk else {
-            unreachable!()
-        };
+    for (vf_chunk, vt_chunk) in valid_from
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(valid_to.as_chunks::<4>().0)
+    {
+        let [vf0, vf1, vf2, vf3] = *vf_chunk;
+        let [vt0, vt1, vt2, vt3] = *vt_chunk;
 
         let vf = i64x4::new([vf0, vf1, vf2, vf3]);
         let vt = i64x4::new([vt0, vt1, vt2, vt3]);
@@ -70,8 +71,7 @@ pub fn as_of_filter_simd(tx_counts: &[u64], threshold: u64) -> usize {
     let thr_v = u64x4::splat(threshold);
     let mut count = 0usize;
 
-    for chunk in tx_counts.chunks_exact(4) {
-        let [a, b, c, d] = *chunk else { unreachable!() };
+    for &[a, b, c, d] in tx_counts.as_chunks::<4>().0 {
         let v = u64x4::new([a, b, c, d]);
 
         // tc <= threshold  ≡  NOT (tc > threshold)
@@ -99,8 +99,7 @@ pub fn as_of_filter_simd(tx_counts: &[u64], threshold: u64) -> usize {
 pub fn sum_simd_i64(values: &[i64]) -> i64 {
     let mut acc = i64x4::splat(0_i64);
 
-    for chunk in values.chunks_exact(4) {
-        let [a, b, c, d] = *chunk else { unreachable!() };
+    for &[a, b, c, d] in values.as_chunks::<4>().0 {
         acc += i64x4::new([a, b, c, d]);
     }
 
