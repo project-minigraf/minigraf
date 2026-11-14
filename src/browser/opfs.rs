@@ -104,7 +104,7 @@ pub(crate) struct OpfsFile {
     /// The file's entry name, for error messages.
     name: String,
     open: AtomicBool,
-    #[cfg(test)]
+    #[cfg(all(test, minigraf_browser_worker))]
     pub(crate) faults: std::sync::Mutex<tests::Faults>,
 }
 
@@ -114,7 +114,7 @@ impl OpfsFile {
             handle,
             name,
             open: AtomicBool::new(true),
-            #[cfg(test)]
+            #[cfg(all(test, minigraf_browser_worker))]
             faults: std::sync::Mutex::default(),
         }
     }
@@ -153,7 +153,7 @@ impl OpfsFile {
         let op = || format!("read page {page_id} of {}", self.name);
         self.check_open("read")?;
         let off = offset(page_id)?;
-        #[cfg(test)]
+        #[cfg(all(test, minigraf_browser_worker))]
         tests::count_read();
         let mut buf = vec![0u8; len];
         let n = self
@@ -174,7 +174,7 @@ impl OpfsFile {
         let op = || format!("write page {page_id} of {}", self.name);
         self.check_open("write")?;
         let off = offset(page_id)?;
-        #[cfg(test)]
+        #[cfg(all(test, minigraf_browser_worker))]
         if let Some(fault) = self.faults.lock().unwrap().on_write() {
             return self.inject_write(off, data, fault, op());
         }
@@ -192,7 +192,7 @@ impl OpfsFile {
     /// makes it, which is not a power-loss guarantee.
     pub(crate) fn flush(&self) -> Result<()> {
         self.check_open("flush")?;
-        #[cfg(test)]
+        #[cfg(all(test, minigraf_browser_worker))]
         if self.faults.lock().unwrap().on_flush() {
             return Err(storage_error(
                 format!("flush {}", self.name),
@@ -398,7 +398,7 @@ pub(crate) async fn open_file(
     match JsFuture::from(file.create_sync_access_handle()).await {
         Ok(h) => {
             let file = OpfsFile::new(h.unchecked_into(), entry.to_string());
-            #[cfg(test)]
+            #[cfg(all(test, minigraf_browser_worker))]
             if let Some(faults) = tests::take_armed(entry) {
                 *file.faults.lock().unwrap() = faults;
             }
@@ -476,7 +476,37 @@ pub(crate) async fn recover_import(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, minigraf_browser_worker))]
+impl OpfsFile {
+    /// The handle itself, for tests that write raw bytes.
+    pub(crate) fn handle_for_tests(&self) -> &FileSystemSyncAccessHandle {
+        &self.handle
+    }
+
+    fn inject_write(
+        &self,
+        off: f64,
+        data: &[u8],
+        fault: tests::WriteFault,
+        op: String,
+    ) -> Result<()> {
+        let (n, throw) = match fault {
+            tests::WriteFault::Throw(n) => (n.min(data.len()), true),
+            tests::WriteFault::Short(n) => (n.min(data.len()), false),
+        };
+        if n > 0 {
+            self.handle
+                .write_with_u8_array_and_options(&data[..n], &at(off))
+                .map_err(|e| js_failure(op.clone(), &e))?;
+        }
+        if throw {
+            return Err(storage_error(op, "fault injection"));
+        }
+        Err(storage_error(op, "short read/write"))
+    }
+}
+
+#[cfg(all(test, minigraf_browser_worker))]
 pub(crate) mod tests {
     //! Fault injection and read counting for the OPFS tests.
     use std::cell::Cell;
@@ -554,35 +584,5 @@ pub(crate) mod tests {
                 None => false,
             }
         }
-    }
-}
-
-#[cfg(test)]
-impl OpfsFile {
-    /// The handle itself, for tests that write raw bytes.
-    pub(crate) fn handle_for_tests(&self) -> &FileSystemSyncAccessHandle {
-        &self.handle
-    }
-
-    fn inject_write(
-        &self,
-        off: f64,
-        data: &[u8],
-        fault: tests::WriteFault,
-        op: String,
-    ) -> Result<()> {
-        let (n, throw) = match fault {
-            tests::WriteFault::Throw(n) => (n.min(data.len()), true),
-            tests::WriteFault::Short(n) => (n.min(data.len()), false),
-        };
-        if n > 0 {
-            self.handle
-                .write_with_u8_array_and_options(&data[..n], &at(off))
-                .map_err(|e| js_failure(op.clone(), &e))?;
-        }
-        if throw {
-            return Err(storage_error(op, "fault injection"));
-        }
-        Err(storage_error(op, "short read/write"))
     }
 }

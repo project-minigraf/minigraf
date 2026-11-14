@@ -624,7 +624,7 @@ mod worker {
             for err in [
                 rejection(checkpoint.await),
                 rejection(import.await),
-                rejection(execute.await).into(),
+                rejection(execute.await),
             ] {
                 assert_eq!(code_of(&err), "API-018");
             }
@@ -1005,6 +1005,41 @@ mod worker {
             assert_eq!(reopened.export_graph().unwrap().to_vec(), before);
             reopened.close().unwrap();
         }
+    }
+
+    #[wasm_bindgen_test]
+    async fn foreign_import_keeps_shared_error_and_preserves_destination() {
+        let bytes = vec![0xaa; 3 * crate::storage::PAGE_SIZE];
+        let memory = BrowserDb::open_in_memory().unwrap();
+        put(&memory, 0..3).await;
+        let memory_before = memory.export_graph().unwrap().to_vec();
+        let memory_code = code_of(&rejection(memory.import_graph(blob(&bytes)).await));
+        assert_eq!(memory_code, "STG-002");
+        assert_eq!(memory.export_graph().unwrap().to_vec(), memory_before);
+        assert_eq!(ns(&memory).await, vec![0, 1, 2]);
+        memory.close().unwrap();
+
+        let name = unique("foreign-import");
+        let db = open(&name).await;
+        put(&db, 0..3).await;
+        let before = db.export_graph().unwrap().to_vec();
+        let mut cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+        let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
+        let opfs_code = code_of(&rejection(db.import_graph(blob(&bytes)).await));
+        assert_eq!(opfs_code, memory_code);
+        assert_eq!(db.export_graph().unwrap().to_vec(), before);
+        assert!(cursor.next_batch(10).unwrap().is_some());
+        assert!(pq.execute(JsValue::UNDEFINED).is_ok());
+        assert_eq!(
+            code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+            "STG-026"
+        );
+        assert_eq!(ns(&db).await, vec![0, 1, 2]);
+        db.close().unwrap();
+        let reopened = open(&name).await;
+        assert_eq!(reopened.export_graph().unwrap().to_vec(), before);
+        assert_eq!(ns(&reopened).await, vec![0, 1, 2]);
+        reopened.close().unwrap();
     }
 
     // ── AC11: portability ──────────────────────────────────────────────────

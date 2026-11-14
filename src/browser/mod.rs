@@ -1307,6 +1307,7 @@ fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBacke
     // Import admits only an actual empty blob, a selectable v8 meta, or
     // a supported v7 header. Open/create may repair a torn initial meta;
     // doing that to a nonempty import would silently replace user data.
+    let mut unselectable = false;
     if !bytes.is_empty() {
         use crate::storage::meta::{MetaPage, SlotState};
         let have = (bytes.len() / crate::storage::PAGE_SIZE) as u64;
@@ -1330,7 +1331,11 @@ fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBacke
         )?
         .is_none()
         {
-            crate::error::bail_coded!(ErrorCode::Stg032);
+            // Let the shared select_meta path classify invalid input first
+            // (in particular foreign files are STG-002). If open succeeds by
+            // repairing a torn initial image in this temporary buffer, refuse
+            // it below, before staging or touching the destination.
+            unselectable = true;
         }
     }
     let pages: std::collections::HashMap<u64, Vec<u8>> = bytes
@@ -1343,6 +1348,9 @@ fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBacke
         BrowserBackend::Buffer(BrowserBufferBackend::load_pages(pages)),
         0,
     )?;
+    if unselectable {
+        crate::error::bail_coded!(ErrorCode::Stg032);
+    }
     // The buffer's length after open: a v7 image's migration appends.
     let have = pfs.with_backend(|b| b.page_count())?;
     let need = pfs.committed_page_count();
@@ -1459,6 +1467,7 @@ mod tests {
     wasm_bindgen_test_configure!(run_in_dedicated_worker);
 
     /// A name no other test uses, for a persistent database.
+    #[cfg(minigraf_browser_worker)]
     pub(crate) fn unique(prefix: &str) -> String {
         thread_local! {
             static NEXT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };

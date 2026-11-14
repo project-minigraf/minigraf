@@ -61,7 +61,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Pages in the page cache now (#441).
-    #[cfg(test)]
+    #[cfg(all(test, minigraf_browser_worker))]
     pub(crate) fn cached_page_count(&self) -> usize {
         self.page_cache.cached_page_count()
     }

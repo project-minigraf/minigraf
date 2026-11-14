@@ -156,7 +156,7 @@ cargo run < demos/demo_negation.txt
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values; `uuids_of` walks dense id batches with `LeafCursor` and uses exact scalar reads for sparse/small batches, #530) and `Encoder` (checkpoint-time id assignment and key building)
    - `value_pages.rs`: append-only value pages for strings over 64 bytes and sets whose element encoding is over 64 bytes (#316; DICT dedup compares bytes, `long_bytes`/`find_long_bytes`)
    - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`, `KeySource`); query scans use the resumable `live_keys` to decide net-assert on index keys (#379) among the versions a `TxBound` keeps; `live_facts` is test-only, and production fact-level net-assert handles pending records (#532, superseded by #551); `KeySource::any_key` proves raw kind-prefix presence with one leaf seek, including historical/retracted keys (#641); `tx_order` (cached per reader), `last_tx_at`, `tx_runs` over the DICT's transactions (#551)
-   - `verify.rs`: integrity walk for `Minigraf::verify` (tree order, index digests, DICT, page accounting) and the source choice for `rebuild_indexes` (#373)
+   - `verify.rs`: integrity walk for `Minigraf::verify` (tree order, index digests, DICT, page accounting) and the source choice for `rebuild_indexes` (#373); also built with the `browser` feature for OPFS import verification
    - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator (skips quarantined ids), free-list chain
    - `pins.rs`: `Pins` / `GenerationPin` — generations held by open snapshots and the quarantine of pages checkpoints freed after them (#543)
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
@@ -193,7 +193,7 @@ cargo run < demos/demo_negation.txt
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation (`storage::pins`), so checkpoints run but do not reuse its pages (`API-013` deprecated, #543)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
-7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery; `append_entry` takes the `SyncMode` of each append (#871), and in tests the writer tracks its synced length (lost-sync fault, `Minigraf::power_loss`). Like `storage::verify` and `storage::dir_sync`, not compiled for wasm32 (no file backend there)
+7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery; `append_entry` takes the `SyncMode` of each append (#871), and in tests the writer tracks its synced length (lost-sync fault, `Minigraf::power_loss`). Like `storage::dir_sync`, not compiled for wasm32 (no file backend there)
 
 8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`. `MinigrafError::invalid_argument` (API-017) and `MinigrafError::closed` (API-018) exist for language bindings; browser OPFS adds API-026 (unavailable context), API-027 (busy) and STG-048 (failed browser storage operation)
 

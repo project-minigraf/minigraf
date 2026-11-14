@@ -111,9 +111,11 @@ An already applied OPFS/in-memory transaction commit resolves after close; an
 IndexedDB commit whose flush has not been submitted rejects with API-018 and
 never submits it. An already submitted IndexedDB flush settles by its own result.
 
-OPFS import first validates and verifies its complete input. Only an empty blob
-creates an empty database; a nonempty image without a selectable meta is rejected,
-even if opening those bytes as a file could recover an interrupted creation.
+OPFS import admits an empty blob; a nonempty v8 image with a selectable meta
+and complete, verified contents (including an empty v8 image); or a supported v7
+image that migrates completely. Nonempty torn or zero-filled initial Minigraf
+images are rejected even if opening those bytes as a file could recover an
+interrupted creation.
 A meta counting pages beyond the input is STG-044. Exports normalize a missing
 second meta slot after interrupted creation, while failed reads of existing
 pages remain errors. Import stages the verified image in
