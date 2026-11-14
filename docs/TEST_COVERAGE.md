@@ -26,14 +26,18 @@ passing. Rust 1.99.1's distribution binary is 1,269,568 bytes, below the unchang
 older compiler's oversized base/control and the wasm increase. A nightly build
 with wasm atomics enabled fails with E0277 because the JS handle is not
 `Send + Sync`, preserving worker confinement.
-The preceding implementation session reported 101 Firefox worker and 81
-main-thread tests passing; this continuation compiled the worker suite but could
-not run it because the sandbox refuses localhost sockets (`EPERM`). No fresh
-Chrome/Firefox/WebKit, private-browsing or memory measurement pass is claimed.
-The packaged consumer adds cross-worker locking, acknowledged-write recovery,
-six sequential-commit termination timings and four import-interruption timings;
-those new harnesses have syntax checks only here. See
-[measurement status and reproduction](benchmarks/441-opfs/README.md).
+Fresh Firefox 159.0.1 runs pass **101 worker** and **81 main-thread** tests.
+The packaged consumer passes **52 checks per engine** on Chromium 140.0.7339.16
+(Playwright) and Firefox 159.0.1 (installed Firefox via WebDriver, because the
+Playwright Firefox executable is absent). These include cross-worker locking,
+acknowledged-write recovery, six sequential-commit termination timings, four
+import-interruption timings, worker IndexedDB and the README worker example.
+The 4,239,360-byte and 42,135,552-byte fixtures both use 1,245,184 bytes of OPFS
+wasm memory high-water, on both engines: **0-byte growth**, passing AC13(c).
+Chromium incognito opens OPFS and queries `[[42]]`; Firefox private mode rejects
+with API-026 / SecurityError. Chrome core tests lack a matching driver/browser;
+WebKit and WebKit private tests lack an installed engine and remain unrun.
+See [measurement evidence and reproduction](benchmarks/441-opfs/README.md).
 
 The native additions are `wal_less_crash_at_every_point_of_a_commit_opens_old_or_new`,
 `wal_less_crash_while_creating_opens_empty`, `wal_less_fixed_cases`,

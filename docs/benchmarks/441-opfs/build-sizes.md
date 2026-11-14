@@ -24,3 +24,14 @@ versions; a release package built with those versions may differ.
 The after package was also stamped as `@minigraf/browser@0.0.0-ci` and packed
 successfully (665,211 bytes) with JS glue, TypeScript definitions, README and both licenses.
 No registry publish or remote branch operation was performed.
+
+## Packaged consumer run with the companion lockfile
+
+The resumed local run built the actual companion worktree with its pinned
+wasm-bindgen 0.2.126 / web-sys 0.3.103, Rust 1.94.0, release opt-level 3 and
+wasm-opt disabled. Its raw wasm is **1,812,953 bytes** and the stamped
+`@minigraf/browser@0.0.0-ci` tarball is **655,336 bytes**. This package passed
+52 consumer checks in each of Chromium 140.0.7339.16 (Playwright) and Firefox
+159.0.1 (WebDriver). The memory record identifies its exact SHA-256.
+These sizes use different dependency versions from the matching-profile
+before/after comparison above; they are not a replacement size delta.
