@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 7.1b: not-join (existential negation).
 
 use minigraf::{Minigraf, OpenOptions, QueryResult};

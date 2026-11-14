@@ -543,7 +543,8 @@ mod tests {
     #[test]
     fn format_value_float() {
         use crate::graph::types::Value;
-        assert_eq!(Repl::format_value(&Value::Float(3.14)), "3.14");
+        let two_decimal_pi = (std::f64::consts::PI * 100.0).trunc() / 100.0;
+        assert_eq!(Repl::format_value(&Value::Float(two_decimal_pi)), "3.14");
     }
 
     #[test]

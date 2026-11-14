@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Query results over committed history equal those over the same history held
 //! in memory (#379). The file-backed database checkpoints between batches, so
 //! its committed facts go through the key-level net-assert walk; the in-memory

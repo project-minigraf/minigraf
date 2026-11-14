@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `OpenOptions::query_memory_limit` and `QRY-012` through the public API
 //! (#549): the default, the builder, and every way a query runs.
 

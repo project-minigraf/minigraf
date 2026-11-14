@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `docs/GRAMMAR.md` is rendered from `tests/grammar/grammar.pest` (#643).
 //!
 //! `grammar_doc_is_current` renders the grammar as EBNF and fails when the file differs.
@@ -285,7 +286,8 @@ fn render(src: &str) -> String {
     // Rules grouped into sections; names are aligned within a section.
     let mut note = None;
     let mut comment = None;
-    let mut sections: Vec<(Option<String>, Vec<(String, Node, bool)>)> = Vec::new();
+    type Section = (Option<String>, Vec<(String, Node, bool)>);
+    let mut sections: Vec<Section> = Vec::new();
     for rule in &rules {
         if rule.name == "WHITESPACE" {
             note = Some(whitespace_note(&rule.expr));

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration-level error paths and aggregate type-boundary regressions.
 //! Invalid programs still propagate errors; aggregate values follow #789.
 

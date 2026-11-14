@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Rule queries on the streaming engine (#548 spec §7). Each query runs on
 //! an in-memory database, on a file with its facts pending, and on the same
 //! file after a checkpoint, and its answer must be the one recorded while the

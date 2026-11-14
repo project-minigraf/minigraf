@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `OpenOptions::read_only` (#429): a handle that shows the same data as a
 //! read-write open, writes nothing to the `.graph` file or its WAL, refuses
 //! writes with API-014, and shares the file with other read-only handles.

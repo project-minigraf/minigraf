@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 7.2a aggregation.
 //! Covers count, sum, min, max, :with, rules, negation, and temporal queries.
 

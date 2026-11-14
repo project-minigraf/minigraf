@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `:limit`, `:offset` and `:order-by` (#306, spec `docs/superpowers/specs/2026-10-24-limit-order-by-design.md`).
 //!
 //! Without `:order-by`, `:limit n` returns `min(n, |answer|)` rows, and
@@ -123,7 +124,12 @@ fn check(db: &Minigraf) {
                     pulled.extend(keys(batch.rows()));
                 }
 
-                let bind = [("n", BindValue::Val(Value::Integer(n as i64)))];
+                let bind = [(
+                    "n",
+                    BindValue::Val(Value::Integer(
+                        i64::try_from(n).expect("fixture value fits in i64"),
+                    )),
+                )];
                 let from_prepared = results(prepared.execute(&bind).expect(&q));
                 let mut cursor = prepared.query(&bind).expect(&q);
                 let mut prepared_pulled = Vec::new();
@@ -279,7 +285,9 @@ fn values(r: QueryResult) -> Vec<Vec<Value>> {
 
 /// Ordered shapes: a body, its `:order-by` vector, and the keys as
 /// `(column, descending)`.
-const ORDERED: &[(&str, &str, &[(usize, bool)])] = &[
+type OrderedCase = (&'static str, &'static str, &'static [(usize, bool)]);
+
+const ORDERED: &[OrderedCase] = &[
     (
         ":find ?e ?a :where [?e :age ?a]",
         "[?a :desc]",
@@ -390,9 +398,17 @@ fn check_ordered(db: &Minigraf) {
                     let bind = [
                         (
                             "o",
-                            BindValue::Val(Value::Integer(offset.unwrap_or(0) as i64)),
+                            BindValue::Val(Value::Integer(
+                                i64::try_from(offset.unwrap_or(0))
+                                    .expect("fixture value fits in i64"),
+                            )),
                         ),
-                        ("n", BindValue::Val(Value::Integer(n as i64))),
+                        (
+                            "n",
+                            BindValue::Val(Value::Integer(
+                                i64::try_from(n).expect("fixture value fits in i64"),
+                            )),
+                        ),
                     ];
                     let got = keys(&values(prepared.execute(&bind).expect(&q)));
                     assert_eq!(got, want, "{q} via prepared, reorder {reorder}");

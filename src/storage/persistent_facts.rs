@@ -1022,7 +1022,8 @@ mod tests {
     fn assert_indexes_exact(meta: &MetaPage, backend: &dyn StorageBackend) {
         let cache = PageCache::new(0);
         let facts = |index, root| {
-            let mut v: Vec<(Uuid, String, Vec<u8>, u64, i64, i64, bool)> =
+            type IndexedFact = (Uuid, String, Vec<u8>, u64, i64, i64, bool);
+            let mut v: Vec<IndexedFact> =
                 all_entries_as_facts(index, root, meta.dict_root, backend, &cache)
                     .unwrap()
                     .into_iter()
@@ -1072,13 +1073,13 @@ mod tests {
         let mut batch = Vec::new();
         for i in 0..n {
             let k = seed.wrapping_mul(31).wrapping_add(i as u64);
-            let e = if *next_entity == 0 || k % 3 == 0 {
+            let e = if *next_entity == 0 || k.is_multiple_of(3) {
                 *next_entity += 1;
                 entity(*next_entity)
             } else {
                 entity(u128::from(k) % *next_entity + 1)
             };
-            let value = if k % 4 == 0 {
+            let value = if k.is_multiple_of(4) {
                 Value::Ref(entity(u128::from(k / 4) % *next_entity + 1))
             } else {
                 Value::String(format!("v{k}"))
@@ -2329,7 +2330,9 @@ mod tests {
 
     /// Mixed facts: short and long strings (some repeated), keywords, refs,
     /// numbers, multi-valued attributes and retractions.
-    fn mixed_batch(round: u64, n: u64) -> (Vec<(Uuid, String, Value)>, Vec<(Uuid, String, Value)>) {
+    type FactBatch = Vec<(Uuid, String, Value)>;
+
+    fn mixed_batch(round: u64, n: u64) -> (FactBatch, FactBatch) {
         let mut asserts = Vec::new();
         let mut retracts = Vec::new();
         for i in 0..n {
@@ -2343,10 +2346,10 @@ mod tests {
                 3 => Value::Ref(entity(u128::from(k % 41))),
                 4 => Value::Integer(i64::try_from(k).unwrap() - 500),
                 5 => Value::Float(k as f64 / 7.0),
-                6 => Value::Boolean(k % 2 == 0),
+                6 => Value::Boolean(k.is_multiple_of(2)),
                 _ => Value::String("x".repeat(65 + (k % 3) as usize)),
             };
-            if k % 11 == 0 {
+            if k.is_multiple_of(11) {
                 retracts.push((e, a, v));
             } else {
                 asserts.push((e, a, v));
@@ -2656,7 +2659,8 @@ mod tests {
     /// counter bound exactly when `tx_id` rises with `tx_count` over both.
     #[test]
     fn tx_bound_keeps_what_the_executor_filter_keeps() {
-        let cases: [(&[(u64, u64)], &[(u64, u64)], bool); 6] = [
+        type TxBoundCase<'a> = (&'a [(u64, u64)], &'a [(u64, u64)], bool);
+        let cases: [TxBoundCase<'_>; 6] = [
             (&[(1, 100), (2, 200), (4, 400)], &[(5, 500), (6, 600)], true),
             (&[(1, 100), (2, 200)], &[], true),
             (&[], &[(1, 100), (2, 200), (2, 200)], true),

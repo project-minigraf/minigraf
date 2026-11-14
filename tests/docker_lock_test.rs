@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! #324: kernel file locking, tier 3 — two containers sharing a Docker
 //! volume, matching the deployment shape in the #317 report literally.
 //!

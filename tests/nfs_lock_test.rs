@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! #324: kernel file locking must behave correctly on network filesystems.
 //!
 //! `flock` over NFS is emulated by `fcntl` on Linux since 2.6.37, which works

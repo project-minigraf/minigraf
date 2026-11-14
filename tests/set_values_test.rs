@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Set values (#316): transact, query, retract and persist `#{...}`, through
 //! the pending store, a checkpoint, a reopen, WAL replay, the fact log and
 //! the log writer.

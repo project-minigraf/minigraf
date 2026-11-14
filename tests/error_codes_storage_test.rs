@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Regression tests for #359 (STG-0xx storage error codes, part of the #277
 //! structured error codes rollout): asserts that specific `STG-NNN` codes
 //! come back through the public `Minigraf::open()` API for corrupt/invalid

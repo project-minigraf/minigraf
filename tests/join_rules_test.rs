@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Join rules that do not depend on the query plan (#545, #473 spec §5.4):
 //! bound floats are equal by IEEE `==`, and a variable bound to both a
 //! keyword and a ref returns the kind from the first pattern, in `:where`

@@ -136,7 +136,7 @@ impl Shape {
 
     /// Rows the answer has.
     pub fn rows(&self) -> usize {
-        self.oracle().rows as usize
+        usize::try_from(self.oracle().rows).expect("fixture value fits in usize")
     }
 
     /// The answer, computed without the database.
@@ -215,13 +215,13 @@ impl Shape {
             self.records(|e, a, v| {
                 command.push_str(&format!("[#uuid \"{e}\" {a} {}]", edn(&v)));
                 count += 1;
-                if count % 1000 == 0 {
+                if count.is_multiple_of(1000) {
                     command.push_str("])");
                     db.execute(&command).unwrap();
                     command = String::from("(transact [");
                 }
             });
-            if count % 1000 != 0 {
+            if !count.is_multiple_of(1000) {
                 command.push_str("])");
                 db.execute(&command).unwrap();
             }

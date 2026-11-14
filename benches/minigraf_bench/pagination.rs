@@ -74,7 +74,7 @@ pub fn bench_pagination(c: &mut Criterion) {
                     if descending { ":desc" } else { ":asc" }
                 );
                 let expected: Vec<_> = (offset..offset + limit)
-                    .map(|i| vec![Value::Integer(if descending { n - 1 - i } else { i } as i64)])
+                    .map(|i| vec![Value::Integer(i64::try_from(if descending { n - 1 - i } else { i }).expect("fixture value fits in i64"))])
                     .collect();
                 // Validate the entire page (including offset/order), not just
                 // its size. Keep fixture and oracle work out of the measurement.
@@ -94,7 +94,7 @@ pub fn bench_pagination(c: &mut Criterion) {
             oracle.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
             let expected: Vec<_> = oracle[137..147]
                 .iter()
-                .map(|&(g, s, v)| vec![Value::Integer(g as i64), Value::Integer(s as i64), Value::Integer(v as i64)])
+                .map(|&(g, s, v)| vec![Value::Integer(i64::try_from(g).expect("fixture value fits in i64")), Value::Integer(i64::try_from(s).expect("fixture value fits in i64")), Value::Integer(i64::try_from(v).expect("fixture value fits in i64"))])
                 .collect();
             assert!(rows(&db, query) == expected, "complete tie order matches oracle");
             b.iter(|| black_box(rows(&db, black_box(query))));

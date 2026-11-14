@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for stratified negation (Phase 7.1a).
 //! Covers the 10 scenarios from the spec testing plan.
 

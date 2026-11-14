@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 6.1 covering indexes.
 //!
 //! These tests verify that:

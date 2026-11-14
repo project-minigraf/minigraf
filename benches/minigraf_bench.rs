@@ -1,3 +1,9 @@
+#![allow(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used
+)]
 // TODO (Phase 7.4): Add profiling integration before optimizing the query path.
 //
 // Integrate `pprof` as a Criterion profiler (via the `pprof` crate's Criterion
@@ -61,8 +67,9 @@ mod chunked_transactions;
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
 use minigraf::OpenOptions;
+use std::hint::black_box;
 
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
 
@@ -1853,7 +1860,7 @@ fn bench_prepared(c: &mut Criterion) {
                 let pq = db
                     .prepare("(query [:find ?e :where [?e :val ?v] [(< ?v $threshold)]])")
                     .unwrap();
-                let threshold = (n / 2) as i64;
+                let threshold = i64::try_from(n / 2).expect("fixture value fits in i64");
                 b.iter(|| {
                     pq.execute(&[(
                         "threshold",
@@ -1980,7 +1987,7 @@ fn bench_predicate_pushdown(c: &mut Criterion) {
 
     for &(label, n) in SCALES {
         let db = helpers::populate_with_names(n);
-        let threshold = (n as i64) * 9 / 10;
+        let threshold = i64::try_from(n).expect("fixture value fits in i64") * 9 / 10;
         let query = format!(
             "(query [:find ?e ?n :where [?e :val ?v] [?e :name ?n] [(> ?v {})]])",
             threshold

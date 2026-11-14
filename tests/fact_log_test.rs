@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `Minigraf::fact_log` streams every fact record with its transaction and
 //! valid-time bounds (#430). These tests check the records against a model of
 //! the writes, in every split between checkpointed and pending facts, both
@@ -50,7 +51,9 @@ fn tx_id_of(result: QueryResult) -> u64 {
 
 /// The writes, one transaction per step: `(command, records)` where each record
 /// is `(entity, attribute, value as Debug, asserted)`.
-fn steps() -> Vec<(String, Vec<(usize, &'static str, String, bool)>)> {
+type Step = (String, Vec<(usize, &'static str, String, bool)>);
+
+fn steps() -> Vec<Step> {
     let e = |i: usize| format!("#uuid \"{}\"", uuid(i));
     let s = |v: &str| format!("String({v:?})");
     let mut steps = vec![
@@ -243,23 +246,24 @@ fn records_are_identical_across_layouts() {
     let dir = tempfile::tempdir().unwrap();
     let mut all = Vec::new();
     for (_name, db, _) in layouts(dir.path()) {
-        let mut recs: Vec<(u64, String, String, String, bool, Option<i64>, i64)> =
-            read(&db, &FactFilter::new(), 1000)
-                .iter()
-                .map(|r| {
-                    (
-                        r.tx_count,
-                        name_of(&r.entity).to_string(),
-                        r.attribute.clone(),
-                        format!("{:?}", r.value),
-                        r.asserted,
-                        // `None` for the transaction time, so layouts written
-                        // at different times compare equal.
-                        (r.valid_from != r.tx_id as i64).then_some(r.valid_from),
-                        r.valid_to,
-                    )
-                })
-                .collect();
+        type NormalizedRecord = (u64, String, String, String, bool, Option<i64>, i64);
+        let mut recs: Vec<NormalizedRecord> = read(&db, &FactFilter::new(), 1000)
+            .iter()
+            .map(|r| {
+                (
+                    r.tx_count,
+                    name_of(&r.entity).to_string(),
+                    r.attribute.clone(),
+                    format!("{:?}", r.value),
+                    r.asserted,
+                    // `None` for the transaction time, so layouts written
+                    // at different times compare equal.
+                    (r.valid_from != i64::try_from(r.tx_id).expect("fixture value fits in i64"))
+                        .then_some(r.valid_from),
+                    r.valid_to,
+                )
+            })
+            .collect();
         recs.sort();
         all.push(recs);
     }
@@ -282,7 +286,8 @@ fn valid_time_and_long_values_round_trip() {
             .find(|r| r.attribute == ":person/name")
             .expect("name record");
         assert_eq!(
-            name.valid_from, name.tx_id as i64,
+            name.valid_from,
+            i64::try_from(name.tx_id).expect("fixture value fits in i64"),
             "default valid_from is tx time"
         );
         assert_eq!(name.valid_to, i64::MAX, "default valid_to is forever");

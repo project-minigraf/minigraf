@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Several writes to one `(e, a, v)` in one `WriteTransaction` (#477).
 //!
 //! The last statement that writes a triple decides it, in any mix of

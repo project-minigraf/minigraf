@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Optional distinct output (#493). Default queries still return bags.
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -68,7 +69,7 @@ fn distinct_is_a_bare_non_repeating_section() {
         (":distinct ?e", "PRS-061"),
     ] {
         let q = format!("(query [:find ?e :where [?e :c ?v] {extra}])");
-        assert_eq!(db.prepare(&q).err().expect("rejected").code(), code);
+        assert_eq!(db.prepare(&q).expect_err("rejected").code(), code);
     }
 }
 
@@ -488,8 +489,7 @@ fn retained_set_payloads_count_toward_the_memory_limit() {
     ] {
         let e = db
             .execute(q)
-            .err()
-            .expect("retained set payloads must exceed the bound");
+            .expect_err("retained set payloads must exceed the bound");
         assert_eq!(e.code(), "QRY-012");
     }
 }

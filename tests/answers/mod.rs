@@ -43,7 +43,7 @@ const WEEK_MS: u64 = 7 * 86_400_000;
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
+        .map(|d| i64::try_from(d.as_millis()).expect("fixture value fits in i64"))
         .unwrap_or(0)
 }
 

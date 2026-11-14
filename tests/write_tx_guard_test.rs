@@ -1,3 +1,4 @@
+#![cfg(test)]
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
 //! A database call on a thread that holds a `WriteTransaction` returns

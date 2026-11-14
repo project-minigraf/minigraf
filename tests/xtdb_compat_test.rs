@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! XTDB compatibility tests (#221).
 //!
 //! License: XTDB is Apache 2.0. These tests are semantic ports of query

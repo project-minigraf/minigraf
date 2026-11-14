@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Cross-feature integration tests for Phase 7.5.
 //! Each test models a realistic embedder workload combining 2–3 Datalog features.
 

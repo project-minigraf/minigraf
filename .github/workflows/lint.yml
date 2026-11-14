@@ -1,9 +1,9 @@
 name: Lint
 
 # rustfmt and clippy in one job: formatting takes a second once the toolchain
-# is installed. Clippy lints the library and binary with every feature; tests,
-# examples and benches are not linted (the panic-prevention lints in Cargo.toml
-# would need thousands of changes there). wasm.yml lints the wasm targets.
+# is installed. Clippy lints all targets with every feature. clippy.toml scopes
+# panic and indexing exemptions to tests; Cargo.toml keeps production denies.
+# wasm.yml lints the wasm targets.
 
 on:
   push:
@@ -33,4 +33,4 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings

@@ -1,4 +1,5 @@
-use criterion::{BenchmarkId, Criterion, black_box};
+use criterion::{BenchmarkId, Criterion};
+use std::hint::black_box;
 
 // ── point_query_chain_depth (Issue #323) ─────────────────────────────────────
 //

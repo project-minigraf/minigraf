@@ -1,3 +1,4 @@
+#![cfg(test)]
 use minigraf::db::Minigraf;
 use minigraf::{QueryResult, Value};
 
@@ -563,8 +564,7 @@ fn window_in_aggregate_query_reading_a_non_grouping_variable_is_rejected() {
                    :where [?e :employee/dept ?dept]
                           [?e :employee/salary ?salary]])"#,
         )
-        .err()
-        .expect("rejected");
+        .expect_err("rejected");
     assert_eq!(err.code(), "PRS-082");
     let err = db
         .execute(
@@ -572,8 +572,7 @@ fn window_in_aggregate_query_reading_a_non_grouping_variable_is_rejected() {
                    :where [?e :employee/dept ?dept]
                           [?e :employee/salary ?salary]])"#,
         )
-        .err()
-        .expect("lag on non-grouping variable rejected");
+        .expect_err("lag on non-grouping variable rejected");
     assert_eq!(err.code(), "PRS-082");
 }
 

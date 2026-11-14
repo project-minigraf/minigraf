@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Regression tests for issue #361 (part of #277): QRY-0xx error codes.
 //!
 //! Drives the full public `Minigraf::execute()` API and asserts the specific

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! #789: ordinary and window aggregates share their argument domain.
 use minigraf::{BindValue, Minigraf, QueryResult, Value};
 

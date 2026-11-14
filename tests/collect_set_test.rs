@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `collect-set` (#316 spec §7): `[(collect-set ?e :a) ?s]` binds the set of
 //! the values of `[?e :a ?v]` under the query's view, `#{}` when there are
 //! none.
@@ -28,7 +29,7 @@ fn one_set(db: &Minigraf, q: &str) -> Value {
 }
 
 fn code(db: &Minigraf, q: &str) -> String {
-    db.execute(q).err().expect("an error").code().to_string()
+    db.execute(q).expect_err("an error").code().to_string()
 }
 
 fn scopes() -> Minigraf {
@@ -356,8 +357,7 @@ fn memory_limit_is_qry_012() {
         .unwrap();
     let err = db
         .execute("(query [:find ?s :where [?e :name _] [(collect-set ?e :v) ?s]])")
-        .err()
-        .expect("over the limit");
+        .expect_err("over the limit");
     assert_eq!(err.code(), "QRY-012");
     assert!(
         err.to_string().contains("CollectSet"),

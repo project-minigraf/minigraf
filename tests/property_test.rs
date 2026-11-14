@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Cross-feature property tests (#221, #386).
 //!
 //! Compares Minigraf query results against a deliberately simple reference

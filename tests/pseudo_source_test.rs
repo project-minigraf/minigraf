@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Pseudo-attribute sources (#594, design
 //! `docs/superpowers/specs/2026-10-15-plan-independent-answers-design.md`
 //! §3.1–3.3): a per-fact pseudo-attribute (`:db/valid-from`, `:db/valid-to`,

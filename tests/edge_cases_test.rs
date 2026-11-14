@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Edge case integration tests for Phase 6.4a.
 //!
 //! Covers:
@@ -233,7 +234,7 @@ fn test_sub_page_file_refused_unless_torn_first_write() {
     }
     let saved = std::fs::read(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
-    let foreign = vec![0x5Au8; 100];
+    let foreign = [0x5Au8; 100];
     for bytes in [&saved[..2222], &saved[..20], &foreign[..]] {
         std::fs::write(&path, bytes).unwrap();
         assert_eq!(open_code(&path), "STG-045");

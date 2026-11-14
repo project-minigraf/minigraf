@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 7.3: or / or-join disjunction.
 
 use minigraf::{Minigraf, OpenOptions, QueryResult, Value};

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! A `SIGKILL` at any point while a child process writes must leave the
 //! database holding exactly the transactions the child had committed (#384).
 //!
@@ -119,7 +120,7 @@ impl Rng {
     }
 
     fn below_u8(&mut self, n: u8) -> u8 {
-        self.below(u64::from(n)) as u8
+        u8::try_from(self.below(u64::from(n))).expect("fixture value fits in u8")
     }
 }
 
@@ -131,7 +132,10 @@ fn next_tx(rng: &mut Rng, live: &BTreeSet<Triple>) -> (String, BTreeSet<Triple>)
         let pool: Vec<Triple> = live.iter().copied().collect();
         let mut picked = BTreeSet::new();
         for _ in 0..1 + rng.below(4) {
-            picked.insert(pool[rng.below(pool.len() as u64) as usize]);
+            picked.insert(
+                pool[usize::try_from(rng.below(pool.len() as u64))
+                    .expect("fixture value fits in usize")],
+            );
         }
         let body: Vec<String> = picked.iter().map(|t| triple_edn(*t)).collect();
         for t in &picked {
@@ -143,7 +147,7 @@ fn next_tx(rng: &mut Rng, live: &BTreeSet<Triple>) -> (String, BTreeSet<Triple>)
     // 0-3 other triples. Triples retracted earlier come back this way. A
     // triple is never repeated within one transaction.
     let e = rng.below_u8(ENTITIES);
-    let a = rng.below_u8(ATTRS.len() as u8);
+    let a = rng.below_u8(u8::try_from(ATTRS.len()).expect("fixture value fits in u8"));
     let mut picked = BTreeSet::new();
     for _ in 0..1 + rng.below(3) {
         picked.insert((e, a, rng.below_u8(VALUES)));
@@ -151,7 +155,7 @@ fn next_tx(rng: &mut Rng, live: &BTreeSet<Triple>) -> (String, BTreeSet<Triple>)
     for _ in 0..rng.below(4) {
         picked.insert((
             rng.below_u8(ENTITIES),
-            rng.below_u8(ATTRS.len() as u8),
+            rng.below_u8(u8::try_from(ATTRS.len()).expect("fixture value fits in u8")),
             rng.below_u8(VALUES),
         ));
     }
@@ -268,11 +272,11 @@ impl Variant {
     fn checkpoint_after(self, k: u64) -> bool {
         match self {
             Variant::CheckpointEach => true,
-            Variant::CheckpointEvery3 | Variant::NormalSync => k % 3 == 0,
+            Variant::CheckpointEvery3 | Variant::NormalSync => k.is_multiple_of(3),
             Variant::WalOnly | Variant::AutoCheckpoint => false,
-            Variant::PerTxSync => k % 5 == 0,
+            Variant::PerTxSync => k.is_multiple_of(5),
             #[cfg(feature = "test-hooks")]
-            Variant::Large => k % 5 == 0,
+            Variant::Large => k.is_multiple_of(5),
         }
     }
 }
@@ -341,7 +345,7 @@ impl Checker {
             "{}: tx count {t} after {confirmed} confirmed transactions",
             self.ctx
         );
-        let live = &history[t as usize];
+        let live = &history[usize::try_from(t).expect("fixture value fits in usize")];
         let full = |s: &BTreeSet<Triple>| -> Vec<String> {
             s.iter()
                 .map(|&(e, a, v)| format!("r{e} {} {}", ATTRS[a as usize], value_render(v)))
@@ -356,7 +360,7 @@ impl Checker {
         );
         // AEVT: attribute scans; AVET: attribute and value bound.
         for (ai, attr) in ATTRS.iter().enumerate() {
-            let ai = ai as u8;
+            let ai = u8::try_from(ai).expect("fixture value fits in u8");
             self.expect(
                 db,
                 &format!("(query [:find ?e ?v :where [?e {attr} ?v]])"),
@@ -393,7 +397,8 @@ impl Checker {
             self.expect(
                 db,
                 &format!("(query [:find ?e ?a ?v :as-of {k} :where [?e ?a ?v]])"),
-                full(&history[k as usize]).into_iter(),
+                full(&history[usize::try_from(k).expect("fixture value fits in usize")])
+                    .into_iter(),
             );
         }
         let report = db
@@ -430,10 +435,14 @@ fn sigkill_keeps_exactly_the_committed_transactions() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos() as u64
+            u64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+                    & u128::from(u64::MAX),
+            )
+            .expect("low seed bits fit in u64")
         });
     println!("crash-kill base seed {base_seed} (replay: MINIGRAF_CRASH_KILL_SEED={base_seed})");
     let uuids: HashMap<Uuid, u8> = (0..ENTITIES).map(|e| (entity_uuid(e), e)).collect();
@@ -540,7 +549,7 @@ fn crash_kill_child_entrypoint() {
             tx.commit().expect("child commit");
         } else {
             #[cfg(feature = "test-hooks")]
-            if large && k % 3 == 0 {
+            if large && k.is_multiple_of(3) {
                 in_write_tx(&db, &stmt);
             } else {
                 db.execute(&stmt).expect("child transaction");
