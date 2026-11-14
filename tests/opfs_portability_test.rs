@@ -10,6 +10,7 @@
 //!   `verify()` and gives the same answers.
 #![cfg(not(target_arch = "wasm32"))]
 
+use anyhow::{Result, bail};
 use minigraf::{Minigraf, QueryResult, Value};
 use std::path::Path;
 
@@ -28,13 +29,14 @@ fn json(v: &Value) -> serde_json::Value {
     }
 }
 
-fn assert_answers(db: &Minigraf, source: &str) {
+fn assert_answers(db: &Minigraf, source: &str) -> Result<()> {
     for line in QUERIES.lines().filter(|l| !l.is_empty()) {
-        let (query, expected) = line.split_once('\t').expect("query<TAB>rows");
-        let expected: serde_json::Value = serde_json::from_str(expected).expect("rows");
-        let QueryResult::QueryResults { results, .. } = db.execute(query).expect("query runs")
-        else {
-            panic!("{source}: not a query result");
+        let (query, expected) = line
+            .split_once('\t')
+            .ok_or_else(|| anyhow::anyhow!("query<TAB>rows"))?;
+        let expected: serde_json::Value = serde_json::from_str(expected)?;
+        let QueryResult::QueryResults { results, .. } = db.execute(query)? else {
+            bail!("{source}: not a query result");
         };
         let mut rows: Vec<serde_json::Value> = results
             .iter()
@@ -47,14 +49,15 @@ fn assert_answers(db: &Minigraf, source: &str) {
             "{source}: answer to {query}"
         );
     }
+    Ok(())
 }
 
-fn open_copy(fixture: &Path) -> (tempfile::TempDir, Minigraf) {
-    let dir = tempfile::tempdir().expect("tempdir");
+fn open_copy(fixture: &Path) -> Result<(tempfile::TempDir, Minigraf)> {
+    let dir = tempfile::tempdir()?;
     let path = dir.path().join("copy.graph");
-    std::fs::copy(fixture, &path).expect("copy fixture");
-    let db = Minigraf::open(&path).expect("opens without a WAL");
-    (dir, db)
+    std::fs::copy(fixture, &path)?;
+    let db = Minigraf::open(&path)?;
+    Ok((dir, db))
 }
 
 fn fixture(name: &str) -> std::path::PathBuf {
@@ -64,38 +67,60 @@ fn fixture(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn native_fixture_answers_the_portability_queries() {
-    let (_dir, db) = open_copy(&fixture("native_v8.graph"));
-    assert!(db.verify().expect("verify runs").is_ok(), "verifies clean");
-    assert_answers(&db, "native_v8.graph");
+fn native_fixture_answers_the_portability_queries() -> Result<()> {
+    let (_dir, db) = open_copy(&fixture("native_v8.graph"))?;
+    assert!(db.verify()?.is_ok(), "verifies clean");
+    assert_answers(&db, "native_v8.graph")
 }
 
 #[test]
-fn opfs_export_opens_natively_verifies_and_answers() {
-    let bytes = std::fs::read(fixture("opfs_export.graph")).expect("fixture");
-    assert_eq!(&bytes[0..4], b"MGRF", "starts with the magic");
+fn v7_fixture_is_legacy_and_answers_the_full_portability_queries() -> Result<()> {
+    let bytes = std::fs::read(fixture("native_v7.graph"))?;
+    assert_eq!(
+        u32::from_le_bytes(
+            bytes
+                .get(4..8)
+                .ok_or_else(|| anyhow::anyhow!("version"))?
+                .try_into()?
+        ),
+        7
+    );
+    let (_dir, db) = open_copy(&fixture("native_v7.graph"))?;
+    assert!(db.verify()?.is_ok());
+    assert_answers(&db, "native_v7.graph")
+}
+
+#[test]
+fn opfs_export_opens_natively_verifies_and_answers() -> Result<()> {
+    let bytes = std::fs::read(fixture("opfs_export.graph"))?;
+    assert_eq!(
+        bytes.get(0..4),
+        Some(b"MGRF".as_slice()),
+        "starts with the magic"
+    );
     assert_eq!(bytes.len() % 4096, 0, "whole pages");
-    let (_dir, db) = open_copy(&fixture("opfs_export.graph"));
-    assert!(db.verify().expect("verify runs").is_ok(), "verifies clean");
-    assert_answers(&db, "opfs_export.graph");
+    let (_dir, db) = open_copy(&fixture("opfs_export.graph"))?;
+    assert!(db.verify()?.is_ok(), "verifies clean");
+    assert_answers(&db, "opfs_export.graph")
 }
 
 /// Regenerate `native_v8.graph` from `commands.txt`.
 #[test]
 #[ignore]
-fn regenerate_native_fixture() {
-    let dir = tempfile::tempdir().expect("tempdir");
+fn regenerate_native_fixture() -> Result<()> {
+    let dir = tempfile::tempdir()?;
     let path = dir.path().join("native.graph");
     {
-        let db = Minigraf::open(&path).expect("create");
+        let db = Minigraf::open(&path)?;
         for command in COMMANDS.lines().filter(|l| !l.is_empty()) {
-            db.execute(command).expect("command");
+            db.execute(command)?;
         }
-        db.checkpoint().expect("checkpoint");
+        db.checkpoint()?;
     }
     assert!(
         !dir.path().join("native.graph.wal").exists(),
         "checkpointed, no WAL"
     );
-    std::fs::copy(&path, fixture("native_v8.graph")).expect("write fixture");
+    std::fs::copy(&path, fixture("native_v8.graph"))?;
+    Ok(())
 }

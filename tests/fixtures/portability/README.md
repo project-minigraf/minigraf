@@ -10,3 +10,9 @@ platform.
 - `opfs_export.graph`: `exportGraph()` of an OPFS-mode database built in a
   browser. `tests/opfs_portability_test.rs` opens it with `Minigraf::open`,
   checks `verify()` and the answers.
+
+- `native_v7.graph`: real format v7, built from the same `commands.txt` with
+  the legacy writer used by migration tests. Regenerate with
+  `cargo test --lib regenerate_portability_v7_fixture -- --ignored`.
+  Native migration and OPFS import answer every query in `queries.txt`,
+  including long values, retraction, valid time and transaction time.

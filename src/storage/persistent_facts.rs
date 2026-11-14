@@ -817,7 +817,15 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             if id == slot_page(generation) {
                 emit(id, &meta.encode())?;
             } else if id < 2 {
-                let page = self.lock()?.read_page(id)?;
+                // Initial creation can stop after page 0, before the blank
+                // second slot. Only an absent slot is synthesized; a failed
+                // read of a slot that exists must still propagate.
+                let backend = self.lock()?;
+                let page = if id < backend.page_count()? {
+                    backend.read_page(id)?
+                } else {
+                    zeros.clone()
+                };
                 let keep = matches!(other, OtherSlot::KeepOlder)
                     && matches!(MetaPage::decode(&page), SlotState::Valid(o) if o.generation < generation);
                 emit(id, if keep { &page } else { &zeros })?;
@@ -2059,6 +2067,26 @@ mod tests {
         page.resize(PAGE_SIZE, 0);
         mem.write_page(0, &page).unwrap();
         mem
+    }
+
+    /// Rebuild the portable v7 input with the same legacy writer as migration tests.
+    #[test]
+    #[ignore]
+    fn regenerate_portability_v7_fixture() -> Result<()> {
+        use crate::query::datalog::{executor::DatalogExecutor, parser::parse_datalog_command};
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        for command in include_str!("../../tests/fixtures/portability/commands.txt").lines() {
+            executor.execute(parse_datalog_command(command)?)?;
+        }
+        let mem = v7_file(&storage.get_all_facts()?, storage.current_tx_count());
+        let mut bytes = Vec::new();
+        for id in 0..mem.page_count()? {
+            bytes.extend(mem.read_page(id)?);
+        }
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into()?), 7);
+        std::fs::write("tests/fixtures/portability/native_v7.graph", bytes)?;
+        Ok(())
     }
 
     fn sample_facts(n: u128) -> Vec<Fact> {
@@ -4055,8 +4083,47 @@ mod tests {
                 drop(created);
                 let pfs = open_wl(&mem).expect("reopen after a torn creation");
                 assert!(values(&pfs).is_empty(), "nothing committed");
+                assert_image_opens_natively(&pfs);
             }
         }
+        for k in 0..2 {
+            let mem = MemoryBackend::new();
+            let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+            config.lock().unwrap().fail_sync_after = Some(k);
+            drop(PersistentFactStorage::open_wal_less(backend, 16));
+            let pfs = open_wl(&mem).expect("reopen after failed initial flush");
+            assert!(values(&pfs).is_empty());
+            assert_image_opens_natively(&pfs);
+        }
+    }
+
+    #[test]
+    fn initial_creation_exports_open_with_minigraf_and_verify() -> Result<()> {
+        let meta = MetaPage::empty(1).encode();
+        for prefix in [0, 16, 24, 40, 512, PAGE_SIZE, 2 * PAGE_SIZE] {
+            let dir = tempfile::tempdir()?;
+            let path = dir.path().join("initial.graph");
+            let mut original = vec![0; 2 * PAGE_SIZE];
+            original[..PAGE_SIZE].copy_from_slice(&meta);
+            std::fs::write(&path, &original[..prefix])?;
+            let pfs = PersistentFactStorage::open_wal_less(
+                crate::storage::backend::FileBackend::open(&path)?,
+                16,
+            )?;
+            let mut bytes = Vec::new();
+            pfs.write_image(pfs.generation(), OtherSlot::KeepOlder, |_, page| {
+                bytes.extend_from_slice(page);
+                Ok(())
+            })?;
+            let export = dir.path().join("export.graph");
+            std::fs::write(&export, bytes)?;
+            let native = crate::Minigraf::open(&export)?;
+            assert!(
+                native.verify()?.is_ok(),
+                "initial-interruption export verifies natively"
+            );
+        }
+        Ok(())
     }
 
     /// How many page writes one save of `PER` new facts makes on `mem`.

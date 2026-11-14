@@ -1304,6 +1304,31 @@ impl Drop for Importing<'_> {
 /// migrated, a meta counting pages the image lacks is `STG-044` as for a
 /// file, and any finding of the integrity walk (`verify()`) rejects it.
 fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBackend>> {
+    // Import admits only an actual empty blob, a selectable v8 meta, or
+    // a supported v7 header. Open/create may repair a torn initial meta;
+    // doing that to a nonempty import would silently replace user data.
+    if !bytes.is_empty() {
+        use crate::storage::meta::{MetaPage, SlotState};
+        let have = (bytes.len() / crate::storage::PAGE_SIZE) as u64;
+        let selected = bytes
+            .chunks(crate::storage::PAGE_SIZE)
+            .take(2)
+            .filter_map(|page| match MetaPage::decode(page) {
+                SlotState::Valid(meta) => Some(meta),
+                _ => None,
+            })
+            .max_by_key(|meta| meta.generation);
+        if let Some(meta) = selected {
+            meta.check_features()?;
+            if meta.page_count > have {
+                crate::error::bail_coded!(ErrorCode::Stg044, meta.page_count, have);
+            }
+        } else if crate::storage::LegacyHeaderV7::detect(&bytes[..crate::storage::PAGE_SIZE])?
+            .is_none()
+        {
+            crate::error::bail_coded!(ErrorCode::Stg032);
+        }
+    }
     let pages: std::collections::HashMap<u64, Vec<u8>> = bytes
         .chunks(crate::storage::PAGE_SIZE)
         .enumerate()
@@ -1317,7 +1342,7 @@ fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBacke
     // The buffer's length after open: a v7 image's migration appends.
     let have = pfs.with_backend(|b| b.page_count())?;
     let need = pfs.committed_page_count();
-    if need > have.max(2) {
+    if need > have {
         crate::error::bail_coded!(ErrorCode::Stg044, need, have);
     }
     if let Some(problem) = pfs.verify()?.problems.into_iter().next() {
