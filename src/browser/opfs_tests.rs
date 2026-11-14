@@ -1511,9 +1511,20 @@ mod worker {
                 let staging = format!("{name}.graph-import");
                 let db = open(&name).await;
                 put(&db, 0..3).await;
-                let generation = db.inner.borrow().pfs.generation() + 10;
-                db.close().unwrap();
-                write_raw(&staging, &staged_bytes(&image, generation | 1)).await;
+                let mut cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+                let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
+                // First interruption: a real import publishes its staging
+                // meta, then fails on the first write into the main file.
+                *file(&db).faults.lock().unwrap() = Faults {
+                    write_after: Some((0, WriteFault::Throw(0))),
+                    ..Faults::default()
+                };
+                assert_eq!(
+                    code_of(&rejection(db.import_graph(blob(&image)).await)),
+                    "STG-048"
+                );
+                assert!(db.inner.closed.get());
+                drop(db);
                 let patch = if boundary == "truncate" {
                     Some(JsPatch::method(
                         &prototype("FileSystemSyncAccessHandle"),
@@ -1533,8 +1544,18 @@ mod worker {
                 };
                 let result = BrowserDb::open_opfs(name.clone()).await;
                 drop(patch);
+                assert_eq!(code_of(&rejection(cursor.next_batch(1))), "API-018");
+                assert_eq!(
+                    code_of(&rejection(pq.execute(JsValue::UNDEFINED))),
+                    "API-018"
+                );
                 if let Ok(db) = result {
                     assert_eq!(ns(&db).await, new);
+                    assert_eq!(
+                        code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                        "STG-026"
+                    );
+                    assert!(!entries().await.contains(&staging));
                     db.close().unwrap();
                     break;
                 }
