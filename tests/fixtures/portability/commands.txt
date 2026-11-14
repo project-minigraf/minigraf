@@ -1,0 +1,5 @@
+(transact [[:doc :body "A value longer than sixty-four bytes, so that it is kept once in a value page."]])
+(transact [[:alice :tag :a] [:alice :tag :b] [:alice :name "Alice"]])
+(retract [[:alice :tag :a]])
+(transact {:valid-from "2020-01-01" :valid-to "2021-01-01"} [[:alice :employer :old]])
+(transact {:valid-from "2021-01-01"} [[:alice :employer :new]])

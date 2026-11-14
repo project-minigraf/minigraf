@@ -37,7 +37,7 @@ use crate::query::datalog::prepared::{BindValue, PreparedQuery};
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::DatalogCommand;
 use crate::storage::StorageBackend;
-use crate::storage::persistent_facts::PersistentFactStorage;
+use crate::storage::persistent_facts::{OtherSlot, PersistentFactStorage};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
@@ -640,8 +640,8 @@ impl BrowserDb {
     /// publication point is the staging file's meta page: written and
     /// flushed, it makes the new database recoverable, since every open
     /// copies a staged image newer than the database file into it. The image
-    /// is stamped with a generation above every meta of the old file, so a
-    /// copy that finished is never redone over later commits. Then the image
+    /// is stamped with an odd generation above every meta of the old file,
+    /// so a copy that finished is never redone over later commits. Then the image
     /// is copied into the database file (meta last), the storage reopened on
     /// it, and the staging file removed; a failed removal is left to the
     /// next open.
@@ -671,10 +671,13 @@ impl BrowserDb {
             .map_err(to_js_error)?
             .unwrap_or(0)
             .max(db.borrow().pfs.generation());
+        // Odd, so the meta page is page 0 and the file starts with the
+        // magic, as a native file does after its first commit.
         let generation = newest
             .checked_add(1)
-            .ok_or_else(|| to_js_error(err_coded!(ErrorCode::Int048, "generation overflow")))?
-            .max(image.generation());
+            .map(|g| g.max(image.generation()))
+            .and_then(|g| g.checked_add(1 - g % 2))
+            .ok_or_else(|| to_js_error(err_coded!(ErrorCode::Int048, "generation overflow")))?;
         let stage = opfs::open_file(&opfs.dir, &staging, true)
             .await
             .map_err(to_js_error)?
@@ -1280,7 +1283,7 @@ fn export_image(
         .and_then(|n| n.checked_mul(crate::storage::PAGE_SIZE))
         .ok_or_else(|| JsValue::from_str("database is too large to export"))?;
     let mut blob = Vec::with_capacity(pages);
-    pfs.write_image(pfs.generation(), |_, page| {
+    pfs.write_image(pfs.generation(), OtherSlot::KeepOlder, |_, page| {
         blob.extend_from_slice(page);
         Ok(())
     })
@@ -1306,12 +1309,13 @@ fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBacke
         .enumerate()
         .map(|(i, chunk)| (i as u64, chunk.to_vec()))
         .collect();
-    let have = pages.len() as u64;
     drop(bytes);
     let pfs = PersistentFactStorage::new(
         BrowserBackend::Buffer(BrowserBufferBackend::load_pages(pages)),
         0,
     )?;
+    // The buffer's length after open: a v7 image's migration appends.
+    let have = pfs.with_backend(|b| b.page_count())?;
     let need = pfs.committed_page_count();
     if need > have.max(2) {
         crate::error::bail_coded!(ErrorCode::Stg044, need, have);
@@ -1333,7 +1337,7 @@ fn stage_image(
     let slot = crate::storage::meta::slot_page(generation);
     let mut meta = None;
     stage.truncate(0)?;
-    image.write_image(generation, |id, page| {
+    image.write_image(generation, OtherSlot::Zero, |id, page| {
         if id == slot {
             meta = Some(page.to_vec());
             Ok(())
@@ -1418,7 +1422,72 @@ mod tests {
     use super::*;
     use wasm_bindgen_test::*;
 
+    // The worker build (`--cfg minigraf_browser_worker`) runs every test in a
+    // dedicated worker, where OPFS mode exists (#441).
+    #[cfg(not(minigraf_browser_worker))]
     wasm_bindgen_test_configure!(run_in_browser);
+    #[cfg(minigraf_browser_worker)]
+    wasm_bindgen_test_configure!(run_in_dedicated_worker);
+
+    /// A name no other test uses, for a persistent database.
+    pub(crate) fn unique(prefix: &str) -> String {
+        thread_local! {
+            static NEXT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+        }
+        let n = NEXT.with(|c| {
+            c.set(c.get() + 1);
+            c.get()
+        });
+        format!("{prefix}-{}-{n}", js_sys::Date::now())
+    }
+
+    /// The database the mode-independent tests run on: in memory on the
+    /// main thread, and a new OPFS database in the worker build (#441), so
+    /// every one of them also checks OPFS mode's parity.
+    pub(crate) async fn scratch() -> BrowserDb {
+        #[cfg(minigraf_browser_worker)]
+        {
+            BrowserDb::open_opfs(unique("scratch"))
+                .await
+                .expect("openOpfs")
+        }
+        #[cfg(not(minigraf_browser_worker))]
+        {
+            BrowserDb::open_in_memory().expect("open_in_memory")
+        }
+    }
+
+    /// A new, empty persistent database `name`: IndexedDB on the main
+    /// thread, OPFS in the worker build.
+    pub(crate) async fn fresh_persistent(name: &str) -> BrowserDb {
+        #[cfg(minigraf_browser_worker)]
+        {
+            BrowserDb::open_opfs(unique(name)).await.expect("openOpfs")
+        }
+        #[cfg(not(minigraf_browser_worker))]
+        {
+            drop(empty_store(name).await);
+            BrowserDb::open(name).await.expect("open")
+        }
+    }
+
+    /// Close `db` (from [`fresh_persistent`]) and open it again.
+    pub(crate) async fn reopen_persistent(db: BrowserDb) -> BrowserDb {
+        let opfs_name = db.inner.opfs.as_ref().map(|o| {
+            o.file_name
+                .strip_suffix(opfs::FILE_SUFFIX)
+                .unwrap_or(&o.file_name)
+                .to_string()
+        });
+        let idb_name = db.inner.borrow().idb.as_ref().map(|i| i.store_name.clone());
+        db.close().expect("close");
+        drop(db);
+        match (opfs_name, idb_name) {
+            (Some(name), _) => BrowserDb::open_opfs(name).await.expect("reopen OPFS"),
+            (None, Some(name)) => BrowserDb::open(&name).await.expect("reopen IndexedDB"),
+            (None, None) => panic!("not a persistent database"),
+        }
+    }
 
     #[wasm_bindgen_test]
     fn take_dirty_pages_returns_written_pages() {
@@ -1468,7 +1537,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn execute_errors_carry_their_code() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         for (datalog, code) in [
             ("(nosuchcommand [])", "[PRS-011] "),
             (
@@ -1492,7 +1561,7 @@ mod tests {
     // #869: BrowserDb takes no options, so the default override list applies.
     #[wasm_bindgen_test]
     async fn default_override_keywords_still_run() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         db.execute("(transact [[:a :edge :b]])".to_string())
             .await
             .expect("transact");
@@ -1513,7 +1582,7 @@ mod tests {
     // refuses it.
     #[wasm_bindgen_test]
     async fn query_memory_limit_keyword_is_refused() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         let err = db
             .execute("(query [:find ?x :where [?e :a ?x] :query-memory-limit 1000])".to_string())
             .await
@@ -1526,7 +1595,7 @@ mod tests {
     // #861: `:max-iterations` is in the default list, so BrowserDb runs it.
     #[wasm_bindgen_test]
     async fn max_iterations_keyword_is_allowed() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         db.execute("(transact [[:a :edge :b] [:b :edge :c]])".to_string())
             .await
             .expect("transact");
@@ -1544,7 +1613,7 @@ mod tests {
     }
 
     async fn reach_db() -> BrowserDb {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         db.execute("(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d]])".to_string())
             .await
             .expect("transact");
@@ -1640,7 +1709,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn in_memory_transact_and_query() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         let transact_result = db
             .execute(r#"(transact [[:alice :name "Alice"] [:alice :age 30]])"#.to_string())
             .await
@@ -1660,7 +1729,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn cursor_batches_match_execute() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         for i in 0..20 {
             db.execute(format!("(transact [[:e{i} :n {i}]])"))
                 .await
@@ -1692,7 +1761,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn cursor_is_fixed_at_open_and_closes() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         db.execute(r#"(transact [[:a :n 1]])"#.to_string())
             .await
             .expect("transact");
@@ -1729,7 +1798,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn empty_query_returns_empty_results() {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         let result = db
             .execute(r#"(query [:find ?e :where [?e :name _]])"#.to_string())
             .await
@@ -1740,7 +1809,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn export_import_round_trip() {
-        let db = BrowserDb::open_in_memory().expect("open");
+        let db = scratch().await;
         db.execute(r#"(transact [[:bob :role "admin"]])"#.to_string())
             .await
             .expect("transact");
@@ -1753,7 +1822,7 @@ mod tests {
             "exported blob must start with MGRF magic"
         );
 
-        let db2 = BrowserDb::open_in_memory().expect("open2");
+        let db2 = scratch().await;
         db2.import_graph(blob).await.expect("import");
 
         let result = db2
@@ -1768,7 +1837,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn export_size_is_page_aligned() {
-        let db = BrowserDb::open_in_memory().expect("open");
+        let db = scratch().await;
         db.execute(r#"(transact [[:e :v 1]])"#.to_string())
             .await
             .expect("transact");
@@ -1786,7 +1855,7 @@ mod tests {
     #[wasm_bindgen_test]
     async fn native_fixture_readable_by_browser_db() {
         let fixture: &[u8] = include_bytes!("../../tests/fixtures/compat.graph");
-        let db = BrowserDb::open_in_memory().expect("open in-memory");
+        let db = scratch().await;
         let arr = js_sys::Uint8Array::from(fixture);
         db.import_graph(arr).await.expect("import native fixture");
 
@@ -2148,11 +2217,17 @@ mod tests {
 
 #[cfg(all(target_arch = "wasm32", feature = "browser", test))]
 mod prepared_tests {
+    use super::tests::scratch;
     use super::*;
     use js_sys::{BigInt, Object, Reflect};
     use wasm_bindgen_test::*;
 
+    // The worker build (`--cfg minigraf_browser_worker`) runs every test in a
+    // dedicated worker, where OPFS mode exists (#441).
+    #[cfg(not(minigraf_browser_worker))]
     wasm_bindgen_test_configure!(run_in_browser);
+    #[cfg(minigraf_browser_worker)]
+    wasm_bindgen_test_configure!(run_in_dedicated_worker);
 
     /// A JS object with `pairs` as its properties.
     fn obj(pairs: &[(&str, JsValue)]) -> JsValue {
@@ -2187,7 +2262,7 @@ mod prepared_tests {
     }
 
     async fn seeded() -> BrowserDb {
-        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let db = scratch().await;
         db.execute(
             r#"(transact [[:a :n 1] [:b :n 2] [:c :n 3]
                           [:a :s "x"] [:a :f 2.0] [:a :t true] [:a :k :kw] [:a :z nil]])"#

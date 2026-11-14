@@ -263,11 +263,17 @@ fn value_to_js(v: &Value) -> JsValue {
 #[cfg(all(target_arch = "wasm32", feature = "browser", test))]
 mod tests {
     use super::*;
+    use crate::browser::tests::scratch;
     use std::cell::RefCell;
     use std::rc::Rc;
     use wasm_bindgen_test::*;
 
+    // The worker build (`--cfg minigraf_browser_worker`) runs every test in a
+    // dedicated worker, where OPFS mode exists (#441).
+    #[cfg(not(minigraf_browser_worker))]
     wasm_bindgen_test_configure!(run_in_browser);
+    #[cfg(minigraf_browser_worker)]
+    wasm_bindgen_test_configure!(run_in_dedicated_worker);
 
     fn js_fn(args: &str, body: &str) -> JsValue {
         Function::new_with_args(args, body).into()
@@ -308,7 +314,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn a_predicate_filters_rows() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         db.register_predicate(
             "big?",
@@ -328,7 +334,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn values_reach_javascript_as_typed_objects() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         db.execute(
             r#"(transact [[:a :v "s"] [:a :v 7] [:a :v 1.5] [:a :v true] [:a :v :k] [:a :v nil] [:a :v #{2 "x"}]])"#.into(),
         )
@@ -373,7 +379,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn a_ref_reaches_javascript_as_its_uuid() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         let kind = Rc::new(RefCell::new(String::new()));
         let log = kind.clone();
         db.register_predicate(
@@ -401,7 +407,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn an_aggregate_in_find_and_over() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let product = js_sys::Object::new();
         Reflect::set(&product, &"init".into(), &js_fn("", "return 1n")).unwrap();
@@ -456,7 +462,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn a_plain_finish_result_is_read_as_a_bind_value() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let agg = js_sys::Object::new();
         Reflect::set(&agg, &"init".into(), &js_fn("", "return 0")).unwrap();
@@ -474,7 +480,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn a_throw_fails_the_query_with_qry_014() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         db.register_predicate("boom?", js_fn("v", "throw new Error('bad ' + v.value)"))
             .unwrap();
@@ -515,7 +521,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn aggregate_failures_fail_the_query() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let ok_init = "return 0";
         let ok_step = "return acc";
@@ -591,7 +597,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn a_function_may_query_the_same_database() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let inner_db = clone_db(&db);
         // A nested query that runs a UDF too: true only for ?n = 1.
@@ -617,7 +623,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn a_function_may_register_a_function() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let inner_db = clone_db(&db);
         let registered = Rc::new(RefCell::new(false));
@@ -657,7 +663,7 @@ mod tests {
     /// promise's body starts from a microtask.
     #[wasm_bindgen_test]
     async fn async_methods_from_a_function_run_after_the_query() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let promises = Rc::new(RefCell::new(Vec::<js_sys::Promise>::new()));
         let started = promises.clone();
@@ -696,7 +702,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn import_graph_from_a_function_runs_after_the_query() {
-        let db = BrowserDb::open_in_memory().unwrap();
+        let db = scratch().await;
         numbers(&db).await;
         let other = BrowserDb::open_in_memory().unwrap();
         other

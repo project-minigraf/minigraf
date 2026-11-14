@@ -1,0 +1,6 @@
+(query [:find ?b :where [:doc :body ?b]])	[["A value longer than sixty-four bytes, so that it is kept once in a value page."]]
+(query [:find ?t :where [:alice :tag ?t]])	[[":b"]]
+(query [:find ?t :as-of 2 :where [:alice :tag ?t]])	[[":a"],[":b"]]
+(query [:find ?o :valid-at "2020-06-01" :where [:alice :employer ?o]])	[[":old"]]
+(query [:find ?o :valid-at "2022-06-01" :where [:alice :employer ?o]])	[[":new"]]
+(query [:find ?n :where [?e :name ?n] [?e :tag :b]])	[["Alice"]]

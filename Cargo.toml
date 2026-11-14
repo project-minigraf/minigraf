@@ -149,8 +149,9 @@ inherits = "release"
 workspace = true
 
 [workspace.lints.rust]
-# Kani proof harnesses (#627): `cargo kani` sets cfg(kani).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)'] }
+# Kani proof harnesses (#627): `cargo kani` sets cfg(kani). The browser tests'
+# worker build (#441) sets cfg(minigraf_browser_worker).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)', 'cfg(minigraf_browser_worker)'] }
 
 [workspace.lints.clippy]
 # Panic prevention — use Result/? or debug_assert! instead

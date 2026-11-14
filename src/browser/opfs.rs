@@ -396,10 +396,14 @@ pub(crate) async fn open_file(
             Err(e) => return Err(js_failure(format!("open {entry}"), &e)),
         };
     match JsFuture::from(file.create_sync_access_handle()).await {
-        Ok(h) => Ok(Some(Arc::new(OpfsFile::new(
-            h.unchecked_into(),
-            entry.to_string(),
-        )))),
+        Ok(h) => {
+            let file = OpfsFile::new(h.unchecked_into(), entry.to_string());
+            #[cfg(test)]
+            if let Some(faults) = tests::take_armed(entry) {
+                *file.faults.lock().unwrap() = faults;
+            }
+            Ok(Some(Arc::new(file)))
+        }
         Err(e) if exception_name(&e) == "NoModificationAllowedError" => bail_coded!(
             ErrorCode::Stg026,
             format!("OPFS file {entry} is open in another worker or tab")
@@ -479,6 +483,21 @@ pub(crate) mod tests {
 
     thread_local! {
         static READS: Cell<u64> = const { Cell::new(0) };
+        static ARMED: std::cell::RefCell<Vec<(String, Faults)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// Give the next file opened as `entry` on this thread these faults.
+    pub(crate) fn arm(entry: &str, faults: Faults) {
+        ARMED.with(|a| a.borrow_mut().push((entry.to_string(), faults)));
+    }
+
+    pub(crate) fn take_armed(entry: &str) -> Option<Faults> {
+        ARMED.with(|a| {
+            let mut a = a.borrow_mut();
+            let i = a.iter().position(|(e, _)| e == entry)?;
+            Some(a.remove(i).1)
+        })
     }
 
     pub(crate) fn count_read() {
@@ -500,7 +519,7 @@ pub(crate) mod tests {
     }
 
     /// Faults for one file: the write or flush after `n` more succeed.
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     pub(crate) struct Faults {
         pub write_after: Option<(u64, WriteFault)>,
         pub flush_after: Option<u64>,
@@ -540,6 +559,11 @@ pub(crate) mod tests {
 
 #[cfg(test)]
 impl OpfsFile {
+    /// The handle itself, for tests that write raw bytes.
+    pub(crate) fn handle_for_tests(&self) -> &FileSystemSyncAccessHandle {
+        &self.handle
+    }
+
     fn inject_write(
         &self,
         off: f64,
