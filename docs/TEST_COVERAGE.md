@@ -20,7 +20,8 @@ supplied through `MINIGRAF_PID_NS_HELPER`.
 Native all-feature lib and browser/WASI lib strict clippy pass, as does formatting.
 The broader `--all-targets` lint fails on existing test-code lints on both the base
 and this branch (including 21 library-test diagnostics); complete `--keep-going` comparison
-against `9fd321e75` finds the same 4,322 diagnostics on each revision, with no
+against `9fd321e75` finds the same 4,345 diagnostics on each revision
+(4,322 Clippy lints and 23 compiler diagnostics), with no
 additions. It is not reported as passing. Rust 1.99.1's distribution binary is 1,269,568 bytes, below the unchanged
 1,280,000-byte gate; [build sizes](benchmarks/441-opfs/build-sizes.md) record the
 older compiler's oversized base/control and the wasm increase. A nightly build
