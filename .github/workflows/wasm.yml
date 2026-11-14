@@ -49,6 +49,8 @@ jobs:
       # wasm-bindgen configures the whole lib test binary for a dedicated
       # worker; the browser job above retains main-thread coverage.
       RUSTFLAGS: --cfg minigraf_browser_worker
+      # Import interruption sweeps acquire real browser locks at each point.
+      WASM_BINDGEN_TEST_TIMEOUT: 180
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

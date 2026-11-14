@@ -199,6 +199,170 @@ mod worker {
         db
     }
 
+    // Override one browser boundary and restore its exact descriptor on drop.
+    // The database still uses real OPFS files and browser handles.
+    struct JsPatch(js_sys::Function);
+    impl JsPatch {
+        fn new(target: &JsValue, key: &str, replacement: &JsValue) -> Self {
+            let restore = js_sys::Function::new_with_args(
+                "obj,key,value",
+                r#"
+                const old = Object.getOwnPropertyDescriptor(obj, key);
+                Object.defineProperty(obj, key, {value, configurable:true, writable:true});
+                return () => old ? Object.defineProperty(obj,key,old) : delete obj[key];
+            "#,
+            )
+            .call3(&JsValue::NULL, target, &key.into(), replacement)
+            .unwrap();
+            Self(restore.unchecked_into())
+        }
+        fn wrap(target: &JsValue, key: &str, body: &str) -> Self {
+            let original = js_sys::Reflect::get(target, &key.into()).unwrap();
+            let replacement = js_sys::Function::new_with_args(
+                "original",
+                &format!("return function(...args){{{body}}}"),
+            )
+            .call1(&JsValue::NULL, &original)
+            .unwrap();
+            Self::new(target, key, &replacement)
+        }
+        fn global(key: &str, value: &JsValue) -> Self {
+            Self::new(&js_sys::global(), key, value)
+        }
+        fn method(target: &JsValue, key: &str, body: &str) -> Self {
+            Self::new(
+                target,
+                key,
+                &js_sys::Function::new_with_args("...args", body),
+            )
+        }
+    }
+    impl Drop for JsPatch {
+        fn drop(&mut self) {
+            self.0.call0(&JsValue::NULL).unwrap();
+        }
+    }
+    fn prototype(class: &str) -> JsValue {
+        let class = js_sys::Reflect::get(&js_sys::global(), &class.into()).unwrap();
+        js_sys::Reflect::get(&class, &"prototype".into()).unwrap()
+    }
+
+    #[wasm_bindgen_test]
+    async fn unavailable_contexts_reject_before_creating_files() {
+        let before = entries().await;
+        for case in [
+            "insecure",
+            "missing-storage",
+            "missing-directory",
+            "missing-sync",
+            "denied",
+        ] {
+            let nav = js_sys::Reflect::get(&js_sys::global(), &"navigator".into()).unwrap();
+            let storage = js_sys::Reflect::get(&nav, &"storage".into()).unwrap();
+            let patch = match case {
+                "insecure" => JsPatch::global("isSecureContext", &JsValue::FALSE),
+                "missing-storage" => JsPatch::new(&nav, "storage", &JsValue::UNDEFINED),
+                "missing-directory" => JsPatch::new(&storage, "getDirectory", &JsValue::UNDEFINED),
+                "missing-sync" => JsPatch::new(
+                    &prototype("FileSystemFileHandle"),
+                    "createSyncAccessHandle",
+                    &JsValue::UNDEFINED,
+                ),
+                _ => JsPatch::method(
+                    &storage,
+                    "getDirectory",
+                    "return Promise.reject(new DOMException('denied','SecurityError'))",
+                ),
+            };
+            let err = rejection(BrowserDb::open_opfs(unique(case)).await);
+            assert_eq!(code_of(&err), "API-026", "{case}");
+            if case == "denied" {
+                assert!(err.as_string().unwrap().contains("SecurityError"));
+            }
+            drop(patch);
+            assert_eq!(entries().await, before, "{case}: no entries created");
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn short_and_thrown_reads_are_errors_including_existing_meta_slots() {
+        let name = unique("read-fault");
+        let db = open(&name).await;
+        put(&db, 0..3).await;
+        for (body, detail) in [
+            ("return args[0].length - 1", "short read/write"),
+            (
+                "throw new DOMException('unreadable','NotReadableError')",
+                "NotReadableError",
+            ),
+        ] {
+            let patch = JsPatch::method(file(&db).handle_for_tests(), "read", body);
+            let err = rejection(db.export_graph());
+            assert_eq!(code_of(&err), "STG-048");
+            assert!(err.as_string().unwrap().contains(detail));
+            drop(patch);
+            assert_eq!(ns(&db).await, vec![0, 1, 2]);
+        }
+        db.close().unwrap();
+        let patch = JsPatch::method(
+            &prototype("FileSystemSyncAccessHandle"),
+            "read",
+            "throw new DOMException('unreadable','NotReadableError')",
+        );
+        assert_eq!(
+            code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+            "STG-048"
+        );
+        drop(patch);
+        // A failed open released the real handle.
+        let db = open(&name).await;
+        assert_eq!(ns(&db).await, vec![0, 1, 2]);
+        db.close().unwrap();
+    }
+
+    #[wasm_bindgen_test]
+    async fn unsafe_offsets_fail_before_io_and_quota_names_survive() {
+        let name = unique("offset-quota");
+        let db = open(&name).await;
+        let f = file(&db);
+        let io = js_sys::Object::new();
+        js_sys::Reflect::set(&io, &"calls".into(), &0.into()).unwrap();
+        let replacement = js_sys::Function::new_with_args(
+            "counter",
+            "return function(){counter.calls++; throw new Error('unexpected IO')}",
+        )
+        .call1(&JsValue::NULL, &io)
+        .unwrap();
+        let patch = JsPatch::new(f.handle_for_tests(), "write", &replacement);
+        let err = f.write_page(u64::MAX, &[0; 4096]).unwrap_err();
+        assert_eq!(crate::MinigrafError::from(err).code(), "INT-048");
+        assert_eq!(
+            js_sys::Reflect::get(&io, &"calls".into()).unwrap().as_f64(),
+            Some(0.0)
+        );
+        drop(patch);
+        let patch = JsPatch::method(
+            f.handle_for_tests(),
+            "write",
+            "throw new DOMException('quota','QuotaExceededError')",
+        );
+        let err = rejection(db.execute("(transact [[:q :n 9]])".into()).await);
+        assert_eq!(code_of(&err), "STG-048");
+        let text = err.as_string().unwrap();
+        assert!(text.contains("QuotaExceededError") && text.contains("write page"));
+        assert_eq!(
+            code_of(&rejection(
+                db.execute("(transact [[:q :n 10]])".into()).await
+            )),
+            "STG-046"
+        );
+        drop(patch);
+        db.close().unwrap();
+        let db = open(&name).await;
+        assert!(ns(&db).await.is_empty());
+        db.close().unwrap();
+    }
+
     // ── AC1, AC4: entry point, persistence, files ──────────────────────────
 
     #[wasm_bindgen_test]
@@ -436,6 +600,184 @@ mod worker {
         reopened.close().unwrap();
     }
 
+    #[wasm_bindgen_test]
+    async fn deferred_checkpoint_and_import_reject_after_close_and_reopen() {
+        for mode in ["opfs", "idb", "memory"] {
+            let name = unique("deferred-close");
+            let db = match mode {
+                "opfs" => open(&name).await,
+                "idb" => BrowserDb::open(&name).await.unwrap(),
+                _ => BrowserDb::open_in_memory().unwrap(),
+            };
+            put(&db, 0..3).await;
+            // Rust async method futures are the bodies the JS promise wrapper
+            // defers. Leave them unpolled until after the same-name reopen.
+            let checkpoint = db.checkpoint();
+            let import = db.import_graph(blob(&[]));
+            let execute = db.execute("(transact [[:late :n 9]])".into());
+            db.close().unwrap();
+            let reopened = match mode {
+                "opfs" => open(&name).await,
+                "idb" => BrowserDb::open(&name).await.unwrap(),
+                _ => BrowserDb::open_in_memory().unwrap(),
+            };
+            for err in [
+                rejection(checkpoint.await),
+                rejection(import.await),
+                rejection(execute.await).into(),
+            ] {
+                assert_eq!(code_of(&err), "API-018");
+            }
+            let expected = if mode == "memory" {
+                vec![]
+            } else {
+                vec![0, 1, 2]
+            };
+            assert_eq!(ns(&reopened).await, expected);
+            reopened.close().unwrap();
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn memory_commit_and_failed_commit_keep_their_own_outcomes_after_close() {
+        let db = BrowserDb::open_in_memory().unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:c :n 1]])").unwrap();
+        let commit = tx.commit();
+        db.close().unwrap();
+        let reopened = BrowserDb::open_in_memory().unwrap();
+        JsFuture::from(commit)
+            .await
+            .expect("applied memory commit resolves");
+        assert!(ns(&reopened).await.is_empty());
+        reopened.close().unwrap();
+
+        let name = unique("failed-promise-close");
+        let db = open(&name).await;
+        put(&db, 0..3).await;
+        *file(&db).faults.lock().unwrap() = Faults {
+            write_after: Some((0, WriteFault::Throw(0))),
+            ..Faults::default()
+        };
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:bad :n 9]])").unwrap();
+        let commit = tx.commit();
+        // Attach a rejection handler before yielding to the browser.
+        let observed: js_sys::Promise =
+            js_sys::Function::new_with_args("p", "return p.catch(e => e)")
+                .call1(&JsValue::NULL, &commit)
+                .unwrap()
+                .unchecked_into();
+        db.close().unwrap();
+        let reopened = open(&name).await;
+        assert_eq!(code_of(&JsFuture::from(observed).await.unwrap()), "STG-048");
+        assert_eq!(ns(&reopened).await, vec![0, 1, 2]);
+        reopened.close().unwrap();
+    }
+
+    #[wasm_bindgen_test]
+    async fn submitted_indexeddb_flush_settles_after_close_and_reopen() {
+        let name = unique("submitted-flush-close");
+        let db = BrowserDb::open(&name).await.unwrap();
+        let state = js_sys::Object::new();
+        let handle = db.inner.borrow().idb.as_ref().unwrap().db.clone();
+        // Queue real IndexedDB requests and let the browser commit them, but
+        // hold the completion callback so the old commit promise is pending.
+        let replacement = js_sys::Function::new_with_args("db,state", r#"
+            const original = db.transaction;
+            return function(...args) {
+                const tx = original.apply(this,args);
+                if (args[1] === 'readwrite') {
+                    state.submitted = true;
+                    const setter = Object.getOwnPropertyDescriptor(IDBTransaction.prototype,'oncomplete').set;
+                    Object.defineProperty(tx,'oncomplete',{set(callback) {
+                        setter.call(tx,event => {
+                            state.completed = true;
+                            state.resume = () => callback(event);
+                        });
+                    }});
+                }
+                return tx;
+            };
+        "#).call2(&JsValue::NULL, &handle, &state).unwrap();
+        let patch = JsPatch::new(&handle, "transaction", &replacement);
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:c :n 1]])").unwrap();
+        let commit = tx.commit();
+        JsFuture::from(js_sys::Promise::resolve(&JsValue::NULL))
+            .await
+            .unwrap();
+        JsFuture::from(js_sys::Promise::resolve(&JsValue::NULL))
+            .await
+            .unwrap();
+        assert!(
+            js_sys::Reflect::get(&state, &"submitted".into())
+                .unwrap()
+                .is_truthy()
+        );
+        db.close().unwrap();
+        let reopened = BrowserDb::open(&name).await.unwrap();
+        assert!(
+            js_sys::Reflect::get(&state, &"completed".into())
+                .unwrap()
+                .is_truthy()
+        );
+        assert_eq!(ns(&reopened).await, vec![1]);
+        // New writes must not be replaced by an old completion callback.
+        put(&reopened, 2..3).await;
+        let resume: js_sys::Function = js_sys::Reflect::get(&state, &"resume".into())
+            .unwrap()
+            .unchecked_into();
+        resume.call0(&JsValue::NULL).unwrap();
+        JsFuture::from(commit)
+            .await
+            .expect("submitted flush keeps its outcome");
+        assert_eq!(ns(&reopened).await, vec![1, 2]);
+        drop(patch);
+        reopened.close().unwrap();
+        let reopened = BrowserDb::open(&name).await.unwrap();
+        assert_eq!(ns(&reopened).await, vec![1, 2]);
+        reopened.close().unwrap();
+    }
+
+    #[wasm_bindgen_test]
+    async fn dropping_every_owner_releases_the_lock_and_never_saves_staged_facts() {
+        for failed_commit in [false, true] {
+            let name = unique("drop-no-save");
+            let db = open(&name).await;
+            put(&db, 0..3).await;
+            let before = db.export_graph().unwrap().to_vec();
+            let cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+            let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
+            let mut tx = db.begin_write().unwrap();
+            tx.execute("(transact [[:unsaved :n 99]])").unwrap();
+            if failed_commit {
+                *file(&db).faults.lock().unwrap() = Faults {
+                    write_after: Some((0, WriteFault::Throw(0))),
+                    ..Faults::default()
+                };
+                assert_eq!(
+                    code_of(&rejection(JsFuture::from(tx.commit()).await)),
+                    "STG-048"
+                );
+                // The one-shot fault is gone: an unintended save on final drop
+                // could now succeed, so byte equality below catches a retry.
+            }
+            drop(db);
+            assert_eq!(
+                code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                "STG-026"
+            );
+            drop(cursor);
+            drop(pq);
+            drop(tx);
+            let db = open(&name).await;
+            assert_eq!(db.export_graph().unwrap().to_vec(), before);
+            assert_eq!(ns(&db).await, vec![0, 1, 2]);
+            db.close().unwrap();
+        }
+    }
+
     // ── AC10: failed commits ───────────────────────────────────────────────
 
     #[wasm_bindgen_test]
@@ -608,6 +950,63 @@ mod worker {
         db.close().unwrap();
     }
 
+    #[wasm_bindgen_test]
+    async fn every_interrupted_initial_creation_exports_a_complete_image() {
+        let empty = crate::storage::meta::MetaPage::empty(1).encode();
+        for prefix in [0, 16, 40, 512, 4096, 8192] {
+            let name = unique("initial-export");
+            let mut bytes = vec![0; 8192];
+            bytes[..4096].copy_from_slice(&empty);
+            write_raw(&format!("{name}.graph"), &bytes[..prefix]).await;
+            let db = open(&name).await;
+            assert!(ns(&db).await.is_empty());
+            let exported = db
+                .export_graph()
+                .expect("export after initial interruption");
+            assert_eq!(exported.length(), 8192);
+            image_of(exported.to_vec()).expect("complete export verifies");
+            db.close().unwrap();
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn nonempty_import_without_a_selectable_meta_preserves_destination() {
+        let empty = crate::storage::meta::MetaPage::empty(1).encode();
+        for kind in ["zeros", "torn", "page-zero-only"] {
+            let name = unique("invalid-meta-import");
+            let db = open(&name).await;
+            put(&db, 0..3).await;
+            let before = db.export_graph().unwrap().to_vec();
+            let mut cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+            let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
+            let mut bytes = vec![0; 8192];
+            match kind {
+                "torn" => bytes[..24].copy_from_slice(&empty[..24]),
+                "page-zero-only" => bytes = empty.clone(),
+                _ => (),
+            }
+            let err = rejection(db.import_graph(blob(&bytes)).await);
+            if kind == "page-zero-only" {
+                assert_eq!(code_of(&err), "STG-044");
+            } else {
+                assert_eq!(code_of(&err), "STG-032");
+            }
+            assert_eq!(db.export_graph().unwrap().to_vec(), before);
+            assert!(cursor.next_batch(10).unwrap().is_some());
+            assert!(pq.execute(JsValue::UNDEFINED).is_ok());
+            assert_eq!(
+                code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                "STG-026"
+            );
+            assert_eq!(ns(&db).await, vec![0, 1, 2]);
+            db.close().unwrap();
+            let reopened = open(&name).await;
+            assert_eq!(ns(&reopened).await, vec![0, 1, 2]);
+            assert_eq!(reopened.export_graph().unwrap().to_vec(), before);
+            reopened.close().unwrap();
+        }
+    }
+
     // ── AC11: portability ──────────────────────────────────────────────────
 
     #[wasm_bindgen_test]
@@ -642,16 +1041,14 @@ mod worker {
         assert_portability_answers(&db, "native v8, reopened").await;
         db.close().unwrap();
 
-        let v7: &[u8] = include_bytes!("../../tests/fixtures/compat.graph");
+        let v7: &[u8] = include_bytes!("../../tests/fixtures/portability/native_v7.graph");
         let name = unique("native-v7");
         let db = open(&name).await;
         db.import_graph(blob(v7)).await.expect("import native v7");
-        let names = exec(&db, "(query [:find ?n :where [?e :name ?n]])").await;
-        assert_eq!(rows(&names), serde_json::json!([["Alice"]]));
+        assert_portability_answers(&db, "native v7").await;
         db.close().unwrap();
         let db = open(&name).await;
-        let names = exec(&db, "(query [:find ?n :where [?e :name ?n]])").await;
-        assert_eq!(rows(&names), serde_json::json!([["Alice"]]));
+        assert_portability_answers(&db, "native v7, reopened").await;
         db.close().unwrap();
     }
 
@@ -802,6 +1199,93 @@ mod worker {
         db.close().unwrap();
     }
 
+    #[wasm_bindgen_test]
+    async fn admission_precedence_is_closed_then_busy_then_transaction_open() {
+        let name = unique("precedence");
+        let db = open(&name).await;
+        put(&db, 0..3).await;
+        let mut cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+        let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
+        let mut tx = db.begin_write().unwrap();
+        let check_database = |code: &str| {
+            assert_eq!(
+                code_of(&rejection(db.query("(query [:find ?n :where [?e :n ?n]])"))),
+                code
+            );
+            assert_eq!(
+                code_of(&rejection(
+                    db.prepare("(query [:find ?n :where [?e :n ?n]])")
+                )),
+                code
+            );
+            assert_eq!(code_of(&rejection(db.begin_write())), code);
+        };
+        check_database("INT-001");
+        assert_eq!(
+            code_of(&rejection(db.import_graph(blob(&[])).await)),
+            "INT-001"
+        );
+        assert_eq!(code_of(&rejection(db.checkpoint().await)), "INT-001");
+        // Exercise overlapping flags directly: normal admission prevents an
+        // import from starting under a transaction, but precedence must hold
+        // even when several refusal conditions apply.
+        db.inner.importing.set(true);
+        check_database("API-027");
+        assert_eq!(
+            code_of(&rejection(pq.execute(JsValue::UNDEFINED))),
+            "API-027"
+        );
+        assert_eq!(code_of(&rejection(cursor.next_batch(1))), "API-027");
+        assert_eq!(
+            code_of(&rejection(
+                tx.execute("(query [:find ?n :where [?e :n ?n]])")
+            )),
+            "API-027"
+        );
+        assert_eq!(code_of(&rejection(db.checkpoint().await)), "API-027");
+        assert_eq!(
+            code_of(&rejection(db.import_graph(blob(&[])).await)),
+            "API-027"
+        );
+        assert_eq!(
+            code_of(&rejection(db.register_predicate(
+                "p?",
+                js_sys::Function::new_no_args("return true").into()
+            ))),
+            "API-027"
+        );
+        // A dependent invalidated by publication is closed even if the next
+        // import is busy and a transaction flag is also present.
+        db.inner.epoch.set(db.inner.epoch.get() + 1);
+        assert_eq!(code_of(&rejection(cursor.next_batch(1))), "API-018");
+        assert_eq!(
+            code_of(&rejection(pq.execute(JsValue::UNDEFINED))),
+            "API-018"
+        );
+        db.inner.importing.set(false);
+        db.close().unwrap();
+        db.inner.importing.set(true);
+        check_database("API-018");
+        assert_eq!(code_of(&rejection(db.checkpoint().await)), "API-018");
+        assert_eq!(
+            code_of(&rejection(db.import_graph(blob(&[])).await)),
+            "API-018"
+        );
+        assert_eq!(
+            code_of(&rejection(tx.execute("(transact [[:late :n 99]])"))),
+            "API-018"
+        );
+        assert_eq!(
+            code_of(&rejection(JsFuture::from(tx.commit()).await)),
+            "API-018"
+        );
+        cursor.close();
+        tx.rollback();
+        let reopened = open(&name).await;
+        assert_eq!(ns(&reopened).await, vec![0, 1, 2]);
+        reopened.close().unwrap();
+    }
+
     /// An image staged like an import, ready for [`recover_import`] tests.
     fn staged_bytes(image: &[u8], generation: u64) -> Vec<u8> {
         let pfs = image_of(image.to_vec()).unwrap();
@@ -835,6 +1319,8 @@ mod worker {
                     let name = unique("interrupt");
                     let db = open(&name).await;
                     put(&db, 0..3).await;
+                    let mut cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+                    let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
                     let faults = Faults {
                         write_after: (!flush).then_some((k, WriteFault::Throw(16))),
                         flush_after: flush.then_some(k),
@@ -847,13 +1333,37 @@ mod worker {
                     let _ = opfs::tests::take_armed(&format!("{name}.graph-import"));
                     if result.is_ok() {
                         assert_eq!(ns(&db).await, new);
+                        assert_eq!(code_of(&rejection(cursor.next_batch(1))), "API-018");
+                        assert_eq!(
+                            code_of(&rejection(pq.execute(JsValue::UNDEFINED))),
+                            "API-018"
+                        );
+                        assert_eq!(
+                            code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                            "STG-026"
+                        );
+                        assert!(
+                            !entries().await.contains(&format!("{name}.graph-import")),
+                            "successful import cleaned staging"
+                        );
                         db.close().unwrap();
                         break;
                     }
                     if db.inner.closed.get() {
                         published_failures += 1;
+                        assert_eq!(code_of(&rejection(cursor.next_batch(1))), "API-018");
+                        assert_eq!(
+                            code_of(&rejection(pq.execute(JsValue::UNDEFINED))),
+                            "API-018"
+                        );
                     } else {
                         kept_old += 1;
+                        assert!(cursor.next_batch(10).unwrap().is_some());
+                        assert!(pq.execute(JsValue::UNDEFINED).is_ok());
+                        assert_eq!(
+                            code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                            "STG-026"
+                        );
                         assert_eq!(ns(&db).await, old, "the old database, still open");
                         db.close().unwrap();
                     }
@@ -861,6 +1371,10 @@ mod worker {
                     let db = open(&name).await;
                     let got = ns(&db).await;
                     assert!(got == old || got == new, "old or new, whole");
+                    assert_eq!(
+                        code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                        "STG-026"
+                    );
                     db.close().unwrap();
                     let mine: Vec<String> = entries()
                         .await
@@ -900,6 +1414,162 @@ mod worker {
         let db = open(&name).await;
         assert_eq!(ns(&db).await, new, "the redone copy completes");
         db.close().unwrap();
+    }
+
+    #[wasm_bindgen_test]
+    async fn staging_create_acquire_truncate_and_cleanup_failures() {
+        let other = BrowserDb::open_in_memory().unwrap();
+        put(&other, 100..110).await;
+        let image = other.export_graph().unwrap();
+        for boundary in ["create", "acquire", "truncate", "cleanup"] {
+            let name = unique("stage-boundary");
+            let db = open(&name).await;
+            put(&db, 0..3).await;
+            let before = db.export_graph().unwrap().to_vec();
+            let mut cursor = db.query("(query [:find ?n :where [?e :n ?n]])").unwrap();
+            let pq = db.prepare("(query [:find ?n :where [?e :n ?n]])").unwrap();
+            let patch = match boundary {
+                "create" => JsPatch::wrap(
+                    &prototype("FileSystemDirectoryHandle"),
+                    "getFileHandle",
+                    "if(args[0].endsWith('.graph-import')) return Promise.reject(new DOMException('create','UnknownError')); return original.apply(this,args)",
+                ),
+                "acquire" => JsPatch::wrap(
+                    &prototype("FileSystemFileHandle"),
+                    "createSyncAccessHandle",
+                    "if(this.name.endsWith('.graph-import')) return Promise.reject(new DOMException('acquire','UnknownError')); return original.apply(this,args)",
+                ),
+                "truncate" => JsPatch::method(
+                    &prototype("FileSystemSyncAccessHandle"),
+                    "truncate",
+                    "throw new DOMException('truncate','UnknownError')",
+                ),
+                _ => JsPatch::wrap(
+                    &prototype("FileSystemDirectoryHandle"),
+                    "removeEntry",
+                    "if(args[0].endsWith('.graph-import')) return Promise.reject(new DOMException('cleanup','UnknownError')); return original.apply(this,args)",
+                ),
+            };
+            let result = db.import_graph(image.clone()).await;
+            drop(patch);
+            if boundary == "cleanup" {
+                result.expect("post-publication cleanup rejection must resolve import");
+                assert_eq!(ns(&db).await, (100..110).collect::<Vec<_>>());
+                assert_eq!(code_of(&rejection(cursor.next_batch(1))), "API-018");
+                assert_eq!(
+                    code_of(&rejection(pq.execute(JsValue::UNDEFINED))),
+                    "API-018"
+                );
+                assert!(
+                    entries().await.contains(&format!("{name}.graph-import")),
+                    "cleanup really failed"
+                );
+            } else {
+                assert_eq!(code_of(&rejection(result)), "STG-048");
+                assert_eq!(db.export_graph().unwrap().to_vec(), before);
+                assert_eq!(ns(&db).await, vec![0, 1, 2]);
+                assert!(cursor.next_batch(10).unwrap().is_some());
+                assert!(pq.execute(JsValue::UNDEFINED).is_ok());
+            }
+            assert_eq!(
+                code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                "STG-026"
+            );
+            db.close().unwrap();
+            let db = open(&name).await;
+            let expected = if boundary == "cleanup" {
+                (100..110).collect()
+            } else {
+                vec![0, 1, 2]
+            };
+            assert_eq!(ns(&db).await, expected);
+            assert_eq!(
+                code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                "STG-026"
+            );
+            db.close().unwrap();
+            let mine: Vec<_> = entries()
+                .await
+                .into_iter()
+                .filter(|e| e.starts_with(&name))
+                .collect();
+            assert_eq!(mine, vec![format!("{name}.graph")]);
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn recovery_copy_survives_every_second_interruption() {
+        let other = BrowserDb::open_in_memory().unwrap();
+        put(&other, 100..400).await;
+        let image = other.export_graph().unwrap().to_vec();
+        let new: Vec<_> = (100..400).collect();
+        let mut interruptions = 0;
+        for boundary in ["write", "flush", "truncate"] {
+            for k in 0..80 {
+                let name = unique("recovery-sweep");
+                let entry = format!("{name}.graph");
+                let staging = format!("{name}.graph-import");
+                let db = open(&name).await;
+                put(&db, 0..3).await;
+                let generation = db.inner.borrow().pfs.generation() + 10;
+                db.close().unwrap();
+                write_raw(&staging, &staged_bytes(&image, generation | 1)).await;
+                let patch = if boundary == "truncate" {
+                    Some(JsPatch::method(
+                        &prototype("FileSystemSyncAccessHandle"),
+                        "truncate",
+                        "throw new DOMException('truncate','UnknownError')",
+                    ))
+                } else {
+                    arm(
+                        &entry,
+                        Faults {
+                            write_after: (boundary == "write")
+                                .then_some((k, WriteFault::Throw(16))),
+                            flush_after: (boundary == "flush").then_some(k),
+                        },
+                    );
+                    None
+                };
+                let result = BrowserDb::open_opfs(name.clone()).await;
+                drop(patch);
+                if let Ok(db) = result {
+                    assert_eq!(ns(&db).await, new);
+                    db.close().unwrap();
+                    break;
+                }
+                interruptions += 1;
+                assert!(
+                    entries().await.contains(&staging),
+                    "recovery retained its source"
+                );
+                // Refused open released both handles; the source remains intact.
+                let main = raw_file(&entry).await;
+                main.close();
+                let stage = raw_file(&staging).await;
+                stage.close();
+                let db = open(&name).await;
+                assert_eq!(ns(&db).await, new, "whole new database after retry");
+                assert_eq!(
+                    code_of(&rejection(BrowserDb::open_opfs(name.clone()).await)),
+                    "STG-026"
+                );
+                db.close().unwrap();
+                let mine: Vec<_> = entries()
+                    .await
+                    .into_iter()
+                    .filter(|e| e.starts_with(&name))
+                    .collect();
+                assert_eq!(mine, vec![entry]);
+                if boundary == "truncate" {
+                    break;
+                }
+            }
+        }
+        assert!(
+            interruptions > 10,
+            "swept data, meta, both flushes and truncate"
+        );
     }
 
     /// A staging file left after its copy finished (a failed cleanup) is
