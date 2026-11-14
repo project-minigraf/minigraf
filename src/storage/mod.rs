@@ -24,8 +24,10 @@ pub mod persistent_facts;
 pub(crate) mod pins;
 pub(crate) mod reader;
 pub(crate) mod value_pages;
-// `Minigraf::verify` / `rebuild_indexes` walk a file; not built for wasm32.
-#[cfg(not(target_arch = "wasm32"))]
+// `Minigraf::verify` / `rebuild_indexes` walk a file; on wasm32 only the
+// browser builds it, to check an image before importing it (#441).
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) mod verify;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};

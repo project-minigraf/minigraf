@@ -108,6 +108,7 @@ impl BrowserDb {
     /// when `fn` is not a function, and `[INT-040]` when `name` is taken.
     #[wasm_bindgen(js_name = registerPredicate)]
     pub fn register_predicate(&self, name: &str, f: JsValue) -> Result<(), JsValue> {
+        self.inner.admit()?;
         let f = Held::new(function(f, "the predicate")?.into());
         let desc = udf_predicate(move |v: &Value| {
             let result = f
@@ -144,6 +145,7 @@ impl BrowserDb {
     /// not a function, and `[INT-040]` when `name` is taken.
     #[wasm_bindgen(js_name = registerAggregate)]
     pub fn register_aggregate(&self, name: &str, aggregate: JsValue) -> Result<(), JsValue> {
+        self.inner.admit()?;
         let member = |key: &str| -> Result<Held, JsValue> {
             let f = if aggregate.is_object() {
                 Reflect::get(&aggregate, &JsValue::from_str(key))?

@@ -1,23 +1,34 @@
-//! Browser WASM support: `BrowserDb` async façade backed by IndexedDB.
+//! Browser WASM support: the `BrowserDb` façade, in memory, backed by
+//! IndexedDB, or backed by an OPFS file in a dedicated worker (#441).
 //!
 //! This module is only compiled for `wasm32-unknown-unknown` with the `browser`
 //! feature enabled. It is **not** compatible with Node.js, Deno, Bun, or any
 //! server-side runtime. For server-side Node.js, use `@minigraf/node` (Phase 8.3).
 
+/// The storage under a `BrowserDb`: page buffer or OPFS file.
+mod backend;
 /// Bind values read from JavaScript for prepared queries.
 mod binds;
 /// Synchronous in-memory page buffer with dirty-page tracking.
 pub mod buffer;
 /// Async IndexedDB backend for browser WASM persistence.
 pub mod indexeddb;
+/// OPFS file backend for `BrowserDb.openOpfs` (#441).
+mod opfs;
+/// Tests of OPFS mode, run in a dedicated worker (#441).
+#[cfg(all(target_arch = "wasm32", feature = "browser", test))]
+mod opfs_tests;
 /// Tests of `BrowserWriteTransaction` (#824).
 #[cfg(all(target_arch = "wasm32", feature = "browser", test))]
 mod tx_tests;
 /// User-defined functions from JavaScript (#180).
 mod udfs;
 
+use crate::browser::backend::BrowserBackend;
 use crate::browser::buffer::BrowserBufferBackend;
 use crate::browser::indexeddb::IndexedDbBackend;
+use crate::browser::opfs::{OpfsBackend, OpfsFile};
+use crate::error::{ErrorCode, err_coded};
 use crate::graph::FactStorage;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
 use crate::query::datalog::functions::Functions;
@@ -25,18 +36,167 @@ use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::prepared::{BindValue, PreparedQuery};
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::DatalogCommand;
+use crate::storage::StorageBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use wasm_bindgen::prelude::*;
+
+/// OPFS mode's page cache: the storage default, 256 pages (1 MiB).
+const OPFS_PAGE_CACHE: usize = 256;
+
+/// One open database, shared by its `BrowserDb` and every dependent
+/// (cursor, prepared query, transaction). Its lifecycle flags live outside
+/// the `RefCell`, so a call made while a query holds `inner.borrow()` (from a
+/// user function) can still read them. It derefs to that `RefCell`.
+struct Db {
+    inner: RefCell<BrowserDbInner>,
+    /// After `close()`: every call but disposal is `API-018` (#441).
+    closed: Cell<bool>,
+    /// An OPFS import's body is running: calls are "busy" (`API-027`).
+    importing: Cell<bool>,
+    /// Queries of this database running now (a user function's `close()`
+    /// is then refused).
+    running: Cell<u32>,
+    /// Bumped when an OPFS import publishes a new database: cursors and
+    /// prepared queries from before are `API-018`.
+    epoch: Cell<u64>,
+    /// OPFS mode's file and where it lives; `None` in the other modes.
+    opfs: Option<OpfsMode>,
+}
+
+struct OpfsMode {
+    dir: web_sys::FileSystemDirectoryHandle,
+    /// `<name>.graph`.
+    file_name: String,
+    file: Arc<OpfsFile>,
+}
+
+impl std::ops::Deref for Db {
+    type Target = RefCell<BrowserDbInner>;
+    fn deref(&self) -> &RefCell<BrowserDbInner> {
+        &self.inner
+    }
+}
+
+impl Db {
+    fn new(inner: BrowserDbInner, opfs: Option<OpfsMode>) -> Rc<Db> {
+        Rc::new(Db {
+            inner: RefCell::new(inner),
+            closed: Cell::new(false),
+            importing: Cell::new(false),
+            running: Cell::new(0),
+            epoch: Cell::new(0),
+            opfs,
+        })
+    }
+
+    /// Whether a call on the database may start work: `API-018` once
+    /// closed, then "busy" while importing. Callers check `INT-001` after.
+    fn admit(&self) -> Result<(), JsValue> {
+        if self.closed.get() {
+            return Err(closed_error("database"));
+        }
+        self.refuse_importing()
+    }
+
+    /// [`admit`](Self::admit) for a dependent from `epoch`: `API-018` too
+    /// when an import has replaced the database it was made on.
+    fn admit_from(&self, epoch: u64, what: &str) -> Result<(), JsValue> {
+        if self.closed.get() {
+            return Err(closed_error("database"));
+        }
+        if self.epoch.get() != epoch {
+            return Err(closed_error(format!(
+                "{what} (an import replaced its database)"
+            )));
+        }
+        self.refuse_importing()
+    }
+
+    fn refuse_importing(&self) -> Result<(), JsValue> {
+        if self.importing.get() {
+            return Err(busy("an import is in progress"));
+        }
+        Ok(())
+    }
+
+    /// Count a running query until the guard drops.
+    fn run(&self) -> Running<'_> {
+        self.running.set(self.running.get() + 1);
+        Running(self)
+    }
+
+    /// Close: release the OPFS handle or the IndexedDB connection, keep
+    /// nothing to save. Already closed: nothing to do.
+    fn close(&self) -> Result<(), JsValue> {
+        if self.closed.get() {
+            return Ok(());
+        }
+        self.refuse_importing()?;
+        if self.running.get() > 0 {
+            return Err(busy(
+                "close() was called while a query of this database runs",
+            ));
+        }
+        self.closed.set(true);
+        if let Some(opfs) = &self.opfs {
+            opfs.file.close();
+        }
+        if let Ok(mut inner) = self.inner.try_borrow_mut() {
+            inner.pfs.discard();
+            inner.tx_open = false;
+            inner.withheld.clear();
+            if let Some(idb) = inner.idb.take() {
+                idb.db.close();
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Db {
+    /// Freeing the database and every dependent saves nothing: each write
+    /// was stored when it was acknowledged, or failed.
+    fn drop(&mut self) {
+        self.inner.get_mut().pfs.discard();
+        if let Some(opfs) = &self.opfs {
+            opfs.file.close();
+        }
+    }
+}
+
+/// A query of the database is running while this lives.
+struct Running<'a>(&'a Db);
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        self.0.running.set(self.0.running.get() - 1);
+    }
+}
+
+/// `[API-018]`: `what` is closed.
+fn closed_error(what: impl std::fmt::Display) -> JsValue {
+    JsValue::from_str(&crate::MinigrafError::closed(what).to_string())
+}
+
+/// `[API-027]`: the database is busy, because of `why`.
+fn busy(why: &str) -> JsValue {
+    to_js_error(err_coded!(ErrorCode::Api027, why))
+}
+
+/// A thrown JavaScript value as text, for messages.
+fn js_text(e: &JsValue) -> String {
+    e.as_string().unwrap_or_else(|| format!("{e:?}"))
+}
 
 /// Internal state shared by all `BrowserDb` clones.
 struct BrowserDbInner {
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<Functions>,
-    pfs: PersistentFactStorage<BrowserBufferBackend>,
+    pfs: PersistentFactStorage<BrowserBackend>,
     /// `None` for in-memory databases (no IDB backing).
     idb: Option<IndexedDbBackend>,
     /// Free pages whose bytes are kept because an open cursor's generation
@@ -58,18 +218,37 @@ impl BrowserDbInner {
 }
 
 /// `INT-001` while a transaction of `db` is open.
-fn refuse_in_tx(db: &RefCell<BrowserDbInner>) -> Result<(), JsValue> {
+fn refuse_in_tx(db: &Db) -> Result<(), JsValue> {
     db.borrow().refuse_in_tx().map_err(to_js_error)
 }
 
-/// Browser-only Minigraf database handle backed by IndexedDB.
+/// Browser-only Minigraf database handle: in memory (`openInMemory`),
+/// backed by IndexedDB (`open`), or backed by an OPFS file in a dedicated
+/// worker (`openOpfs`).
 ///
-/// All public methods return `Promise`s. Use `await` in JavaScript.
+/// `execute`, `checkpoint`, `importGraph` and a transaction's `commit`
+/// return `Promise`s; the other methods are synchronous.
 ///
 /// **Not compatible with Node.js.** Use `@minigraf/node` for server-side use.
 #[wasm_bindgen]
 pub struct BrowserDb {
-    inner: Rc<RefCell<BrowserDbInner>>,
+    inner: Rc<Db>,
+}
+
+/// A new database's state over `pfs`.
+fn inner_over(
+    pfs: PersistentFactStorage<BrowserBackend>,
+    idb: Option<IndexedDbBackend>,
+) -> BrowserDbInner {
+    BrowserDbInner {
+        fact_storage: pfs.storage().clone(),
+        rules: Arc::new(RwLock::new(RuleRegistry::new())),
+        functions: Arc::new(Functions::with_builtins()),
+        pfs,
+        idb,
+        withheld: Vec::new(),
+        tx_open: false,
+    }
 }
 
 #[wasm_bindgen]
@@ -79,23 +258,13 @@ impl BrowserDb {
     /// Data is lost when the page is closed. Use `BrowserDb.open()` for persistence.
     #[wasm_bindgen(js_name = openInMemory)]
     pub fn open_in_memory() -> Result<BrowserDb, JsValue> {
-        let buffer = BrowserBufferBackend::new();
+        let buffer = BrowserBackend::Buffer(BrowserBufferBackend::new());
         // Page cache capacity 0: `BrowserBufferBackend` is already an in-memory
         // page store, so the LRU cache would only duplicate pages and add
         // HashMap overhead for zero benefit. See #275.
         let pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
-        let fact_storage = pfs.storage().clone();
-
         Ok(BrowserDb {
-            inner: Rc::new(RefCell::new(BrowserDbInner {
-                fact_storage,
-                rules: Arc::new(RwLock::new(RuleRegistry::new())),
-                functions: Arc::new(Functions::with_builtins()),
-                pfs,
-                idb: None,
-                withheld: Vec::new(),
-                tx_open: false,
-            })),
+            inner: Db::new(inner_over(pfs, None), None),
         })
     }
 
@@ -108,10 +277,9 @@ impl BrowserDb {
         let idb = IndexedDbBackend::open(db_name).await?;
         let existing = idb.load_all_pages().await?;
 
-        let buffer = BrowserBufferBackend::load_pages(existing);
+        let buffer = BrowserBackend::Buffer(BrowserBufferBackend::load_pages(existing));
         // Page cache capacity 0 — see comment in `open_in_memory` above.
         let mut pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
-        let fact_storage = pfs.storage().clone();
 
         // Opening may have written pages: a v7 store is migrated to v8 (#411).
         // Store them, and drop the free pages (after a migration, the whole v7
@@ -122,16 +290,80 @@ impl BrowserDb {
         idb.write_pages(flush.puts, flush.deletes).await?;
 
         Ok(BrowserDb {
-            inner: Rc::new(RefCell::new(BrowserDbInner {
-                fact_storage,
-                rules: Arc::new(RwLock::new(RuleRegistry::new())),
-                functions: Arc::new(Functions::with_builtins()),
-                pfs,
-                idb: Some(idb),
-                withheld: Vec::new(),
-                tx_open: false,
-            })),
+            inner: Db::new(inner_over(pfs, Some(idb)), None),
         })
+    }
+
+    /// Open or create the database `name` as one file in the Origin Private
+    /// File System (#441), read and written in place through a sync access
+    /// handle: no page is held in memory beyond a 1 MiB page cache, and each
+    /// commit is stored before its promise resolves. Call it from a
+    /// dedicated worker:
+    ///
+    /// ```js
+    /// const db = await BrowserDb.openOpfs('mydb');
+    /// await db.execute('(transact [[:alice :name "Alice"]])');
+    /// db.close();
+    /// ```
+    ///
+    /// The file is `<name>.graph` in the origin's OPFS root; OPFS-mode and
+    /// IndexedDB-mode databases of one name are unrelated. Elsewhere than a
+    /// dedicated worker with OPFS this rejects with `[API-026]`, creating
+    /// nothing; an empty name, one with `/` or `\`, or `.`/`..` is
+    /// `[API-017]`. While the database is open, a second `openOpfs` of it
+    /// from any worker or tab rejects with `[STG-026]`; `close()`, or the
+    /// worker ending, releases it.
+    #[wasm_bindgen(js_name = openOpfs)]
+    pub async fn open_opfs(name: String) -> Result<BrowserDb, JsValue> {
+        opfs::check_name(&name)?;
+        let dir = opfs::root().await?;
+        let file_name = format!("{name}{}", opfs::FILE_SUFFIX);
+        let staging = format!("{file_name}{}", opfs::STAGING_SUFFIX);
+        let file = opfs::open_file(&dir, &file_name, true)
+            .await
+            .map_err(to_js_error)?
+            .ok_or_else(|| {
+                to_js_error(opfs::storage_error(
+                    format!("open {file_name}"),
+                    "NotFoundError",
+                ))
+            })?;
+        // The handle is the lock. Every failure from here drops `file`,
+        // which releases it; a refused open writes nothing.
+        opfs::recover_import(&dir, &staging, &file)
+            .await
+            .map_err(to_js_error)?;
+        let pfs = PersistentFactStorage::open_wal_less(
+            BrowserBackend::Opfs(OpfsBackend::new(file.clone())),
+            OPFS_PAGE_CACHE,
+        )
+        .map_err(to_js_error)?;
+        Ok(BrowserDb {
+            inner: Db::new(
+                inner_over(pfs, None),
+                Some(OpfsMode {
+                    dir,
+                    file_name,
+                    file,
+                }),
+            ),
+        })
+    }
+
+    /// Close the database (#441). Synchronous and idempotent; it stores
+    /// nothing, since every acknowledged write is already stored: an open
+    /// write transaction is discarded, and an in-memory database is gone.
+    /// In OPFS mode it releases the file's lock; in IndexedDB mode it closes
+    /// the connection, so a commit whose flush had not started rejects with
+    /// `[API-018]`.
+    ///
+    /// Afterwards every method of the database and of its cursors, prepared
+    /// queries and transactions fails with `[API-018]`, except a cursor's
+    /// `close()`, a transaction's `rollback()`, `free()` and `close()`
+    /// itself. Refused with `[API-027]` while an import runs, and when called
+    /// from a user function while a query of this database runs.
+    pub fn close(&self) -> Result<(), JsValue> {
+        self.inner.close()
     }
 
     /// Execute a Datalog command string and return a JSON-encoded result.
@@ -143,6 +375,7 @@ impl BrowserDb {
     /// - Rule: `{"ok": true}`
     #[wasm_bindgen(js_name = execute)]
     pub async fn execute(&self, datalog: String) -> Result<String, JsValue> {
+        self.inner.admit()?;
         refuse_in_tx(&self.inner)?;
         let cmd = parse_datalog_command(&datalog).map_err(to_js_error)?;
         // BrowserDb takes no options: the default override list (#869).
@@ -156,6 +389,7 @@ impl BrowserDb {
 
         if is_read {
             let result = {
+                let _running = self.inner.run();
                 let inner = self.inner.borrow();
                 DatalogExecutor::new_with_rules_and_functions(
                     inner.fact_storage.clone(),
@@ -193,12 +427,13 @@ impl BrowserDb {
     /// `[API-010]` for a query with `$slot` bind slots.
     #[wasm_bindgen(js_name = query)]
     pub fn query(&self, datalog: &str) -> Result<BrowserCursor, JsValue> {
+        self.inner.admit()?;
         refuse_in_tx(&self.inner)?;
-        let cursor = self.query_inner(datalog).map_err(to_js_error)?;
-        Ok(BrowserCursor {
-            vars: cursor.vars().to_vec(),
-            cursor: Some(cursor),
-        })
+        let cursor = {
+            let _running = self.inner.run();
+            self.query_inner(datalog).map_err(to_js_error)?
+        };
+        Ok(BrowserCursor::new(&self.inner, cursor))
     }
 
     /// Parse and validate a `(query ...)` once, for running many times with
@@ -215,10 +450,12 @@ impl BrowserDb {
     /// ```
     #[wasm_bindgen(js_name = prepare)]
     pub fn prepare(&self, datalog: &str) -> Result<BrowserPreparedQuery, JsValue> {
+        self.inner.admit()?;
         refuse_in_tx(&self.inner)?;
         let query = self.prepare_inner(datalog).map_err(to_js_error)?;
         Ok(BrowserPreparedQuery {
-            _db: self.inner.clone(),
+            epoch: self.inner.epoch.get(),
+            db: self.inner.clone(),
             query,
         })
     }
@@ -227,8 +464,10 @@ impl BrowserDb {
     ///
     /// Write-through means individual `execute()` calls already flush dirty pages,
     /// so `checkpoint()` is only needed after `import_graph()` or explicit bulk ops.
-    /// No-op for in-memory databases.
+    /// No-op for in-memory databases, and in OPFS mode, where every commit is
+    /// already stored in the file.
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
+        self.inner.admit()?;
         refuse_in_tx(&self.inner)?;
         let (flush, idb) = {
             let mut inner = self.inner.borrow_mut();
@@ -255,12 +494,16 @@ impl BrowserDb {
     /// no WAL entries are missing from the main file.
     #[wasm_bindgen(js_name = exportGraph)]
     pub fn export_graph(&self) -> Result<js_sys::Uint8Array, JsValue> {
+        self.inner.admit()?;
         let inner = self.inner.borrow();
+        if self.inner.opfs.is_some() {
+            return export_image(&inner.pfs);
+        }
         // Free pages hold no bytes (#440), so the trailing ones may be absent:
         // the file is as long as the meta says.
         let page_count = inner
             .pfs
-            .with_backend(|b| b.page_count_raw())
+            .with_backend(|b| b.page_count())
             .map_err(to_js_error)?
             .max(inner.pfs.committed_page_count());
         let capacity = usize::try_from(page_count)
@@ -272,7 +515,10 @@ impl BrowserDb {
         for id in 0..page_count {
             let page = inner
                 .pfs
-                .with_backend(|b| b.export_page(id))
+                .with_backend(|b| match b.buffer() {
+                    Some(buffer) => buffer.export_page(id),
+                    None => b.read_page(id),
+                })
                 .map_err(to_js_error)?;
             blob.extend_from_slice(&page);
         }
@@ -286,7 +532,11 @@ impl BrowserDb {
     /// queryable and all dirty pages are flushed to IndexedDB.
     #[wasm_bindgen(js_name = importGraph)]
     pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
+        self.inner.admit()?;
         refuse_in_tx(&self.inner)?;
+        if self.inner.opfs.is_some() {
+            return self.import_opfs(data).await;
+        }
         let bytes = data.to_vec();
         if !bytes.len().is_multiple_of(crate::storage::PAGE_SIZE) {
             return Err(JsValue::from_str(
@@ -302,7 +552,7 @@ impl BrowserDb {
         // ── Sync section ──────────────────────────────────────────────────────────
         let (flush, idb) = {
             let mut inner = self.inner.borrow_mut();
-            let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
+            let buffer = BrowserBackend::Buffer(BrowserBufferBackend::load_pages_all_dirty(pages));
             // Page cache capacity 0 — see comment in `open_in_memory` above.
             let mut new_pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
             let new_fact_storage = new_pfs.storage().clone();
@@ -314,10 +564,12 @@ impl BrowserDb {
             // Every page of the old database the new one does not hold must go
             // too, or a reopen would load it next to the imported pages.
             let new_ids: std::collections::HashSet<u64> =
-                new_pfs.with_backend(|b| b.page_ids().collect());
-            let stale: Vec<u64> = inner
-                .pfs
-                .with_backend(|b| b.page_ids().filter(|id| !new_ids.contains(id)).collect());
+                new_pfs.with_backend(|b| buffer_page_ids(b).collect());
+            let stale: Vec<u64> = inner.pfs.with_backend(|b| {
+                buffer_page_ids(b)
+                    .filter(|id| !new_ids.contains(id))
+                    .collect()
+            });
             flush.deletes.extend(stale);
             flush.deletes.sort_unstable();
             flush.deletes.dedup();
@@ -364,6 +616,7 @@ impl BrowserDb {
     /// ```
     #[wasm_bindgen(js_name = beginWrite)]
     pub fn begin_write(&self) -> Result<BrowserWriteTransaction, JsValue> {
+        self.inner.admit()?;
         // Before the mutable borrow: a user function of a transaction's query
         // calling this gets INT-001, not a borrow panic.
         refuse_in_tx(&self.inner)?;
@@ -378,6 +631,106 @@ impl BrowserDb {
 }
 
 impl BrowserDb {
+    /// OPFS mode's `importGraph` (#441): old or new database, never a mix,
+    /// whenever it is interrupted.
+    ///
+    /// The image is checked whole in memory first (meta, length, `verify()`;
+    /// a v7 file is migrated). It is then written to the staging file
+    /// `<name>.graph-import`, with zeros in its meta slots, and flushed. The
+    /// publication point is the staging file's meta page: written and
+    /// flushed, it makes the new database recoverable, since every open
+    /// copies a staged image newer than the database file into it. The image
+    /// is stamped with a generation above every meta of the old file, so a
+    /// copy that finished is never redone over later commits. Then the image
+    /// is copied into the database file (meta last), the storage reopened on
+    /// it, and the staging file removed; a failed removal is left to the
+    /// next open.
+    async fn import_opfs(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
+        let db = &self.inner;
+        let Some(opfs) = db.opfs.as_ref() else {
+            return Err(JsValue::from_str("not an OPFS database"));
+        };
+        let len = data.length();
+        if !(len as usize).is_multiple_of(crate::storage::PAGE_SIZE) {
+            return Err(JsValue::from_str(
+                &crate::MinigrafError::invalid_argument(format!(
+                    "importGraph: {len} bytes is not a whole number of {}-byte pages",
+                    crate::storage::PAGE_SIZE
+                ))
+                .to_string(),
+            ));
+        }
+        db.importing.set(true);
+        let _importing = Importing(db);
+
+        let image = image_of(data.to_vec()).map_err(to_js_error)?;
+        let staging = format!("{}{}", opfs.file_name, opfs::STAGING_SUFFIX);
+        let newest = opfs
+            .file
+            .newest_generation()
+            .map_err(to_js_error)?
+            .unwrap_or(0)
+            .max(db.borrow().pfs.generation());
+        let generation = newest
+            .checked_add(1)
+            .ok_or_else(|| to_js_error(err_coded!(ErrorCode::Int048, "generation overflow")))?
+            .max(image.generation());
+        let stage = opfs::open_file(&opfs.dir, &staging, true)
+            .await
+            .map_err(to_js_error)?
+            .ok_or_else(|| {
+                to_js_error(opfs::storage_error(
+                    format!("open {staging}"),
+                    "NotFoundError",
+                ))
+            })?;
+
+        // Before the publication point: on failure the old database stays.
+        let meta_page = match stage_image(&image, &stage, generation) {
+            Ok(m) => m,
+            Err(e) => {
+                stage.close();
+                drop(stage);
+                opfs::remove_quietly(&opfs.dir, &staging).await;
+                return Err(to_js_error(e));
+            }
+        };
+        drop(image);
+
+        // The publication step, with no await in it: nothing else runs
+        // until the database is the new one or closed.
+        let published = publish_image(&stage, &opfs.file, &meta_page).and_then(|()| {
+            PersistentFactStorage::open_wal_less(
+                BrowserBackend::Opfs(OpfsBackend::new(opfs.file.clone())),
+                OPFS_PAGE_CACHE,
+            )
+        });
+        let swapped = published.map_err(to_js_error).and_then(|pfs| {
+            let mut inner = db
+                .try_borrow_mut()
+                .map_err(|_| busy("the database is in use"))?;
+            inner.fact_storage = pfs.storage().clone();
+            let mut old = std::mem::replace(&mut inner.pfs, pfs);
+            old.discard();
+            inner.withheld.clear();
+            db.epoch.set(db.epoch.get() + 1);
+            Ok(())
+        });
+        stage.close();
+        drop(stage);
+        if let Err(e) = swapped {
+            // Old or new, the file holds one of them whole; this handle no
+            // longer knows which. Reopening tells.
+            db.importing.set(false);
+            let _ = db.close();
+            return Err(e);
+        }
+        // Cleanup: a failure here leaves a consumed staging file, which the
+        // next open removes.
+        opfs::remove_quietly(&opfs.dir, &staging).await;
+        Ok(())
+    }
+
     fn prepare_inner(&self, datalog: &str) -> anyhow::Result<PreparedQuery> {
         use crate::error::{ErrorCode, bail_coded};
 
@@ -527,7 +880,7 @@ fn commit_stamped(
 /// `execute` and `commit` fail with `[API-018]`, and `rollback` does nothing.
 #[wasm_bindgen]
 pub struct BrowserWriteTransaction {
-    db: Rc<RefCell<BrowserDbInner>>,
+    db: Rc<Db>,
     /// `None` once finished.
     staged: Option<crate::db::Staged>,
 }
@@ -536,9 +889,11 @@ pub struct BrowserWriteTransaction {
 impl BrowserWriteTransaction {
     /// Run one Datalog command inside the transaction; see the type's docs.
     pub fn execute(&mut self, datalog: &str) -> Result<String, JsValue> {
+        self.db.admit()?;
         let Some(staged) = self.staged.as_mut() else {
             return Err(finished());
         };
+        let _running = self.db.run();
         tx_execute(&self.db, staged, datalog)
             .map(query_result_to_json)
             .map_err(to_js_error)
@@ -546,10 +901,17 @@ impl BrowserWriteTransaction {
 
     /// Apply the staged facts as one transaction and store it. The promise
     /// resolves after the IndexedDB flush, and rejects as a failed flush of
-    /// `BrowserDb.execute` does. The transaction is finished either way: a
+    /// `BrowserDb.execute` does; in OPFS mode the commit is stored before
+    /// this returns. The transaction is finished either way: a
     /// commit that is refused (for example `[API-019]`, a valid time that
     /// ended before the commit time) discards the staged facts.
+    ///
+    /// If `close()` runs before an IndexedDB flush starts, the flush is not
+    /// started and the promise rejects with `[API-018]`.
     pub fn commit(&mut self) -> js_sys::Promise {
+        if let Err(e) = self.db.admit() {
+            return js_sys::Promise::reject(&e);
+        }
         let Some(staged) = self.staged.take() else {
             return js_sys::Promise::reject(&finished());
         };
@@ -563,10 +925,15 @@ impl BrowserWriteTransaction {
                 )
             })
         };
+        let db = self.db.clone();
         match committed {
             Err(e) => js_sys::Promise::reject(&e),
             Ok((flush, idb)) => wasm_bindgen_futures::future_to_promise(async move {
                 if let (Some(flush), Some(idb)) = (flush, idb) {
+                    // Never into a database closed (and maybe reopened) since.
+                    if db.closed.get() {
+                        return Err(closed_error("database"));
+                    }
                     idb.write_pages(flush.puts, flush.deletes).await?;
                 }
                 Ok(JsValue::UNDEFINED)
@@ -601,7 +968,7 @@ fn finished() -> JsValue {
 /// A transaction's `execute`, as the native transaction's on an in-memory
 /// database: stage a write, read the staged state, or register a rule.
 fn tx_execute(
-    db: &RefCell<BrowserDbInner>,
+    db: &Db,
     staged: &mut crate::db::Staged,
     datalog: &str,
 ) -> anyhow::Result<QueryResult> {
@@ -671,24 +1038,43 @@ pub struct BrowserCursor {
     vars: Vec<String>,
     /// `None` after `close()`.
     cursor: Option<crate::Cursor>,
+    db: Rc<Db>,
+    /// The database's epoch when it opened (#441).
+    epoch: u64,
+}
+
+impl BrowserCursor {
+    fn new(db: &Rc<Db>, cursor: crate::Cursor) -> BrowserCursor {
+        BrowserCursor {
+            vars: cursor.vars().to_vec(),
+            cursor: Some(cursor),
+            db: db.clone(),
+            epoch: db.epoch.get(),
+        }
+    }
 }
 
 #[wasm_bindgen]
 impl BrowserCursor {
-    /// The query's `:find` variables, in column order.
-    pub fn vars(&self) -> Vec<String> {
-        self.vars.clone()
+    /// The query's `:find` variables, in column order. `[API-018]` once its
+    /// database is closed.
+    pub fn vars(&self) -> Result<Vec<String>, JsValue> {
+        self.db.admit_from(self.epoch, "cursor")?;
+        Ok(self.vars.clone())
     }
 
     /// The next batch of at most `maxRows` rows (`0` counts as 1), as a JSON
     /// array of rows encoded like `execute()`'s `results`, or `undefined` at
     /// the end. A batch is never empty. After `close()` it returns
-    /// `undefined`.
+    /// `undefined`. `[API-018]` once its database is closed, or in OPFS
+    /// mode replaced by an import.
     #[wasm_bindgen(js_name = nextBatch)]
     pub fn next_batch(&mut self, max_rows: u32) -> Result<Option<String>, JsValue> {
+        self.db.admit_from(self.epoch, "cursor")?;
         let Some(cursor) = self.cursor.as_mut() else {
             return Ok(None);
         };
+        let _running = self.db.run();
         let batch = cursor
             .next_batch(max_rows as usize)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -712,10 +1098,14 @@ impl BrowserCursor {
 /// `timestamp` or `anyValidTime`. Names the query does not use are ignored.
 ///
 /// It keeps its database open, and each run reads the database as it is then.
+/// Once the database is closed, or in OPFS mode replaced by an import, every
+/// method is `[API-018]`.
 #[wasm_bindgen]
 pub struct BrowserPreparedQuery {
     /// Keeps the database alive while the prepared query is.
-    _db: Rc<RefCell<BrowserDbInner>>,
+    db: Rc<Db>,
+    /// The database's epoch when it was prepared (#441).
+    epoch: u64,
     query: PreparedQuery,
 }
 
@@ -727,8 +1117,10 @@ impl BrowserPreparedQuery {
     /// type, `[API-022]` for a missing slot and `[API-024]` for a bind value
     /// of the wrong kind.
     pub fn execute(&self, bindings: JsValue) -> Result<String, JsValue> {
-        refuse_in_tx(&self._db)?;
+        self.db.admit_from(self.epoch, "prepared query")?;
+        refuse_in_tx(&self.db)?;
         let binds = binds::read_bindings(&bindings)?;
+        let _running = self.db.run();
         self.query
             .execute(&as_slice(&binds))
             .map(query_result_to_json)
@@ -738,16 +1130,16 @@ impl BrowserPreparedQuery {
     /// Run the query with `bindings` and return a cursor over its rows. The
     /// answer is fixed when the cursor opens. Throws as `execute` does.
     pub fn query(&self, bindings: JsValue) -> Result<BrowserCursor, JsValue> {
-        refuse_in_tx(&self._db)?;
+        self.db.admit_from(self.epoch, "prepared query")?;
+        refuse_in_tx(&self.db)?;
         let binds = binds::read_bindings(&bindings)?;
-        let cursor = self
-            .query
-            .query(&as_slice(&binds))
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        Ok(BrowserCursor {
-            vars: cursor.vars().to_vec(),
-            cursor: Some(cursor),
-        })
+        let cursor = {
+            let _running = self.db.run();
+            self.query
+                .query(&as_slice(&binds))
+                .map_err(|e| JsValue::from_str(&e.to_string()))?
+        };
+        Ok(BrowserCursor::new(&self.db, cursor))
     }
 
     /// A new prepared query with `n` as its derived-facts limit; this one is
@@ -757,6 +1149,7 @@ impl BrowserPreparedQuery {
     /// Anything else throws `[API-017]`.
     #[wasm_bindgen(js_name = withMaxDerivedFacts)]
     pub fn with_max_derived_facts(&self, n: f64) -> Result<BrowserPreparedQuery, JsValue> {
+        self.db.admit_from(self.epoch, "prepared query")?;
         let n = limit_arg("withMaxDerivedFacts", n)?;
         Ok(self.derive(|q| q.with_max_derived_facts(n)))
     }
@@ -766,6 +1159,7 @@ impl BrowserPreparedQuery {
     /// Takes its argument as `withMaxDerivedFacts` does.
     #[wasm_bindgen(js_name = withQueryMemoryLimit)]
     pub fn with_query_memory_limit(&self, bytes: f64) -> Result<BrowserPreparedQuery, JsValue> {
+        self.db.admit_from(self.epoch, "prepared query")?;
         let bytes = limit_arg("withQueryMemoryLimit", bytes)?;
         Ok(self.derive(|q| q.with_query_memory_limit(bytes)))
     }
@@ -775,13 +1169,15 @@ impl BrowserPreparedQuery {
     /// still overrides it. Takes its argument as `withMaxDerivedFacts` does.
     #[wasm_bindgen(js_name = withMaxIterations)]
     pub fn with_max_iterations(&self, n: f64) -> Result<BrowserPreparedQuery, JsValue> {
+        self.db.admit_from(self.epoch, "prepared query")?;
         let n = limit_arg("withMaxIterations", n)?;
         Ok(self.derive(|q| q.with_max_iterations(n)))
     }
 
     fn derive(&self, set: impl FnOnce(PreparedQuery) -> PreparedQuery) -> BrowserPreparedQuery {
         BrowserPreparedQuery {
-            _db: self._db.clone(),
+            db: self.db.clone(),
+            epoch: self.epoch,
             query: set(self.query.clone()),
         }
     }
@@ -815,12 +1211,12 @@ fn as_slice(binds: &[(String, BindValue)]) -> Vec<(&str, BindValue)> {
 /// A page that cannot be read is an error, never a page silently left out of
 /// the flush to IndexedDB.
 fn take_dirty_pages(
-    pfs: &mut PersistentFactStorage<BrowserBufferBackend>,
+    pfs: &mut PersistentFactStorage<BrowserBackend>,
 ) -> Result<Vec<(u64, Vec<u8>)>, JsValue> {
-    let ids = pfs.with_backend_mut(|b| b.take_dirty());
+    let ids = pfs.with_backend_mut(BrowserBackend::take_dirty);
     pfs.with_backend(|b| {
         ids.into_iter()
-            .map(|id| b.read_page_raw(id).map(|d| (id, d)))
+            .map(|id| b.read_page(id).map(|d| (id, d)))
             .collect::<anyhow::Result<Vec<_>>>()
     })
     .map_err(to_js_error)
@@ -838,6 +1234,13 @@ struct Flush {
 /// (an open cursor's) may read (#543); those stay withheld.
 fn take_commit_flush(inner: &mut BrowserDbInner) -> Result<Flush, JsValue> {
     let listed = inner.pfs.take_released();
+    if inner.pfs.with_backend(|b| b.buffer().is_none()) {
+        // An OPFS file keeps its free pages, and is already written.
+        return Ok(Flush {
+            puts: Vec::new(),
+            deletes: Vec::new(),
+        });
+    }
     let in_force = inner.pfs.storage().pages_in_force();
     let withheld = std::mem::take(&mut inner.withheld);
     let (free, withheld) = inner.pfs.with_backend(|b| {
@@ -851,12 +1254,108 @@ fn take_commit_flush(inner: &mut BrowserDbInner) -> Result<Flush, JsValue> {
 /// No reader needs them: the caller leaves out pages a pinned generation may
 /// read, and any other free page is written before it is read again.
 fn take_flush(
-    pfs: &mut PersistentFactStorage<BrowserBufferBackend>,
+    pfs: &mut PersistentFactStorage<BrowserBackend>,
     free: Vec<u64>,
 ) -> Result<Flush, JsValue> {
     let deletes = pfs.with_backend_mut(|b| b.release(free));
     let puts = take_dirty_pages(pfs)?;
     Ok(Flush { puts, deletes })
+}
+
+/// The ids of the pages a buffer holds; none for an OPFS file.
+fn buffer_page_ids(b: &BrowserBackend) -> impl Iterator<Item = u64> + '_ {
+    b.buffer()
+        .into_iter()
+        .flat_map(BrowserBufferBackend::page_ids)
+}
+
+/// OPFS mode's export: the committed state as a clean `.graph` file
+/// (`write_image`), so a native open with no WAL accepts it even when the
+/// file still holds pages of a commit interrupted before its meta (#441).
+fn export_image(
+    pfs: &PersistentFactStorage<BrowserBackend>,
+) -> Result<js_sys::Uint8Array, JsValue> {
+    let pages = usize::try_from(pfs.committed_page_count())
+        .ok()
+        .and_then(|n| n.checked_mul(crate::storage::PAGE_SIZE))
+        .ok_or_else(|| JsValue::from_str("database is too large to export"))?;
+    let mut blob = Vec::with_capacity(pages);
+    pfs.write_image(pfs.generation(), |_, page| {
+        blob.extend_from_slice(page);
+        Ok(())
+    })
+    .map_err(to_js_error)?;
+    Ok(js_sys::Uint8Array::from(blob.as_slice()))
+}
+
+/// The OPFS import flag of a database, cleared when the import's body ends.
+struct Importing<'a>(&'a Db);
+
+impl Drop for Importing<'_> {
+    fn drop(&mut self) {
+        self.0.importing.set(false);
+    }
+}
+
+/// An import's image, opened and checked in memory (#441): a v7 image is
+/// migrated, a meta counting pages the image lacks is `STG-044` as for a
+/// file, and any finding of the integrity walk (`verify()`) rejects it.
+fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBackend>> {
+    let pages: std::collections::HashMap<u64, Vec<u8>> = bytes
+        .chunks(crate::storage::PAGE_SIZE)
+        .enumerate()
+        .map(|(i, chunk)| (i as u64, chunk.to_vec()))
+        .collect();
+    let have = pages.len() as u64;
+    drop(bytes);
+    let pfs = PersistentFactStorage::new(
+        BrowserBackend::Buffer(BrowserBufferBackend::load_pages(pages)),
+        0,
+    )?;
+    let need = pfs.committed_page_count();
+    if need > have.max(2) {
+        crate::error::bail_coded!(ErrorCode::Stg044, need, have);
+    }
+    if let Some(problem) = pfs.verify()?.problems.into_iter().next() {
+        return Err(problem);
+    }
+    Ok(pfs)
+}
+
+/// Write `image` stamped `generation` into the staging file, all but its
+/// meta page (that slot and the other stay zero), and flush. Returns the
+/// meta page, for [`publish_image`].
+fn stage_image(
+    image: &PersistentFactStorage<BrowserBackend>,
+    stage: &OpfsFile,
+    generation: u64,
+) -> anyhow::Result<Vec<u8>> {
+    let slot = crate::storage::meta::slot_page(generation);
+    let mut meta = None;
+    stage.truncate(0)?;
+    image.write_image(generation, |id, page| {
+        if id == slot {
+            meta = Some(page.to_vec());
+            Ok(())
+        } else {
+            stage.write_page(id, page)
+        }
+    })?;
+    stage.flush()?;
+    meta.ok_or_else(|| err_coded!(ErrorCode::Int048, "image has no meta page"))
+}
+
+/// The publication step: the staging file's meta page (the publication
+/// point), then the image copied into the database file.
+fn publish_image(stage: &OpfsFile, main: &OpfsFile, meta_page: &[u8]) -> anyhow::Result<()> {
+    let crate::storage::meta::SlotState::Valid(meta) =
+        crate::storage::meta::MetaPage::decode(meta_page)
+    else {
+        crate::error::bail_coded!(ErrorCode::Int048, "staged meta page is not valid");
+    };
+    stage.write_page(crate::storage::meta::slot_page(meta.generation), meta_page)?;
+    stage.flush()?;
+    opfs::copy_staged(stage, main, &meta)
 }
 
 /// Every error a `BrowserDb` method rejects with goes through this, so the
@@ -924,7 +1423,9 @@ mod tests {
     #[wasm_bindgen_test]
     fn take_dirty_pages_returns_written_pages() {
         use crate::storage::StorageBackend;
-        let mut pfs = PersistentFactStorage::new(BrowserBufferBackend::new(), 0).unwrap();
+        let mut pfs =
+            PersistentFactStorage::new(BrowserBackend::Buffer(BrowserBufferBackend::new()), 0)
+                .unwrap();
         let _ = pfs.with_backend_mut(|b| b.take_dirty());
         pfs.with_backend_mut(|b| b.write_page(3, &[7u8; crate::storage::PAGE_SIZE]))
             .unwrap();
@@ -936,7 +1437,9 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn unreadable_dirty_page_is_an_error_not_skipped() {
-        let mut pfs = PersistentFactStorage::new(BrowserBufferBackend::new(), 0).unwrap();
+        let mut pfs =
+            PersistentFactStorage::new(BrowserBackend::Buffer(BrowserBufferBackend::new()), 0)
+                .unwrap();
         // A dirty id with no page behind it: before the fix it was dropped
         // from the flush and the caller still saw success.
         pfs.with_backend_mut(|b| b.mark_dirty_for_test(99));
@@ -1175,7 +1678,7 @@ mod tests {
         expected.sort_unstable();
         for size in [1u32, 7, 1000] {
             let mut cursor = db.query(q).expect("query");
-            assert_eq!(cursor.vars(), vec!["?n".to_string()]);
+            assert_eq!(cursor.vars().expect("vars"), vec!["?n".to_string()]);
             let mut got = Vec::new();
             while let Some(batch) = cursor.next_batch(size).expect("next_batch") {
                 let rows: Vec<Vec<i64>> = serde_json::from_str(&batch).unwrap();
@@ -1395,10 +1898,10 @@ mod tests {
     }
 
     fn stored_pages(db: &BrowserDb) -> usize {
-        db.inner
-            .borrow()
-            .pfs
-            .with_backend(BrowserBufferBackend::stored_page_count)
+        db.inner.borrow().pfs.with_backend(|b| {
+            b.buffer()
+                .map_or(0, BrowserBufferBackend::stored_page_count)
+        })
     }
 
     async fn idb_keys(name: &str) -> std::collections::HashMap<u64, Vec<u8>> {
@@ -1815,7 +2318,10 @@ mod prepared_tests {
         let binds = obj(&[("min", JsValue::from_f64(2.0))]);
         let all = rows(&pq.execute(binds.clone()).expect("execute"));
         let mut cursor = pq.query(binds).expect("query");
-        assert_eq!(cursor.vars(), vec!["?e".to_string(), "?n".to_string()]);
+        assert_eq!(
+            cursor.vars().expect("vars"),
+            vec!["?e".to_string(), "?n".to_string()]
+        );
         let mut seen = 0;
         while let Some(batch) = cursor.next_batch(1).expect("batch") {
             seen += serde_json::from_str::<Vec<serde_json::Value>>(&batch)

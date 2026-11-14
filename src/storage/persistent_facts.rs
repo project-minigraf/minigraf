@@ -9,7 +9,7 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
 use crate::storage::btree::MutexStorageBackend;
 use crate::storage::btree::{build_btree, cow_insert};
 use crate::storage::cache::PageCache;
@@ -17,7 +17,7 @@ use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
 use crate::storage::page::PageAllocator;
 use crate::storage::reader::OnDiskReader;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
 use crate::storage::verify;
 use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page};
 use anyhow::Result;
@@ -59,8 +59,30 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
 
 /// Page cache size for the integrity walk: enough to keep a value page hot
 /// while its values are checked, without displacing the readers' cache.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
 const VERIFY_CACHE_PAGES: usize = 64;
+
+/// How open treats a file with exactly one valid meta slot (spec §4.1.1).
+#[derive(Clone, Copy)]
+enum Recovery {
+    /// The base generation of the WAL beside the file, if any: native rules.
+    Wal(Option<u64>),
+    /// No WAL can exist: open at the valid slot (#441).
+    #[cfg_attr(
+        not(any(test, all(target_arch = "wasm32", feature = "browser"))),
+        allow(dead_code)
+    )]
+    WalLess,
+}
+
+impl Recovery {
+    fn wal_base(self) -> Option<u64> {
+        match self {
+            Recovery::Wal(b) => b,
+            Recovery::WalLess => None,
+        }
+    }
+}
 
 /// What open found in the meta slots.
 enum Opened {
@@ -96,8 +118,29 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         page_cache_capacity: usize,
         wal_base_generation: Option<u64>,
     ) -> Result<Self> {
+        Self::open_with(
+            backend,
+            page_cache_capacity,
+            Recovery::Wal(wal_base_generation),
+        )
+    }
+
+    /// Open storage on a backend that never has a WAL beside it and whose
+    /// commits are its only record, such as a browser OPFS file (#441). With
+    /// exactly one valid meta slot it opens at that slot, whatever the other
+    /// slot or later-generation pages hold: a commit interrupted before its
+    /// meta page was complete leaves that state, and nothing else could
+    /// recover it. Every other outcome is [`open`](Self::open)'s with no WAL;
+    /// in particular a native open of the same bytes still refuses with
+    /// STG-033 where this opens.
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+    pub(crate) fn open_wal_less(backend: B, page_cache_capacity: usize) -> Result<Self> {
+        Self::open_with(backend, page_cache_capacity, Recovery::WalLess)
+    }
+
+    fn open_with(backend: B, page_cache_capacity: usize, recovery: Recovery) -> Result<Self> {
         let mut pfs = Self::unopened(backend, page_cache_capacity);
-        let meta = match pfs.select_meta(wal_base_generation, false)? {
+        let meta = match pfs.select_meta(recovery, false)? {
             Opened::Fresh => pfs.init_empty()?,
             Opened::Meta(m) => {
                 m.check_features()?;
@@ -128,7 +171,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         wal_base_generation: Option<u64>,
     ) -> Result<Self> {
         let mut pfs = Self::unopened(backend, page_cache_capacity);
-        let meta = match pfs.select_meta(wal_base_generation, true)? {
+        let meta = match pfs.select_meta(Recovery::Wal(wal_base_generation), true)? {
             Opened::Fresh => MetaPage::empty(1),
             Opened::Meta(m) => {
                 m.check_features()?;
@@ -199,7 +242,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// Choose the meta page to open at (spec §4.1.1). Never modifies the file,
     /// except to restore page 0 from the migration backup meta (§9 step 5),
     /// which `read_only` skips.
-    fn select_meta(&self, wal_base: Option<u64>, read_only: bool) -> Result<Opened> {
+    fn select_meta(&self, recovery: Recovery, read_only: bool) -> Result<Opened> {
+        let wal_base = recovery.wal_base();
+        let single_valid = |backend: &B, m: MetaPage| match recovery {
+            Recovery::Wal(_) => check_single_valid(backend, m, wal_base),
+            Recovery::WalLess => Ok(()),
+        };
         let mut backend = self.lock()?;
         let page_count = backend.page_count()?;
         if page_count == 0 {
@@ -234,14 +282,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 check_wal_not_later(m.generation, wal_base)?;
                 m.check_features()?;
                 check_fits(&*backend, &m)?;
-                check_single_valid(&*backend, m, wal_base)?;
+                single_valid(&backend, m)?;
                 Ok(Opened::Meta(m))
             }
             (SlotState::Valid(m), _) | (_, SlotState::Valid(m)) => {
                 // Refuse an unreadable file before probing its pages.
                 m.check_features()?;
                 check_fits(&*backend, &m)?;
-                check_single_valid(&*backend, m, wal_base)?;
+                single_valid(&backend, m)?;
                 Ok(Opened::Meta(m))
             }
             _ => {
@@ -516,8 +564,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    /// Check the committed file (#373). Never modifies it, and holds the
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
+    /// Check the committed file (#373); also an image a browser database
+    /// imports (#441). Never modifies it, and holds the
     /// backend lock only for each page read, so queries keep running.
     pub(crate) fn verify(&self) -> Result<verify::Findings> {
         let backend = MutexStorageBackend(self.backend.clone());
@@ -719,6 +768,50 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(())
     }
 
+    /// The committed state as a file of its own, one page at a time in
+    /// page order (#441): every page the active meta counts, its meta page
+    /// stamped `generation` (at least the active one) in that generation's
+    /// slot, and zeros in the other slot and in every free page. Such a file
+    /// holds nothing a later, interrupted commit wrote, so a native open with
+    /// no WAL never finds evidence of one (STG-033) in it. A larger
+    /// `generation` makes the image newer than any meta it replaces.
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+    pub(crate) fn write_image(
+        &self,
+        generation: u64,
+        mut emit: impl FnMut(u64, &[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let m = self.meta;
+        if generation < m.generation {
+            bail_coded!(
+                ErrorCode::Int048,
+                format!("image generation {generation} below {}", m.generation)
+            );
+        }
+        let meta = MetaPage { generation, ..m };
+        let free: std::collections::HashSet<u64> = if m.freelist_head == 0 {
+            std::collections::HashSet::new()
+        } else {
+            let backend = self.lock()?;
+            let probe = PageCache::new(0);
+            probe.set_generation_bound(m.generation);
+            let (ids, _) = freelist::read_chain(m.freelist_head, &*backend, &probe, m.page_count)?;
+            ids.into_iter().collect()
+        };
+        let zeros = vec![0u8; PAGE_SIZE];
+        for id in 0..m.page_count {
+            if id == slot_page(generation) {
+                emit(id, &meta.encode())?;
+            } else if id < 2 || free.contains(&id) {
+                emit(id, &zeros)?;
+            } else {
+                let page = self.lock()?.read_page(id)?;
+                emit(id, &page)?;
+            }
+        }
+        Ok(())
+    }
+
     fn refuse_if_failed(&self) -> Result<()> {
         if self.failed {
             bail_coded!(ErrorCode::Stg046);
@@ -745,7 +838,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.meta.last_checkpointed_tx_count
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
     /// The active meta page's generation. A WAL created now records it as its
     /// base generation.
     pub fn generation(&self) -> u64 {
@@ -783,7 +876,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// by an abandoned log writer, whose file is deleted next (#431), and on
     /// close under `wal_checkpoint_threshold(usize::MAX)`, whose WAL keeps
     /// the pending facts (#476).
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
     pub(crate) fn discard(&mut self) {
         self.dirty = false;
     }
