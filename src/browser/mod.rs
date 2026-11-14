@@ -1323,8 +1323,12 @@ fn image_of(bytes: Vec<u8>) -> anyhow::Result<PersistentFactStorage<BrowserBacke
             if meta.page_count > have {
                 crate::error::bail_coded!(ErrorCode::Stg044, meta.page_count, have);
             }
-        } else if crate::storage::LegacyHeaderV7::detect(&bytes[..crate::storage::PAGE_SIZE])?
-            .is_none()
+        } else if crate::storage::LegacyHeaderV7::detect(
+            bytes
+                .get(..crate::storage::PAGE_SIZE)
+                .unwrap_or(bytes.as_slice()),
+        )?
+        .is_none()
         {
             crate::error::bail_coded!(ErrorCode::Stg032);
         }
