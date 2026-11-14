@@ -72,7 +72,9 @@ and `importGraph()`; exported v8 bytes open natively without a WAL, and OPFS can
 import supported v7 files through migration.
 
 OPFS maps the name exactly to `<name>.graph` in the origin's root directory.
-Empty names, `.`, `..`, slash/backslash and reserved import names are API-017.
+Empty names, `.`, `..`, slash/backslash and NUL are API-017. No suffix is
+reserved: every database entry ends in `.graph`; an import staging entry is
+`<name>.graph-import`, which no database name maps to.
 The exclusive sync access handle is the lock: another open in the same worker,
 another worker or tab fails with STG-026. `close()` releases it immediately;
 worker termination also releases it. A refused open releases any handle it took.
@@ -109,7 +111,12 @@ An already applied OPFS/in-memory transaction commit resolves after close; an
 IndexedDB commit whose flush has not been submitted rejects with API-018 and
 never submits it. An already submitted IndexedDB flush settles by its own result.
 
-OPFS import first validates and verifies its complete input, then stages it in
+OPFS import first validates and verifies its complete input. Only an empty blob
+creates an empty database; a nonempty image without a selectable meta is rejected,
+even if opening those bytes as a file could recover an interrupted creation.
+A meta counting pages beyond the input is STG-044. Exports normalize a missing
+second meta slot after interrupted creation, while failed reads of existing
+pages remain errors. Import stages the verified image in
 `<name>.graph-import`. Publication makes the new image recoverable before copying
 it over the main file; interruption and reopen finish with the complete old or
 new image. A pre-publication failure preserves the old database and dependents;
@@ -123,13 +130,17 @@ OPFS reads healthy v8 pages on demand through a 256-page cache. The storage boun
 excludes query working state, results/export blobs, import input, v7 migration,
 transaction facts, pages and quarantine metadata held for long-open cursors,
 and recovery scans. [The measurement record](benchmarks/441-opfs/README.md)
-separates inherited browser test results from outstanding engine and memory runs.
+records the completed Chromium and Firefox memory checks: both used 1,245,184
+bytes of wasm memory for each OPFS size (zero growth between 4 MiB and 40 MiB).
+WebKit remains unrun because its browser binary is unavailable.
 
 Both persistent modes use browser-managed origin quota and eviction. Applications
 may request `navigator.storage.persist()` themselves; Minigraf never requests it.
 Quota errors during OPFS commit are STG-048 and follow the failed-handle rule.
-Private-browsing behavior is engine/policy dependent; checks for this change
-remain unrun in the current sandbox, as recorded in the measurement record.
+Private-browsing behavior is engine/policy dependent. Actual checks recorded
+Chromium incognito opening OPFS and querying `[[42]]`, and Firefox private mode
+rejecting with API-026 / SecurityError. WebKit private mode remains unrun; see
+the measurement record for the exact engines and harness limitations.
 
 ## Opening after a crash
 

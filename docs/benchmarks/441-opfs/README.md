@@ -80,9 +80,13 @@ Build-size comparisons and exact toolchains are in [build-sizes.md](build-sizes.
 
 ## Browser execution and private browsing
 
-- Firefox 159.0.1 core: **81 main-thread and 101 worker tests pass**.
+The execution checks below were rerun after the import admission/export fixes.
+The memory results above remain from the identified measured artifact: the
+healthy OPFS open/read/cache paths are unchanged.
+
+- Firefox 159.0.1 core: **81 main-thread and 113 worker tests pass**.
 - Packaged consumer: **Chromium 140.0.7339.16 via Playwright** and
-  **Firefox 159.0.1 via WebDriver** each pass 52 checks, including six
+  **Firefox 159.0.1 via WebDriver** each pass 54 checks, including six
   sequential-commit termination timings, four import-interruption timings,
   cross-worker locking, IndexedDB in a worker and the README worker example.
 - Chrome core wasm-bindgen tests: not run. Cached ChromeDriver is version 156;
