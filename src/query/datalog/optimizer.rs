@@ -23,9 +23,8 @@ thread_local! {
 #[inline]
 pub(crate) fn reorder() -> bool {
     #[cfg(any(test, feature = "test-hooks"))]
-    if !REORDER.with(std::cell::Cell::get) {
-        return false;
-    }
+    return REORDER.with(std::cell::Cell::get);
+    #[cfg(not(any(test, feature = "test-hooks")))]
     true
 }
 

@@ -123,6 +123,10 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
   limit bind slots and the `PreparedQuery` setters (#870) measured +672
   bytes, 312 over the old gate, and the limit leaves room for
   `:max-iterations` (#861), which is built the same way.
+  The approved budget is now 1,250 KiB (1,280,000 bytes): unchanged production
+  source measured 1,239 KiB with Rust 1.99.1 and 1,242 KiB after CI moved to
+  Rust 1.100.0 and a newer runner image. This provides build-environment
+  headroom while retaining an enforced limit.
   The gate builds the x86_64 Linux CLI with cargo-dist's `dist` profile,
   the one releases ship. From v3.0.0 `dist` keeps release's full LTO
   rather than thin LTO, 7–31% smaller per target (#796; sizes per target
