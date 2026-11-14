@@ -97,7 +97,7 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
 - Easy to backup: copy one file
 - Easy to share: email, USB drive, version control (for small DBs)
 - Easy to delete: remove one file
-- WASM: Store in browser's IndexedDB as single blob
+- WASM: IndexedDB stores page records; OPFS mode (v3.0.0, dedicated worker) stores one portable `.graph` file, with a transient staging file only during import/recovery
 
 **Anti-pattern**: Multiple files, directories, or complex file structures that are hard to manage.
 
@@ -267,7 +267,7 @@ Data-integrity bugs stay visible until they are fixed in a published release; se
 
 A binding moves to Tier 1 when real users need it: issues from outside users, or known dependents. The project's own tools count as dependents when they ship to users and rely on the binding: Python is Tier 1 because `temporal_reasoning` stores its memory through it, and browser WASM is Tier 1 because the playground, the graph visualizer and the docs site run on it. A promotion takes effect at a major or minor release, never in a patch. No binding is removed by being Tier 2.
 
-A new storage backend inside a Tier 1 binding starts at Tier 2 until it has shipped in a release; the OPFS backend for browser WASM (#441, v3.next) is the current example. The IndexedDB backend stays Tier 1.
+A new storage backend inside a Tier 1 binding starts at Tier 2 until it has shipped in a release; the OPFS backend for browser WASM (#441, v3.0.0) is the current example. The IndexedDB backend stays Tier 1.
 
 | Tier | Platform and filesystem |
 |---|---|

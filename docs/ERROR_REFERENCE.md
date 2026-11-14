@@ -2884,6 +2884,11 @@ Read-only handles (`OpenOptions::read_only`) share a file with each other, but n
 
 **Cause**: Another process holds the kernel file lock on this `.graph` file. Minigraf is single-writer: one process at a time. This is reported only after a bounded retry (up to ~375ms) rules out a transient `fork`-related false positive — see the v2.0.0 CHANGELOG entry on the bounded retry.
 
+In browser OPFS mode, the same code means another tab or worker (or another
+handle in this worker) holds the file's exclusive sync access handle. The browser
+reports `NoModificationAllowedError`; `close()` or worker termination releases it.
+There is no retry on acquisition and no fallback to IndexedDB.
+
 **Resolution**:
 - Wait for the other process to exit; the kernel releases the lock automatically, including when the process is killed.
 - There is no lock file to delete. If you find a stale `.graph.lock`, it is a leftover from a version before 2.0 and has no effect — it is not read or deleted, and should not be removed by hand in case an old process still depends on it.
@@ -2971,6 +2976,11 @@ A read-only handle (`OpenOptions::read_only`) in another process also refuses a 
 **Error text**: `Meta page damaged after commit: generation {} is valid but a later commit existed ({}). Opening would silently drop that checkpoint`
 
 **Cause**: One meta page is valid and the other is damaged, and there is evidence that the damaged one held a newer, completed checkpoint: the WAL records a newer base generation, or there is no WAL and data pages from the newer generation exist. Opening at the older generation would lose the facts of the newest checkpoint, whose WAL is already deleted.
+
+OPFS mode has no WAL and deliberately opens at the sole valid meta instead
+of raising this error, even with later-generation data pages. That recovers an
+interrupted commit, but can silently lose the latest acknowledged checkpoint if
+its meta later rots. Native recovery keeps this refusal unchanged.
 
 **Resolution**:
 - Restore from backup. The file is not modified by the failed open.
@@ -3147,6 +3157,12 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 **Cause**: A checkpoint (automatic, `checkpoint()`, `rebuild_indexes()`, or the one on close) failed with an I/O error after it may have written pages: a failed write, a full disk, or a failed `fsync`. After a failed `fsync` the operating system may have dropped the written pages while marking them clean, so a second `fsync` can report success for data that never reached the disk (the PostgreSQL "fsyncgate" problem). The checkpoint's meta page may also have reached the disk although the call failed; a retry would then overwrite pages that page references. So the handle never retries: every later write, checkpoint and index rebuild through it fails with STG-046.
 
 Nothing committed is lost. Every committed transaction is still in the WAL, and the `.graph` file holds either the previous checkpoint or the failed one complete. Queries through the handle keep working. The close-time checkpoint is skipped.
+
+In OPFS mode a failed write, short write or flush has the same failed-handle
+rule: later writes/checkpoints fail with STG-046 while reads and `close()` keep
+working. There is no WAL. Close and reopen to select the complete previous or
+new generation; the rejected transaction may be wholly present. Closing does
+not retry the failed commit.
 
 **Resolution**:
 - Fix the cause (free disk space, check the device and the kernel log), then drop every clone of the handle and open the database again. Opening picks the newest complete checkpoint and replays the WAL.
@@ -3577,6 +3593,14 @@ let mut log = src.fact_log(&FactFilter::new())?;
 **Error text**: `{} is closed`
 
 **Cause**: A language binding object was used after it was closed or finished, for example `append` or `finish` on a log writer after `finish` or `close`, or `execute` or `commit` on a write transaction after it committed (or failed to), rolled back, or its database was closed (#824). A finished transaction's `rollback` does nothing instead. Rust consumes these objects, so the Rust API never returns this code. Bindings cannot consume an object a caller still holds, so they return this error instead. A cursor or fact log reports the end (no more batches) after `close`, not this error. The `{}` names the object.
+
+`BrowserDb.close()` in every mode also closes its cursors, prepared queries and
+transactions logically, even while those objects are still referenced. A
+successful OPFS `importGraph()` invalidates earlier cursors and prepared queries.
+A failure at import publication closes the OPFS database itself. Disposal
+(`free()`, cursor `close()`, transaction `rollback()`, repeated database `close()`)
+remains permitted. API-018 takes precedence over busy (API-027) and an open
+transaction (INT-001).
 
 **Resolution**:
 - Create a new object instead of reusing a finished one.
