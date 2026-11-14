@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Index corruption recovery tests (#216).
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -110,18 +111,15 @@ fn query_results_after_non_critical_corruption_match_original() {
         db.checkpoint().unwrap();
     }
     corrupt_bytes_at(&path, 84, 16);
-    match Minigraf::open(&path) {
-        Ok(db) => {
-            let n = count_results(
-                db.execute("(query [:find ?n :where [?e :name ?n]])")
-                    .unwrap(),
-            );
-            assert_eq!(
-                n, 2,
-                "both facts must be visible after non-critical corruption"
-            );
-        }
-        Err(_) => {}
+    if let Ok(db) = Minigraf::open(&path) {
+        let n = count_results(
+            db.execute("(query [:find ?n :where [?e :name ?n]])")
+                .unwrap(),
+        );
+        assert_eq!(
+            n, 2,
+            "both facts must be visible after non-critical corruption"
+        );
     }
 }
 
@@ -148,8 +146,7 @@ fn query_over_damaged_leaves_fails_with_stg_029() {
     ] {
         let err = db
             .execute(q)
-            .err()
-            .expect("a query over damaged pages must fail");
+            .expect_err("a query over damaged pages must fail");
         assert_eq!(err.code(), "STG-029", "query fails with the checksum code");
     }
 }

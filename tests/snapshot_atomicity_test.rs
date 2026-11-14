@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Reproducers: a query must see each transaction whole, and each fact once,
 //! while other threads commit and checkpoint (#473 spec §2 and §4.1).
 //!
@@ -77,7 +78,7 @@ fn batch(i: u64) -> String {
 fn commit_is_seen_whole(db: Minigraf, write: impl FnMut(&Minigraf, u64) + Send + 'static) {
     let found = race(Arc::new(db), write, |db| {
         let n = rows(db, "(query [:find ?e :where [?e :batch/id ?b]])").len() as u64;
-        (n % N != 0).then(|| format!("saw {n} facts, not a multiple of {N}"))
+        (!n.is_multiple_of(N)).then(|| format!("saw {n} facts, not a multiple of {N}"))
     });
     if let Some(msg) = found {
         panic!("partial transaction visible: {msg}");
@@ -224,7 +225,8 @@ fn checkpoint_never_hides_committed_facts() {
                 db.checkpoint().unwrap();
             },
             |db| {
-                let before = committed.load(Ordering::SeqCst) as usize;
+                let before = usize::try_from(committed.load(Ordering::SeqCst))
+                    .expect("fixture value fits in usize");
                 let half = rows(
                     db,
                     "(query [:find ?e :where [?e :pair/y ?v] (not [?e :pair/x ?v])])",

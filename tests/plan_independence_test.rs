@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Every plan returns the same rows the same number of times (#596, design
 //! `docs/superpowers/specs/2026-10-15-plan-independent-answers-design.md`).
 //!

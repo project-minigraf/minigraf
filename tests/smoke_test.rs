@@ -114,7 +114,7 @@ fn smoke_large_graph_10_cycles() {
         );
         // 500 entities, active if i % 3 != 0. Inactive: i=0,3,6,...,498 → 167 entities.
         // ceil(NUM_ENTITIES / 3) = number of multiples of 3 in [0, NUM_ENTITIES).
-        let n_inactive = (NUM_ENTITIES + 2) / 3;
+        let n_inactive = NUM_ENTITIES.div_ceil(3);
         let expected_active = NUM_ENTITIES - n_inactive;
         assert_eq!(
             n_active, expected_active,

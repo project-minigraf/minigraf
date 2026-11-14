@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Acceptance tests for query memory accounting (#549 spec §6.2, and #575):
 //! a query whose state is large either completes or fails with `QRY-012`
 //! under `OpenOptions::query_memory_limit`, a cartesian product streams
@@ -129,8 +130,7 @@ fn grouped_count_1m_groups() {
         &db,
         "(query [:find ?g (sum-distinct ?v) :where [?e :g ?g] [(+ ?g 0.5) ?v]])",
     )
-    .err()
-    .expect("over the limit");
+    .expect_err("over the limit");
     assert_eq!(err.code(), "QRY-012", "stopped by the limit");
     assert!(err.to_string().contains("Aggregate"), "names Aggregate");
     // The database answers other queries.
@@ -176,7 +176,7 @@ fn cartesian_k13_streams() {
         .path(dir.path().join("cartesian.graph"))
         .open()
         .unwrap();
-    let err = drain(&db, &query).err().expect("over the limit");
+    let err = drain(&db, &query).expect_err("over the limit");
     assert_eq!(err.code(), "QRY-012", "stopped by the limit");
     assert!(err.to_string().contains("HashJoin"), "names HashJoin");
 }
@@ -213,7 +213,7 @@ fn count_holds_no_rows() {
     };
     assert_eq!(results.len(), 1, "one row");
     assert!(
-        matches!(results[0][0], minigraf::Value::Integer(n) if n == GROUPS as i64),
+        matches!(results[0][0], minigraf::Value::Integer(n) if n == i64::try_from(GROUPS).expect("fixture value fits in i64")),
         "counts every fact"
     );
     acceptance::check_rss(

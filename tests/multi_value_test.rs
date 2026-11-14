@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Same-transaction multi-valued facts (#371, #287): every query path must
 //! return every value, before checkpoint, after WAL replay, and after
 //! checkpoint + reopen.

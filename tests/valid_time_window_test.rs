@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! One current valid-time window per `(e, a, v)` (#435).
 //!
 //! At transaction time N a triple has exactly one current window: the one of

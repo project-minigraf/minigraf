@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 7.7b — User-Defined Functions (UDFs).
 //!
 //! Testing conventions: no `{:?}` of Result/Value/Fact in assert messages.

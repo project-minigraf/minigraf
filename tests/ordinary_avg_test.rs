@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Ordinary avg shares window avg's numeric population and arithmetic (#777).
 use minigraf::{BindValue, Minigraf, QueryResult, Value};
 

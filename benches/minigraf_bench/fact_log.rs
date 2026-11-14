@@ -32,7 +32,7 @@ fn records(n: usize) -> Vec<FactRecord> {
             };
             FactRecord {
                 entity: Uuid::from_u128(u128::try_from(entity).unwrap() + 1),
-                attribute: if entity % 2 == 0 {
+                attribute: if entity.is_multiple_of(2) {
                     ":history/a"
                 } else {
                     ":history/b"

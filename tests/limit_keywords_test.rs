@@ -1,3 +1,4 @@
+#![cfg(test)]
 #![cfg(not(target_arch = "wasm32"))]
 //! `:query-memory-limit`, bind slots on the limit keywords and the
 //! `PreparedQuery` limit setters (#870, spec #862 §3–§5).
@@ -51,7 +52,7 @@ fn rows(r: QueryResult) -> usize {
 }
 
 fn code(r: Result<QueryResult, MinigrafError>) -> &'static str {
-    r.err().expect("an error").code()
+    r.expect_err("an error").code()
 }
 
 fn with(query: &str, opt: &str) -> String {
@@ -128,16 +129,15 @@ fn memory_keyword_is_refused_by_default() {
             "names the variant"
         );
     };
-    refused(db.execute(&q).err().expect("execute"));
-    refused(db.query(&q).err().expect("query"));
-    refused(db.prepare(&q).err().expect("prepare"));
+    refused(db.execute(&q).expect_err("execute"));
+    refused(db.query(&q).expect_err("query"));
+    refused(db.prepare(&q).expect_err("prepare"));
     refused(
         db.prepare(&with(VALUES, ":query-memory-limit $m"))
-            .err()
-            .expect("slot"),
+            .expect_err("slot"),
     );
     let mut tx = db.begin_write().expect("begin");
-    refused(tx.execute(&q).err().expect("tx"));
+    refused(tx.execute(&q).expect_err("tx"));
     tx.rollback();
 }
 
@@ -268,11 +268,7 @@ fn unbound_limit_slots_are_refused_by_execute() {
     ] {
         let q = with(REACH, opt);
         assert_eq!(code(db.execute(&q)), "API-010", "{opt}");
-        assert_eq!(
-            db.query(&q).err().expect("query").code(),
-            "API-010",
-            "{opt}"
-        );
+        assert_eq!(db.query(&q).expect_err("query").code(), "API-010", "{opt}");
     }
 }
 
@@ -280,7 +276,7 @@ fn unbound_limit_slots_are_refused_by_execute() {
 fn empty_list_refuses_slots_at_prepare() {
     let db = setup(OpenOptions::new().allow_overrides([]));
     for opt in [":max-derived-facts $n", ":max-results $n"] {
-        let err = db.prepare(&with(REACH, opt)).err().expect("refused");
+        let err = db.prepare(&with(REACH, opt)).expect_err("refused");
         assert_eq!(err.code(), "API-025", "{opt}");
     }
 }
@@ -295,7 +291,7 @@ fn derived_facts_setter_replaces_the_database_value() {
         .expect("prepare")
         .with_max_derived_facts(1);
     assert_eq!(code(low.execute(&[])), "INT-020");
-    assert_eq!(low.query(&[]).err().expect("cursor").code(), "INT-020");
+    assert_eq!(low.query(&[]).expect_err("cursor").code(), "INT-020");
 
     let db = setup(OpenOptions::new().max_derived_facts(1));
     assert_eq!(code(db.execute(REACH)), "INT-020");
@@ -381,8 +377,11 @@ fn default_round_limit_allows_long_chains() {
 
 #[test]
 fn open_option_sets_the_round_limit() {
-    let db = setup(OpenOptions::new().max_iterations(REACH_ROUNDS as usize - 1));
-    let err = db.execute(REACH).err().expect("over the limit");
+    let db =
+        setup(OpenOptions::new().max_iterations(
+            usize::try_from(REACH_ROUNDS).expect("fixture value fits in usize") - 1,
+        ));
+    let err = db.execute(REACH).expect_err("over the limit");
     assert_eq!(err.code(), "INT-020");
     let text = err.to_string();
     assert!(text.contains(":max-iterations"), "says how to raise it");
@@ -390,7 +389,10 @@ fn open_option_sets_the_round_limit() {
         text.contains("OpenOptions::max_iterations"),
         "names the option"
     );
-    let db = setup(OpenOptions::new().max_iterations(REACH_ROUNDS as usize));
+    let db = setup(
+        OpenOptions::new()
+            .max_iterations(usize::try_from(REACH_ROUNDS).expect("fixture value fits in usize")),
+    );
     assert_eq!(rows(db.execute(REACH).expect("at the limit")), 10);
     let db = setup(OpenOptions::new().max_iterations(0));
     assert_eq!(code(db.execute(REACH)), "INT-020");
@@ -454,9 +456,9 @@ fn iterations_keyword_is_in_the_defaults_and_gated() {
     let db = setup(OpenOptions::new().allow_overrides([]));
     let q = with_iterations(REACH, 10);
     assert_eq!(code(db.execute(&q)), "API-025");
-    assert_eq!(db.query(&q).err().expect("query").code(), "API-025");
-    assert_eq!(db.prepare(&q).err().expect("prepare").code(), "API-025");
-    let err = db.execute(&q).err().expect("refused").to_string();
+    assert_eq!(db.query(&q).expect_err("query").code(), "API-025");
+    assert_eq!(db.prepare(&q).expect_err("prepare").code(), "API-025");
+    let err = db.execute(&q).expect_err("refused").to_string();
     assert!(
         err.contains("Overridable::MaxIterations"),
         "names the variant"
@@ -509,18 +511,17 @@ fn iterations_slot_changes_per_execution() {
 #[test]
 fn iterations_setter_replaces_the_database_value() {
     let db = setup(OpenOptions::new());
-    let low = db
-        .prepare(REACH)
-        .expect("prepare")
-        .with_max_iterations(REACH_ROUNDS as usize - 1);
+    let low = db.prepare(REACH).expect("prepare").with_max_iterations(
+        usize::try_from(REACH_ROUNDS).expect("fixture value fits in usize") - 1,
+    );
     assert_eq!(code(low.execute(&[])), "INT-020");
-    assert_eq!(low.query(&[]).err().expect("cursor").code(), "INT-020");
+    assert_eq!(low.query(&[]).expect_err("cursor").code(), "INT-020");
 
     let db = setup(OpenOptions::new().allow_overrides([]).max_iterations(1));
     let high = db
         .prepare(REACH)
         .expect("prepare")
-        .with_max_iterations(REACH_ROUNDS as usize);
+        .with_max_iterations(usize::try_from(REACH_ROUNDS).expect("fixture value fits in usize"));
     assert_eq!(rows(high.execute(&[]).expect("ungated")), 10);
 
     let db = setup(OpenOptions::new());
@@ -542,7 +543,9 @@ fn prepared_query_clone_is_independent() {
     assert_eq!(rows(pq.execute(&[]).expect("source unchanged")), 10);
 
     let low = db.prepare(REACH).expect("prepare").with_max_iterations(1);
-    let high = low.clone().with_max_iterations(REACH_ROUNDS as usize);
+    let high = low
+        .clone()
+        .with_max_iterations(usize::try_from(REACH_ROUNDS).expect("fixture value fits in usize"));
     assert_eq!(rows(high.execute(&[]).expect("copy raised")), 10);
     assert_eq!(code(low.execute(&[])), "INT-020");
 

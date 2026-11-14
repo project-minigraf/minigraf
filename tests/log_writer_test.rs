@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `LogWriter` builds a new database from explicit fact records (#431). These
 //! tests copy a source's fact log through it and check that the result answers
 //! every query, `:as-of` and fact-log read as the source does, survives a
@@ -246,10 +247,13 @@ fn many_batches_give_the_same_file_contents() {
             let rec = FactRecord {
                 entity: Uuid::from_u128(u128::from(i % 1000) + 1),
                 attribute: format!(":n/a{}", i % 7),
-                value: Value::Integer((tx * per_tx + i) as i64),
+                value: Value::Integer(
+                    i64::try_from(tx * per_tx + i).expect("fixture value fits in i64"),
+                ),
                 tx_count: tx * 2,
                 tx_id: 1_700_000_000_000 + tx,
-                valid_from: 1_700_000_000_000 + tx as i64,
+                valid_from: 1_700_000_000_000
+                    + i64::try_from(tx).expect("fixture value fits in i64"),
                 valid_to: i64::MAX,
                 asserted: true,
             };
@@ -272,7 +276,8 @@ fn many_batches_give_the_same_file_contents() {
         },
         _ => panic!("results"),
     };
-    let a3_per_tx = (0..per_tx).filter(|i| i % 7 == 3).count() as i64;
+    let a3_per_tx = i64::try_from((0..per_tx).filter(|i| i % 7 == 3).count())
+        .expect("fixture value fits in i64");
     assert_eq!(
         count("(query [:find (count ?v) :where [?e :n/a3 ?v]])"),
         9 * a3_per_tx
@@ -352,7 +357,7 @@ fn rec(tx_count: u64, tx_id: u64, attr: &str, value: i64) -> FactRecord {
         value: Value::Integer(value),
         tx_count,
         tx_id,
-        valid_from: tx_id as i64,
+        valid_from: i64::try_from(tx_id).expect("fixture value fits in i64"),
         valid_to: i64::MAX,
         asserted: true,
     }

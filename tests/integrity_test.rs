@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `Minigraf::verify` and `Minigraf::rebuild_indexes` through the public API (#373).
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -91,7 +92,10 @@ fn damaged_leaves_are_reported_and_index_damage_is_repaired() {
     }
     let bytes = std::fs::read(&clean).unwrap();
     let leaves: Vec<u64> = (2..bytes.len() as u64 / PAGE_SIZE)
-        .filter(|&p| bytes[(p * PAGE_SIZE) as usize] == PAGE_TYPE_LEAF)
+        .filter(|&p| {
+            bytes[usize::try_from(p * PAGE_SIZE).expect("fixture value fits in usize")]
+                == PAGE_TYPE_LEAF
+        })
         .collect();
     assert!(leaves.len() > 4, "fixture spans several leaves");
 
@@ -99,7 +103,8 @@ fn damaged_leaves_are_reported_and_index_damage_is_repaired() {
     for (i, &leaf) in leaves.iter().enumerate() {
         let path = dir.path().join(format!("damaged{i}.graph"));
         let mut damaged = bytes.clone();
-        damaged[(leaf * PAGE_SIZE + 2000) as usize] ^= 0x5A;
+        damaged[usize::try_from(leaf * PAGE_SIZE + 2000).expect("fixture value fits in usize")] ^=
+            0x5A;
         std::fs::write(&path, &damaged).unwrap();
 
         let db = Minigraf::open(&path).unwrap();
@@ -144,13 +149,18 @@ fn internal_node_pointing_at_itself_fails_the_scan_instead_of_looping() {
     }
     let bytes = std::fs::read(&clean).unwrap();
     let internals: Vec<u64> = (2..bytes.len() as u64 / PAGE_SIZE)
-        .filter(|&p| bytes[(p * PAGE_SIZE) as usize] == PAGE_TYPE_INTERNAL)
+        .filter(|&p| {
+            bytes[usize::try_from(p * PAGE_SIZE).expect("fixture value fits in usize")]
+                == PAGE_TYPE_INTERNAL
+        })
         .collect();
     assert!(!internals.is_empty(), "fixture has internal nodes");
     let mut refused = 0;
     for (i, &node) in internals.iter().enumerate() {
         let mut damaged = bytes.clone();
-        let page = &mut damaged[(node * PAGE_SIZE) as usize..((node + 1) * PAGE_SIZE) as usize];
+        let page = &mut damaged[usize::try_from(node * PAGE_SIZE)
+            .expect("fixture value fits in usize")
+            ..usize::try_from((node + 1) * PAGE_SIZE).expect("fixture value fits in usize")];
         page[RIGHTMOST_CHILD..RIGHTMOST_CHILD + 8].copy_from_slice(&node.to_le_bytes());
         page[4..8].fill(0);
         let crc = crc32fast::hash(page);
@@ -251,7 +261,7 @@ fn sub_page_file_is_refused_unless_a_torn_first_write() {
     }
     let template = std::fs::read(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
-    let foreign = vec![0x5Au8; 100];
+    let foreign = [0x5Au8; 100];
     for bytes in [&template[..2222], &template[..20], &foreign[..]] {
         std::fs::write(&path, bytes).unwrap();
         assert_eq!(open_code(&path, false), "STG-045");
@@ -289,11 +299,12 @@ fn meta_page_count_past_end_is_refused_and_file_never_grows() {
     let (path, len) = checkpointed_file(dir.path(), "forged.graph");
     let mut bytes = std::fs::read(&path).unwrap();
     let generation = |page: usize| -> u64 {
-        let off = page * PAGE_SIZE as usize;
+        let off = page * usize::try_from(PAGE_SIZE).expect("fixture value fits in usize");
         u64::from_le_bytes(bytes[off + 16..off + 24].try_into().unwrap())
     };
     let active = if generation(0) >= generation(1) { 0 } else { 1 };
-    let meta = &mut bytes[active * PAGE_SIZE as usize..(active + 1) * PAGE_SIZE as usize];
+    let meta = &mut bytes[active * usize::try_from(PAGE_SIZE).expect("fixture value fits in usize")
+        ..(active + 1) * usize::try_from(PAGE_SIZE).expect("fixture value fits in usize")];
     meta[24..32].copy_from_slice(&(1u64 << 50).to_le_bytes());
     meta[12..16].fill(0);
     let crc = crc32fast::hash(meta);

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! `Minigraf::query` and `PreparedQuery::query` return a `Cursor` that delivers
 //! the answer in batches (#432). These tests pin the public contract the
 //! streaming engine must keep: batches partition the `execute()` answer, the

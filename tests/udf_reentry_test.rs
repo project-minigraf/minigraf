@@ -1,3 +1,4 @@
+#![cfg(test)]
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
 //! A query reads its functions from a snapshot of the registry taken when it

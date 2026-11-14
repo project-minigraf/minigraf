@@ -72,13 +72,13 @@ fn write_round(db: &Minigraf, round: u32) {
              [:p{p} :person/score {score}] [:p{p} :person/attr :person/age] [:p{p} :p{f} {p}]])",
             age = 20 + round % 4,
             bio = long(p % 2),
-            ok = (round + p) % 2 == 0,
+            ok = (round + p).is_multiple_of(2),
             boss = uuid_of(&format!(":p{f}")),
             alias = uuid_of(&format!(":p{}", (p + 1) % 6)),
             score = scores[((round + p) % 5) as usize],
         ))
         .unwrap();
-        if (round + p) % 2 == 0 {
+        if (round + p).is_multiple_of(2) {
             db.execute(&format!(
                 "(retract [[:p{p} :person/status :s{s}] [:p{p} :person/age {}] \
                  [:p{p} :person/score {}]])",
@@ -87,7 +87,7 @@ fn write_round(db: &Minigraf, round: u32) {
             ))
             .unwrap();
         }
-        if (round + p) % 3 == 0 {
+        if (round + p).is_multiple_of(3) {
             db.execute(&format!(
                 "(transact {{:valid-from \"2023-01-01\" :valid-to \"2023-06-30\"}} \
                  [[:p{p} :person/name \"n{p}\"] [:p{p} :person/null nil]])"
@@ -587,7 +587,7 @@ fn pseudo_attributes_without_a_source_are_prs_081() {
          :where [?e :db/tx-count ?t] [?e :person/age ?a]])",
     ] {
         let err = db.execute(q).unwrap_err();
-        assert_eq!(crate::MinigrafError::from(err).code(), "PRS-081");
+        assert_eq!(err.code(), "PRS-081");
     }
 }
 
@@ -610,7 +610,7 @@ fn engine_queries_raise_the_executor_errors() {
     ] {
         let before = runs();
         let err = db.execute(q).unwrap_err();
-        assert_eq!(crate::MinigrafError::from(err).code(), code);
+        assert_eq!(err.code(), code);
         assert_eq!(runs(), before, "no engine run");
     }
 }
@@ -4120,7 +4120,7 @@ fn top_k_memory_follows_k_not_the_input() {
     let e = db
         .execute("(query [:find ?e ?v :where [?e :a ?v] :order-by [?v :desc]])")
         .expect_err("a full sort over the limit");
-    assert_eq!(crate::MinigrafError::from(e).code(), "QRY-012");
+    assert_eq!(e.code(), "QRY-012");
 }
 
 #[test]

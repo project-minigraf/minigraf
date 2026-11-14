@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! A value a `not` / `not-join` body takes from the outer row compares as a
 //! join compares it (#546, design
 //! `docs/superpowers/specs/2026-10-16-negation-disjunction-engine-design.md`

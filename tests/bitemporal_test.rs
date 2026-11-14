@@ -1,3 +1,4 @@
+#![cfg(test)]
 use minigraf::{Minigraf, QueryResult, Value};
 
 /// Helper: execute a Datalog command string via `Minigraf::execute`, panicking on error

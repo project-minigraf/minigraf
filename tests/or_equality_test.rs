@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! An `or` / `or-join` branch row meets the outer row by join equality (#546,
 //! design `docs/superpowers/specs/2026-10-16-negation-disjunction-engine-design.md`
 //! §3.5, §3.6 item 3, §5.3): a keyword equal to a ref to the entity it names,

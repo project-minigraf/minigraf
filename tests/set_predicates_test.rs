@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Set-membership predicates (#316): `in?`, `not-in?`, `any-in?`, `all-in?`,
 //! `none-in?` as filters and as Boolean bindings, over literal, stored and
 //! bind-slot operands.
@@ -299,7 +300,7 @@ fn wrong_arity_is_prs_065() {
     for op in ["in?", "not-in?", "any-in?", "all-in?", "none-in?"] {
         for args in ["1", "1 #{1} #{2}"] {
             let q = format!("(query [:find ?x :where [?x :t/k _] [({op} {args})]])");
-            let err = db.execute(&q).err().expect("arity error");
+            let err = db.execute(&q).expect_err("arity error");
             assert_eq!(err.code(), "PRS-065", "{op} with {args}");
         }
     }

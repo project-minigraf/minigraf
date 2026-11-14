@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 7.2b: arithmetic and predicate expression clauses.
 
 use minigraf::{Minigraf, QueryResult, Value as MgValue};

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Memory profiling target for heaptrack.
 //!
 //! Usage: cargo run --example memory_profile --release -- <fact_count>

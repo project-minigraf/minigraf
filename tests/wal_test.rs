@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for WAL-backed crash safety, recovery, and checkpoint.
 //!
 //! These tests exercise the file-backed `Minigraf` API end-to-end, verifying:

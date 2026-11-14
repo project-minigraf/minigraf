@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Acceptance test for `:limit` and top-k (#306 spec §5, moved from #473):
 //! over 10M facts, `:limit 10` stops the query once it has its rows, so its
 //! time and memory do not grow with the facts; `:order-by [?v :desc] :limit
@@ -92,10 +93,10 @@ fn limit_and_top_k_over_10m_facts() {
         w.append(&FactRecord {
             entity: uuid::Uuid::from_u128(i as u128 + 1),
             attribute: ":a".to_string(),
-            value: Value::Integer(i as i64),
+            value: Value::Integer(i64::try_from(i).expect("fixture value fits in i64")),
             tx_count: tx,
             tx_id: 1_700_000_000_000 + tx,
-            valid_from: (1_700_000_000_000 + tx) as i64,
+            valid_from: i64::try_from(1_700_000_000_000 + tx).expect("fixture value fits in i64"),
             valid_to: i64::MAX,
             asserted: true,
         })
@@ -125,7 +126,7 @@ fn limit_and_top_k_over_10m_facts() {
             _ => panic!("an integer"),
         })
         .collect();
-    let n = FACTS as i64;
+    let n = i64::try_from(FACTS).expect("fixture value fits in i64");
     assert_eq!(
         top,
         ((n - 10)..n).rev().collect::<Vec<i64>>(),

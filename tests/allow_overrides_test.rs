@@ -1,3 +1,4 @@
+#![cfg(test)]
 #![cfg(not(target_arch = "wasm32"))]
 //! `OpenOptions::allow_overrides` (#869, spec #862 §1–§2): the embedder
 //! decides which query keywords may override its limits; a keyword the list
@@ -44,11 +45,11 @@ fn defaults_allow_both_keywords() {
 fn empty_list_refuses_every_entry_point() {
     let db = setup(OpenOptions::new().allow_overrides([]));
     for (q, kw) in [(DERIVED, ":max-derived-facts"), (RESULTS, ":max-results")] {
-        refused(db.execute(q).err().expect("execute refused"), kw);
-        refused(db.query(q).err().expect("query refused"), kw);
-        refused(db.prepare(q).err().expect("prepare refused"), kw);
+        refused(db.execute(q).expect_err("execute refused"), kw);
+        refused(db.query(q).expect_err("query refused"), kw);
+        refused(db.prepare(q).expect_err("prepare refused"), kw);
         let mut tx = db.begin_write().expect("begin");
-        refused(tx.execute(q).err().expect("tx refused"), kw);
+        refused(tx.execute(q).expect_err("tx refused"), kw);
         tx.rollback();
     }
     assert_eq!(rows(db.execute(PLAIN).expect("plain")), 2);
@@ -68,7 +69,7 @@ fn empty_list_refuses_every_entry_point() {
 fn list_replaces_defaults() {
     let db = setup(OpenOptions::new().allow_overrides([Overridable::MaxResults]));
     refused(
-        db.execute(DERIVED).err().expect("refused"),
+        db.execute(DERIVED).expect_err("refused"),
         ":max-derived-facts",
     );
     assert_eq!(rows(db.execute(RESULTS).expect("allowed")), 2);
@@ -79,7 +80,7 @@ fn refused_tx_execute_leaves_transaction_usable() {
     let db = setup(OpenOptions::new().allow_overrides([]));
     let mut tx = db.begin_write().expect("begin");
     refused(
-        tx.execute(DERIVED).err().expect("refused"),
+        tx.execute(DERIVED).expect_err("refused"),
         ":max-derived-facts",
     );
     tx.execute("(transact [[:c :edge :d]])").expect("transact");
@@ -127,7 +128,7 @@ fn file_database_option_not_persisted() {
         db.execute("(transact [[:a :edge :b]])").expect("transact");
         db.execute(RULE).expect("rule");
         refused(
-            db.execute(DERIVED).err().expect("refused"),
+            db.execute(DERIVED).expect_err("refused"),
             ":max-derived-facts",
         );
     }

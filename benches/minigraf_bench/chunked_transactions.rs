@@ -147,7 +147,8 @@ pub fn bench_chunked_transactions(c: &mut Criterion) {
                 let mut tx = db.begin_write().unwrap();
                 black_box(tx.execute(black_box(first)).unwrap());
                 black_box(tx.execute(black_box(second)).unwrap());
-                black_box(tx.commit().unwrap());
+                tx.commit().unwrap();
+                black_box(());
             };
             validated.get_or_init(|| {
                 let check = fixture(None);
@@ -184,7 +185,8 @@ pub fn bench_chunked_transactions(c: &mut Criterion) {
             assert_eq!(error.code(), "API-011");
             black_box(error);
             black_box(tx.execute(black_box(AFTER)).unwrap());
-            black_box(tx.commit().unwrap());
+            tx.commit().unwrap();
+            black_box(());
         };
         validated.get_or_init(|| {
             let check = fixture(None);

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Phase 7.6 integration tests — temporal metadata pseudo-attribute bindings.
 
 use minigraf::{Minigraf, OpenOptions, QueryResult, Value};

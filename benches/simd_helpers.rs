@@ -16,7 +16,7 @@
 #![allow(clippy::cast_possible_truncation)] // synthetic bench data: N ≤ 1M fits in i64
 #![allow(clippy::cast_sign_loss)] // tx_count cast: monotonic counter, always positive
 
-use wide::{CmpGt, i64x4, u64x4};
+use wide::{i64x4, u64x4};
 
 /// Count facts where `valid_from[i] <= ts && ts < valid_to[i]`.
 ///
@@ -26,13 +26,14 @@ pub fn valid_time_filter_simd(valid_from: &[i64], valid_to: &[i64], ts: i64) -> 
     let ts_v = i64x4::splat(ts);
     let mut count = 0usize;
 
-    for (vf_chunk, vt_chunk) in valid_from.chunks_exact(4).zip(valid_to.chunks_exact(4)) {
-        let [vf0, vf1, vf2, vf3] = *vf_chunk else {
-            unreachable!()
-        };
-        let [vt0, vt1, vt2, vt3] = *vt_chunk else {
-            unreachable!()
-        };
+    for (vf_chunk, vt_chunk) in valid_from
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(valid_to.as_chunks::<4>().0)
+    {
+        let [vf0, vf1, vf2, vf3] = *vf_chunk;
+        let [vt0, vt1, vt2, vt3] = *vt_chunk;
 
         let vf = i64x4::new([vf0, vf1, vf2, vf3]);
         let vt = i64x4::new([vt0, vt1, vt2, vt3]);
@@ -70,8 +71,7 @@ pub fn as_of_filter_simd(tx_counts: &[u64], threshold: u64) -> usize {
     let thr_v = u64x4::splat(threshold);
     let mut count = 0usize;
 
-    for chunk in tx_counts.chunks_exact(4) {
-        let [a, b, c, d] = *chunk else { unreachable!() };
+    for &[a, b, c, d] in tx_counts.as_chunks::<4>().0 {
         let v = u64x4::new([a, b, c, d]);
 
         // tc <= threshold  ≡  NOT (tc > threshold)
@@ -99,9 +99,8 @@ pub fn as_of_filter_simd(tx_counts: &[u64], threshold: u64) -> usize {
 pub fn sum_simd_i64(values: &[i64]) -> i64 {
     let mut acc = i64x4::splat(0_i64);
 
-    for chunk in values.chunks_exact(4) {
-        let [a, b, c, d] = *chunk else { unreachable!() };
-        acc = acc + i64x4::new([a, b, c, d]);
+    for &[a, b, c, d] in values.as_chunks::<4>().0 {
+        acc += i64x4::new([a, b, c, d]);
     }
 
     let lanes: [i64; 4] = acc.to_array();
@@ -117,7 +116,6 @@ pub fn sum_simd_i64(values: &[i64]) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     // ── valid_time_filter_simd ────────────────────────────────────────────────
 
@@ -135,7 +133,10 @@ mod tests {
             .filter(|&(&vf, &vt)| vf <= ts && ts < vt)
             .count();
 
-        assert_eq!(valid_time_filter_simd(&valid_from, &valid_to, ts), scalar);
+        assert_eq!(
+            super::valid_time_filter_simd(&valid_from, &valid_to, ts),
+            scalar
+        );
     }
 
     #[test]
@@ -151,12 +152,15 @@ mod tests {
             .filter(|&(&vf, &vt)| vf <= ts && ts < vt)
             .count();
 
-        assert_eq!(valid_time_filter_simd(&valid_from, &valid_to, ts), scalar);
+        assert_eq!(
+            super::valid_time_filter_simd(&valid_from, &valid_to, ts),
+            scalar
+        );
     }
 
     #[test]
     fn test_valid_time_filter_empty() {
-        assert_eq!(valid_time_filter_simd(&[], &[], 0), 0);
+        assert_eq!(super::valid_time_filter_simd(&[], &[], 0), 0);
     }
 
     // ── as_of_filter_simd ─────────────────────────────────────────────────────
@@ -169,7 +173,7 @@ mod tests {
 
         let scalar = tx_counts.iter().filter(|&&tc| tc <= threshold).count();
 
-        assert_eq!(as_of_filter_simd(&tx_counts, threshold), scalar);
+        assert_eq!(super::as_of_filter_simd(&tx_counts, threshold), scalar);
     }
 
     #[test]
@@ -180,12 +184,12 @@ mod tests {
 
         let scalar = tx_counts.iter().filter(|&&tc| tc <= threshold).count();
 
-        assert_eq!(as_of_filter_simd(&tx_counts, threshold), scalar);
+        assert_eq!(super::as_of_filter_simd(&tx_counts, threshold), scalar);
     }
 
     #[test]
     fn test_as_of_filter_empty() {
-        assert_eq!(as_of_filter_simd(&[], 100), 0);
+        assert_eq!(super::as_of_filter_simd(&[], 100), 0);
     }
 
     // ── sum_simd_i64 ──────────────────────────────────────────────────────────
@@ -196,7 +200,7 @@ mod tests {
         let values: Vec<i64> = (1_i64..=9).collect();
         let scalar: i64 = values.iter().sum();
 
-        assert_eq!(sum_simd_i64(&values), scalar);
+        assert_eq!(super::sum_simd_i64(&values), scalar);
     }
 
     #[test]
@@ -205,12 +209,12 @@ mod tests {
         let values: Vec<i64> = (1_i64..=8).collect();
         let scalar: i64 = values.iter().sum();
 
-        assert_eq!(sum_simd_i64(&values), scalar);
+        assert_eq!(super::sum_simd_i64(&values), scalar);
     }
 
     #[test]
     fn test_sum_simd_empty() {
-        assert_eq!(sum_simd_i64(&[]), 0);
+        assert_eq!(super::sum_simd_i64(&[]), 0);
     }
 
     #[test]
@@ -218,6 +222,6 @@ mod tests {
         let values = vec![-3_i64, -2, -1, 0, 1, 2, 3];
         let scalar: i64 = values.iter().sum();
 
-        assert_eq!(sum_simd_i64(&values), scalar);
+        assert_eq!(super::sum_simd_i64(&values), scalar);
     }
 }

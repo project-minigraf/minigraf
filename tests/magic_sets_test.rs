@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for magic sets rewriting (#289).
 //!
 //! Asserts result *correctness* only — magic sets must never change query results.

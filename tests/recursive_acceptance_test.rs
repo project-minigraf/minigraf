@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Acceptance tests for recursive rules on the streaming engine (#473, #548
 //! spec §7): a rule deriving about 5M facts completes, and its peak memory
 //! follows the derived relation; the default `max_derived_facts` stops the
@@ -108,8 +109,7 @@ fn reach_5m() {
     let db = layered(&dir, OpenOptions::new());
     let err = db
         .execute("(query [:find ?x ?y :where (reach ?x ?y)])")
-        .err()
-        .expect("over the default max_derived_facts");
+        .expect_err("over the default max_derived_facts");
     assert_eq!(err.code().to_string(), "INT-020", "stopped by the limit");
 }
 
@@ -221,8 +221,7 @@ fn closure_scaling(multistratum: bool) {
         }
         let err = db
             .execute(query)
-            .err()
-            .expect("derived relation exceeds the cap");
+            .expect_err("derived relation exceeds the cap");
         assert_eq!(err.code(), "INT-020");
         eprintln!("{label}: derived_cap=1000 error=INT-020");
     }

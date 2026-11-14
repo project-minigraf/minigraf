@@ -64,7 +64,7 @@ pub fn bench_memory_meter(c: &mut Criterion) {
                         .path(&path)
                         .open()
                         .unwrap();
-                    let err = constrained.execute(query).err().expect("limit enforced");
+                    let err = constrained.execute(query).expect_err("limit enforced");
                     assert_eq!(err.code(), "QRY-012");
                     assert!(
                         err.to_string().contains("Aggregate"),

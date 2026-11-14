@@ -1,3 +1,4 @@
+#![cfg(test)]
 use minigraf::db::Minigraf;
 use minigraf::{BindValue, QueryResult, Value};
 use uuid::Uuid;

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Migration matrix tests (#215).
 #![cfg(not(target_arch = "wasm32"))]
 

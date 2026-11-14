@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Golden-file compatibility corpus (#391).
 //!
 //! Every `tests/golden/*.json` manifest names a committed `.graph` file (and

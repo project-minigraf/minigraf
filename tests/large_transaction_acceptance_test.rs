@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Acceptance test for large transactions (#550 spec §8.1, #473 spec §8): a
 //! 1M-fact `transact` on a file database holds at most `TX_CHUNK_FACTS`
 //! materialised facts at any time, and commits as a checkpoint. A statement
@@ -156,7 +157,7 @@ fn custom_chunk_bounds() {
         };
         assert_eq!(results.len(), 1);
         assert!(
-            matches!(results[0][0], minigraf::Value::Integer(n) if n == facts as i64),
+            matches!(results[0][0], minigraf::Value::Integer(n) if n == i64::try_from(facts).expect("fixture value fits in i64")),
             "all facts survive reopen"
         );
         assert_eq!(db.current_tx_count(), 1);
@@ -191,12 +192,12 @@ fn check_heavy_entry(db: &Minigraf, ctx: &str) {
     );
     assert_eq!(
         count_value(db, "(query [:find (count ?e) :where [?e :n ?v]])"),
-        (FACTS / 2) as i64,
+        i64::try_from(FACTS / 2).expect("fixture value fits in i64"),
         "{ctx}: AEVT :n"
     );
     assert_eq!(
         count_value(db, "(query [:find (count ?v) :where [?e :m ?v]])"),
-        (FACTS / 2) as i64,
+        i64::try_from(FACTS / 2).expect("fixture value fits in i64"),
         "{ctx}: AEVT :m"
     );
     assert_eq!(
@@ -231,7 +232,7 @@ fn check_heavy_entry(db: &Minigraf, ctx: &str) {
     );
     assert_eq!(
         count_value(db, "(query [:find (count ?e) :as-of 1 :where [?e :n ?v]])"),
-        (FACTS / 2) as i64,
+        i64::try_from(FACTS / 2).expect("fixture value fits in i64"),
         "{ctx}: first entry is whole at tx 1"
     );
 }

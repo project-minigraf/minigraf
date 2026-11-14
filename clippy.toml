@@ -1,0 +1,5 @@
+# Assertions and fixture helpers may panic; production code keeps Cargo.toml's denies.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

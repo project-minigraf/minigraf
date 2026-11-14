@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Integration tests for Phase 6.5: on-disk B+tree indexes (file format v6).
 #![cfg(not(target_arch = "wasm32"))]
 

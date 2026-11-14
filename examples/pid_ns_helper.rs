@@ -1,3 +1,4 @@
+#![allow(clippy::indexing_slicing)]
 //! Helper for `tests/pid_namespace_test.rs`. Opens a database and either dies
 //! holding the lock, or reports whether the open succeeded.
 //!

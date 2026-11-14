@@ -948,7 +948,7 @@ mod tests {
         assert_eq!(long_entries, 1, "one stored copy within a checkpoint");
 
         // Re-asserting in a later checkpoint writes no value page.
-        let again = vec![fact(3, ":bio", Value::String(long), 3)];
+        let again = [fact(3, ":bio", Value::String(long), 3)];
         let mut enc2 = Encoder::new(enc.next_eid, enc.next_iid);
         {
             let mut dict = DictReader::new(root, &backend, &cache);
@@ -989,7 +989,7 @@ mod tests {
             .count();
         assert_eq!(long_entries, 1, "one stored copy within a checkpoint");
 
-        let again = vec![fact(3, ":s", long_set_value(), 2)];
+        let again = [fact(3, ":s", long_set_value(), 2)];
         let mut enc2 = Encoder::new(enc.next_eid, enc.next_iid);
         {
             let mut dict = DictReader::new(root, &backend, &cache);

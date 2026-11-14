@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Differential oracle: identical ordered lists with input-order strategies
 //! enabled and disabled, across the existing plan switches and snapshots.
 #![cfg(all(feature = "test-hooks", not(target_arch = "wasm32")))]

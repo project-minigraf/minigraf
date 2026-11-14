@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Regression tests for issue #358 (#277 2/6): PRS-0xx parser error codes.
 //!
 //! `src/query/datalog/parser.rs` now carries a real, documented `PRS-0xx`

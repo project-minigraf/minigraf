@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Model-based (stateful) test of the file-backed database (#385).
 //!
 //! Random sequences of transact, retract, write transactions, checkpoints and

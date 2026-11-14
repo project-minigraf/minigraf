@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! The `test-hooks` path events and memory peaks the nightly acceptance tests
 //! read (#863): `minigraf::__path_events` and `Cursor::__memory_peak`.
 #![cfg(all(feature = "test-hooks", not(target_arch = "wasm32")))]

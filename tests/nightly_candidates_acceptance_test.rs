@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Nightly acceptance for the #841 shape-sweep candidates qualified by #863:
 //! each test pins one candidate's answer and the path it guards (operator
 //! names from the cursor's `Debug` view, `minigraf::__path_events`) and,
@@ -239,7 +240,7 @@ fn n6_held_cursor_quarantine_and_reuse() {
                 .append(&minigraf::FactRecord {
                     entity: entity(i),
                     attribute: ":pin/value".into(),
-                    value: Value::Integer(i as i64),
+                    value: Value::Integer(i64::try_from(i).expect("fixture value fits in i64")),
                     tx_count: (i / 1000 + 1) as u64,
                     tx_id: 1_700_000_000_000 + (i / 1000) as u64,
                     valid_from: 0,
@@ -273,7 +274,11 @@ fn n6_held_cursor_quarantine_and_reuse() {
                         panic!("entity and value expected");
                     };
                     let i = (e.as_u128() - entity(0).as_u128()) as usize;
-                    assert_eq!(*v as usize, expected[i], "held cursor reads its state");
+                    assert_eq!(
+                        usize::try_from(*v).expect("fixture value fits in usize"),
+                        expected[i],
+                        "held cursor reads its state"
+                    );
                     assert!(!seen[i], "one row per entity");
                     seen[i] = true;
                 }

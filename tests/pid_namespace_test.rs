@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! #317: a `.graph` file must stay openable after its holder dies in another
 //! PID namespace.
 //!

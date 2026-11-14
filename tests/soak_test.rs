@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Long-running soak test at scale (#392).
 //!
 //! Grows a file-backed database to millions of facts in batches of mixed
@@ -22,6 +23,7 @@
 
 use minigraf::db::{Minigraf, OpenOptions};
 use minigraf::{QueryResult, Value};
+use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
@@ -68,7 +70,11 @@ impl Rng {
     /// Log-uniform in `lo..=hi`: small batches are common, large ones occur.
     fn log_uniform(&mut self, lo: u64, hi: u64) -> u64 {
         let (l, h) = ((lo as f64).ln(), ((hi + 1) as f64).ln());
-        ((l + (h - l) * self.unit()).exp() as u64).clamp(lo, hi)
+        (l + (h - l) * self.unit())
+            .exp()
+            .to_u64()
+            .expect("log-uniform sample fits in u64")
+            .clamp(lo, hi)
     }
 }
 
@@ -157,9 +163,18 @@ fn content(seed: u64, n: u64) -> Vec<(String, Val)> {
     let h = mix(seed ^ n.wrapping_mul(0x2545_F491_4F6C_DD1D));
     let mut facts = vec![
         (":p/name".to_string(), Val::Str(format!("name-{n}"))),
-        (":p/score".to_string(), Val::Int((h % 1000) as i64)),
-        (format!(":p/shard{}", n % SHARDS), Val::Int(n as i64)),
-        (format!(":p/shard{}", n % SHARDS), Val::Int(-(n as i64) - 1)),
+        (
+            ":p/score".to_string(),
+            Val::Int(i64::try_from(h % 1000).expect("fixture value fits in i64")),
+        ),
+        (
+            format!(":p/shard{}", n % SHARDS),
+            Val::Int(i64::try_from(n).expect("fixture value fits in i64")),
+        ),
+        (
+            format!(":p/shard{}", n % SHARDS),
+            Val::Int(-i64::try_from(n).expect("fixture value fits in i64") - 1),
+        ),
     ];
     let start = (h >> 10) % 16;
     for i in 0..1 + (h >> 20) % 4 {
@@ -169,13 +184,13 @@ fn content(seed: u64, n: u64) -> Vec<(String, Val)> {
             Val::Kw(format!(":t{}", (start + i * 5) % 16)),
         ));
     }
-    if n % 50 == 0 {
+    if n.is_multiple_of(50) {
         facts.push((
             ":p/bio".to_string(),
             Val::Str(format!("bio-{n}-{}", "b".repeat(80))),
         ));
     }
-    if n % 10 == 0 && n > 0 {
+    if n.is_multiple_of(10) && n > 0 {
         facts.push((":p/ref".to_string(), Val::Ref((h >> 30) % n)));
     }
     facts
@@ -264,7 +279,9 @@ impl Reference {
         let mut rows: Vec<String> = content(self.seed, n)
             .into_iter()
             .enumerate()
-            .filter(|(slot, _)| !self.is_flipped(n, *slot as u8))
+            .filter(|(slot, _)| {
+                !self.is_flipped(n, u8::try_from(*slot).expect("fixture value fits in u8"))
+            })
             .map(|(_, (a, v))| format!("k{a} {}", v.render()))
             .collect();
         rows.sort();
@@ -302,12 +319,15 @@ impl Reference {
     /// `[entity value]` rows of attribute `:p/shard{k}`, sorted.
     fn shard_rows(&self, k: u64) -> Vec<String> {
         let mut rows: Vec<String> = (k..self.next_entity)
-            .step_by(SHARDS as usize)
+            .step_by(usize::try_from(SHARDS).expect("fixture value fits in usize"))
             .flat_map(|n| {
-                [(2, n as i64), (3, -(n as i64) - 1)]
-                    .into_iter()
-                    .filter(move |(slot, _)| !self.is_flipped(n, *slot))
-                    .map(move |(_, v)| format!(":e{n} i{v}"))
+                [
+                    (2, i64::try_from(n).expect("fixture value fits in i64")),
+                    (3, -i64::try_from(n).expect("fixture value fits in i64") - 1),
+                ]
+                .into_iter()
+                .filter(move |(slot, _)| !self.is_flipped(n, *slot))
+                .map(move |(_, v)| format!(":e{n} i{v}"))
             })
             .collect();
         rows.sort();
@@ -381,7 +401,10 @@ impl Config {
             "MINIGRAF_SOAK_SEED",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos() as u64),
+                .map_or(0, |d| {
+                    u64::try_from(d.as_nanos() & u128::from(u64::MAX))
+                        .expect("low seed bits fit in u64")
+                }),
         );
         let minute = 60_000;
         Config {
@@ -434,7 +457,10 @@ fn percentile(sorted: &[u64], p: f64) -> u64 {
     if sorted.is_empty() {
         return 0;
     }
-    sorted[((sorted.len() - 1) as f64 * p).round() as usize]
+    sorted[((sorted.len() - 1) as f64 * p)
+        .round()
+        .to_usize()
+        .expect("percentile index fits in usize")]
 }
 
 /// `(VmRSS, VmHWM)` in bytes; `None` where `/proc` is not available.
@@ -542,7 +568,7 @@ impl Soak {
         if self.cfg.step_clock {
             self.steps
         } else {
-            self.start.elapsed().as_millis() as u64
+            u64::try_from(self.start.elapsed().as_millis()).expect("fixture value fits in u64")
         }
     }
 
@@ -665,7 +691,7 @@ impl Soak {
         }
         self.metrics
             .checkpoint_ms
-            .push(t.elapsed().as_millis() as u64);
+            .push(u64::try_from(t.elapsed().as_millis()).expect("fixture value fits in u64"));
         self.metrics.checkpoints += 1;
         self.since_checkpoint = 0;
         self.checkpoint_due = self
@@ -708,19 +734,21 @@ impl Soak {
     }
 
     fn flip_ordinary(&mut self) {
-        let k = self.rng.log_uniform(1, 50) as usize;
+        let k = usize::try_from(self.rng.log_uniform(1, 50)).expect("fixture value fits in usize");
         let reassert = !self.rf.flipped.is_empty()
             && (self.rf.flipped.len() >= FLIP_CAP || self.rng.chance(0.5));
         let mut chosen: HashSet<(u64, u8)> = HashSet::new();
         if reassert {
             for _ in 0..k {
-                let i = self.rng.below(self.rf.flipped.len() as u64) as usize;
+                let i = usize::try_from(self.rng.below(self.rf.flipped.len() as u64))
+                    .expect("fixture value fits in usize");
                 chosen.insert(self.rf.flipped[i]);
             }
         } else {
             for _ in 0..k * 2 {
                 let n = self.rng.below(self.rf.next_entity);
-                let slot = self.rng.below(content(self.cfg.seed, n).len() as u64) as u8;
+                let slot = u8::try_from(self.rng.below(content(self.cfg.seed, n).len() as u64))
+                    .expect("fixture value fits in u8");
                 if !self.rf.is_flipped(n, slot) {
                     chosen.insert((n, slot));
                 }
@@ -758,11 +786,13 @@ impl Soak {
     fn churn_hot(&mut self) {
         let live = self.rf.live_hot();
         let assert = live == 0 || (live < (HOT * HOT_SLOTS) as u64 && self.rng.chance(0.5));
-        let k = self.rng.range(1, 8) as usize;
+        let k = usize::try_from(self.rng.range(1, 8)).expect("fixture value fits in usize");
         let mut chosen: Vec<(usize, usize)> = Vec::new();
         for _ in 0..k * 4 {
-            let h = self.rng.below(HOT as u64) as usize;
-            let s = self.rng.below(HOT_SLOTS as u64) as usize;
+            let h =
+                usize::try_from(self.rng.below(HOT as u64)).expect("fixture value fits in usize");
+            let s = usize::try_from(self.rng.below(HOT_SLOTS as u64))
+                .expect("fixture value fits in usize");
             if self.rf.hot_live[h][s] != assert && !chosen.contains(&(h, s)) {
                 chosen.push((h, s));
             }
@@ -796,7 +826,7 @@ impl Soak {
     ) -> Vec<String> {
         let t = Instant::now();
         let result = self.db().execute(query);
-        let us = t.elapsed().as_micros() as u64;
+        let us = u64::try_from(t.elapsed().as_micros()).expect("fixture value fits in u64");
         self.metrics.latency.entry(path).or_default().push(us);
         match result {
             Ok(QueryResult::QueryResults { results, .. }) => {
@@ -881,7 +911,7 @@ impl Soak {
 
     fn check_shard(&mut self, k: u64) {
         let names: HashMap<Uuid, String> = (k..self.rf.next_entity)
-            .step_by(SHARDS as usize)
+            .step_by(usize::try_from(SHARDS).expect("fixture value fits in usize"))
             .map(|n| (entity_uuid(&format!(":e{n}")), format!(":e{n}")))
             .collect();
         let got = self.rows(
@@ -945,7 +975,8 @@ impl Soak {
             self.check_hot(h, None);
         }
         for _ in 0..self.cfg.sample_as_of {
-            let h = self.read_rng.below(HOT as u64) as usize;
+            let h = usize::try_from(self.read_rng.below(HOT as u64))
+                .expect("fixture value fits in usize");
             for _ in 0..3 {
                 let t = self.read_rng.range(1, self.rf.tx.max(1));
                 self.check_hot(h, Some(t));
@@ -963,7 +994,7 @@ impl Soak {
         }
         let t = Instant::now();
         self.db = Some(open(&self.path));
-        let ms = t.elapsed().as_millis() as u64;
+        let ms = u64::try_from(t.elapsed().as_millis()).expect("fixture value fits in u64");
         self.metrics.reopens += 1;
         if after_checkpoint {
             self.metrics.open_ms_file = Some(ms);

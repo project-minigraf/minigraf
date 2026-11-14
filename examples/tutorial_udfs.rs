@@ -1,3 +1,4 @@
+#![allow(clippy::indexing_slicing)]
 //! Tutorial Section 10 — User-Defined Functions
 //!
 //! Demonstrates `register_predicate` and `register_aggregate` in the context
@@ -195,7 +196,7 @@ fn main() -> anyhow::Result<()> {
     for row in &window_rows {
         let order = match &row[0] {
             Value::Keyword(k) => format!(":{}", k),
-            Value::Ref(u) => format!("{}", &u.to_string()[..8]),
+            Value::Ref(u) => u.to_string()[..8].to_string(),
             other => format!("{:?}", other),
         };
         let score = match &row[1] {

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! #323 — bound-entity point queries must return exactly what a full scan returns,
 //! while only reading the queried attributes' history.
 //!

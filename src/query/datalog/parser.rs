@@ -3246,7 +3246,9 @@ mod tests {
         }
     }
 
-    fn parse_order(input: &str) -> Result<(Vec<(FindSpec, Order)>, Option<Count>)> {
+    type ParsedOrder = (Vec<(FindSpec, Order)>, Option<Count>);
+
+    fn parse_order(input: &str) -> Result<ParsedOrder> {
         match parse_datalog_command(input)? {
             DatalogCommand::Query(q) => Ok((q.order_by, q.offset)),
             _ => panic!("expected Query"),
@@ -4529,8 +4531,7 @@ mod window_parse_tests {
         parse_datalog_command(&query("(sum ?v :over (:order-by ?v :rows 1 preceding))"))
             .expect("matching frame");
         let error = parse_datalog_command(&query("(sum ?v :over (:order-by ?v))"))
-            .err()
-            .expect("different frame");
+            .expect_err("different frame");
         assert_eq!(crate::MinigrafError::from(error).code(), "PRS-117");
     }
 
@@ -4679,7 +4680,7 @@ mod window_parse_tests {
             r#"(query [:find ?d (count ?e) (sum ?d :over (:partition-by ?v :order-by ?d)) :where [?e :x ?v] [?e :d ?d]])"#,
             r#"(query [:find ?d (count ?e) (sum ?v :over (:order-by ?d)) :with ?v :where [?e :x ?v] [?e :d ?d]])"#,
         ] {
-            let err = parse_datalog_command(q).err().expect("rejected");
+            let err = parse_datalog_command(q).expect_err("rejected");
             assert_eq!(crate::MinigrafError::from(err).code(), "PRS-082");
         }
         parse_datalog_command(
