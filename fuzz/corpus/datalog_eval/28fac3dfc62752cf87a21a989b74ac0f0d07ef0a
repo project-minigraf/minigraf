@@ -1,0 +1,1 @@
+(query [:e :where [?id ?er ?c] (not[?:active tru])])

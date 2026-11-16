@@ -1,1 +1,0 @@
-(query [:fee :where [?e :cor ?c] (d ?)])

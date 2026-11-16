@@ -1,0 +1,1 @@
+(query [:f:where :any-valid-time (not( q:qu[au:d]) [ae nned trt])(not(ess) [ae : true])(not(s[ wh]) [ae :b tru])])

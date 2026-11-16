@@ -1,0 +1,1 @@
+(query [:fin:where [?_?e l ?rsuc] (mt[?e 22.-2- tree])])

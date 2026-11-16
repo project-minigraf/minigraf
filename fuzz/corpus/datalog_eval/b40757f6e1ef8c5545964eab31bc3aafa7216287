@@ -1,0 +1,2 @@
+(query [:f:where [?e ?nam0 ?zeryn]  (query [:fin [Ol] (not[truminu])])
+:where [e ?name ?n] [(= ?n "A|ice")?Z]])

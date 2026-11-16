@@ -1,0 +1,3 @@
+(query[:?:where [q e t](or
+[u e e]) (or
+[?e F e])(q[:e[is?-]]:heoy)  ])

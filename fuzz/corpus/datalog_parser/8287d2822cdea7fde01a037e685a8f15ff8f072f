@@ -1,0 +1,1 @@
+(query [:where(or(y) (uusl)(us)[a:db/tx-id t])(ze)])

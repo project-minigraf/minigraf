@@ -1,2 +1,0 @@
-(query [:where[nww:l q?H](ns,u:)[?x at ?] (u or:d )(?ye[[
-]])[?n:p:_]])

@@ -1,0 +1,1 @@
+(query [:fi :where [?e :2cor ?c] (jto-in nil[loh nil]$z[])])

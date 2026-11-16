@@ -1,0 +1,8 @@
+(rule [(av)
+(not-join[] (r))(not-joinsss)
+(not-join[] (r))(not-join[] (r))
+(non[])
+(not-join[] (r)) (d:[] ())(not-join[] (r)) (d:[] (r))(not-join[] (r))
+(not-joinsss)
+(not-join[] (r))(o[] (r))
+(not-join[](r))(d::)])

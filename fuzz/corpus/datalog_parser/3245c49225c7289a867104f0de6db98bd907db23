@@ -1,1 +1,0 @@
-(query[:u:where [r!=?t] (e[]?)[? r 8]])

@@ -1,0 +1,1 @@
+(query [:inn :w :where[(- ?n "Alice")] [?e ?name ?neOOd] [(- ?n "Alice")]])

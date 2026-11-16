@@ -1,0 +1,1 @@
+(query [:finn :w :where [?ggggggggg ?name ?n] [?eggggggggggggggggggg ?name ?n] [(/ ?n "Anice")][(/ ?n "Anice")]])

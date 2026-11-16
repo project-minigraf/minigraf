@@ -1,0 +1,1 @@
+(query[:where  (not-join[] (sss:)[(+: ?y)?] (s) [i0=:wr])])

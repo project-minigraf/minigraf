@@ -1,0 +1,1 @@
+(query [:find ?end ? ?e :where [?e :colr c] (in [])])

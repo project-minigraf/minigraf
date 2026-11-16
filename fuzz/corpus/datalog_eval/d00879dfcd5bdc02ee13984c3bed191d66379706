@@ -1,2 +1,0 @@
-(query [:where (ry [d ?e ])
-[?e :co? rlo] (not)])

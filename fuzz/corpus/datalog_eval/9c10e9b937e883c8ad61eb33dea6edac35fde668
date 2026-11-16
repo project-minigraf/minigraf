@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e :lor ?c](qtery 1 ?:)
- (not-join [] [?e :ative trtrue])])

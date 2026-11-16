@@ -1,2 +1,0 @@
-(query [:fn:where [:colO,?eA m] (not(query:::::?e::::)
-)])

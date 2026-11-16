@@ -1,0 +1,3 @@
+(query [:where (n ?/8)(noe ?)(oe ?
+6)(o ?
+4)])

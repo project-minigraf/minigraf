@@ -1,0 +1,1 @@
+(query [:?2:where [?e/q e qee] (or(--+$LL?[[?]])[?x:pa qee?p] (or(u--L$tyt?5)[?x :pavn ?B]))])

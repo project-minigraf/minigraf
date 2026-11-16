@@ -1,5 +1,0 @@
-(query [ ?o] [?e ?nameEery ?n] [(= ?n "Alicu")] :w :where [?e ?nam_ ?nmatches?]  where [?e ?namne ?]  :where [?e ?nanam
--]-*
-
--]-*
---])

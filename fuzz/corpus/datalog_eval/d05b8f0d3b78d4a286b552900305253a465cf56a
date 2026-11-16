@@ -1,1 +1,0 @@
-(query [:find ?nzYYYYYYYYYYYYYYYYYYYYYY:where [?e ??ame ?n]])

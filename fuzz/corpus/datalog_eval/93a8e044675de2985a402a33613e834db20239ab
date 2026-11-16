@@ -1,1 +1,0 @@
-(query [:find ?e :where [?EE:colors  ?](not[on-ije:ag ?][on-ije:age ?] [?e :,raue])])

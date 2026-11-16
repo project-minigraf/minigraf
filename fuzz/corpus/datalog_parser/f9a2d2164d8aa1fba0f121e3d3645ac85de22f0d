@@ -1,2 +1,0 @@
-(query [: :where [e?n ?-me ?ne]  [?e me ?n](not(hue:[: [e:ana ?]])
-[?e wmd t])(not[?e need tru])])

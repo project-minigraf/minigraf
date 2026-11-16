@@ -1,0 +1,1 @@
+(query [:fi :w :where [?e ?name ?n]  [?c?e ?naMe ?IIind] [(= nil"Alice")]])

@@ -1,2 +1,0 @@
-(query [:where (query [::e(rule [(?y) ([?(y)])[ ?4]])
-(que[(not*(y [:  [n] (n[e])]) [1eE])])])])

@@ -1,1 +1,0 @@
-(query [:fzin:co:where [:asof?e :e ?n][:a?e :name ?n][:a?e :name ?][(= ?n "")]])

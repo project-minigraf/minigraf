@@ -1,0 +1,1 @@
+(query [:where (s:ܚ[[]])[x 2 =] (as:ܚy)[x a uB]])

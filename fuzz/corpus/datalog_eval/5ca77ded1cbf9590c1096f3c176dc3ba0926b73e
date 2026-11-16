@@ -1,0 +1,1 @@
+(query [:fiinn :w :where [?ena ?m2e ?p]  :where ::where [?e ?name ?nmatches?]  :where :where [?e ?namne ?]  :where [?e ?naname ?n] [(< ?"Alcie")]])

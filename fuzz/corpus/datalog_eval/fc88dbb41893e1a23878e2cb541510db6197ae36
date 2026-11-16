@@ -1,0 +1,1 @@
+(query [:fz:where [?e ?eame ,6]])

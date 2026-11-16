@@ -1,0 +1,2 @@
+(query [:c:?e :where (or(and[:<w]j)
+ )])

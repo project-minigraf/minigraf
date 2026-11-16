@@ -1,0 +1,1 @@
+(query [:find ?e :where (not-:FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:Fry [:f ?e:w]FF )])

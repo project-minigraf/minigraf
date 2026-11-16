@@ -1,0 +1,1 @@
+(query [:fe :where [D :r ?c] (o$-0?_?[ e:])])

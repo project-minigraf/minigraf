@@ -1,2 +1,0 @@
-(query[:where (Q[:])(od [])
-[? namfqeie ?n](n [g])])

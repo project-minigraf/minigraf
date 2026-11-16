@@ -1,0 +1,1 @@
+(query [:where (not-join [?eemmsuor ?c]b? [: te])])

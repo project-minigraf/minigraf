@@ -1,1 +1,0 @@
-(query [:e :where [?ind ?er ?c] (not-join [?e] [?e :active tru,])])

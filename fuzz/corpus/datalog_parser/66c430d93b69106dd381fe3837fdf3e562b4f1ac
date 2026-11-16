@@ -1,0 +1,1 @@
+(query [:where [?e:an en] (not [e :ad ,e][: dae true][ae d enotintrue][ae d rue][ae :d true][ae d enot-je][e  du zrue][ae :d tre][a d  ue][ae :d jn][ae d  ue][ae :d true][ae d enot-joizrurue][ae :d trutzrue][ae :d trruue][ae :D tue][ae :D ututzrue][ae :d tre])])

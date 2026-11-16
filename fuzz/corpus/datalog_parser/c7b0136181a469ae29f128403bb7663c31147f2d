@@ -1,2 +1,0 @@
-(query[:where (or(q)[x p ?B] (s)[?x:et B] (s)[?x:paret ?](ZZ)
-:e)])

@@ -1,1 +1,0 @@
-(query [:find (co ?) (o ?)(o ?) (co ?):find(co ?) ])

@@ -1,0 +1,3 @@
+(query[:where [q e q](or
+[?eu a e]) (or
+[? F e])])

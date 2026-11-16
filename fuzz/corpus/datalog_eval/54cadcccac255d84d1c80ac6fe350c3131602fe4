@@ -1,0 +1,1 @@
+(query [:fi:where  (not-join [?OO ?eOOOOOO ?OO_IIIIe] [?ue])])

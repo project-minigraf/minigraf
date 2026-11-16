@@ -1,1 +1,0 @@
-(query [ :where [?e ?nemne ?]  :where [?e ?naname ?n] [(= ?"Alice")]])

@@ -1,1 +1,0 @@
-(query [:fin:where [?e :lwoco ?c] (not[?e :ainde? ?_trumine] [?e :ejAIICn ?e])])

@@ -1,1 +1,0 @@
-(query[:where [q e q] (or(LLW:l) (r:p)(r:p)(u :w) [a :bnned true])(tot(q [])e)])
