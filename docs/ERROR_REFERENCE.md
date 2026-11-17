@@ -3151,7 +3151,7 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 
 ---
 
-### STG-046 Earlier checkpoint failed on this handle
+### STG-046 Earlier checkpoint or IndexedDB flush failed on this handle
 
 **Error text**: `an earlier checkpoint or IndexedDB flush failed on this handle and is not retried; reopen the database`
 

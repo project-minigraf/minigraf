@@ -395,6 +395,30 @@ async fn commit_checkpoint_and_smaller_import_fail_atomically() {
 }
 
 #[wasm_bindgen_test]
+async fn nonempty_smaller_import_fails_atomically() {
+    let source = BrowserDb::open_in_memory().unwrap();
+    source.execute(write(500, 502)).await.unwrap();
+    let image = source.export_graph().unwrap();
+    source.close().unwrap();
+
+    let n = name();
+    let db = BrowserDb::open(&n).await.unwrap();
+    db.execute(write(0, 400)).await.unwrap();
+    assert!(image.length() < db.export_graph().unwrap().length());
+    let before = adapter(&db).load_all_pages().await.unwrap();
+    let fault = Fault::for_db(&db, "abort");
+    code(deadline(import(&db, image)).await, "STG-048");
+    assert_eq!(rows(&db).await, vec![500, 501]);
+    refused(&db).await;
+    assert_eq!(fault.number("sent"), 1.0);
+    assert_eq!(adapter(&db).load_all_pages().await.unwrap(), before);
+    fault.no_page_errors();
+    drop(fault);
+    db.close().unwrap();
+    reopen(&n, (0..400).collect()).await;
+}
+
+#[wasm_bindgen_test]
 async fn preparation_error_keeps_code_and_fails_handle() {
     for operation in ["execute", "commit", "checkpoint"] {
         let n = name();

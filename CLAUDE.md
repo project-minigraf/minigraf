@@ -250,7 +250,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2172 tests** (2149 active, 23 ignored; unit + integration + doc). Browser-only inventory is separate: #894 adds 13 wasm tests (94 main-thread / 127 dedicated-worker tests in total); see `docs/testing/894-idb-flush-recovery.md` for execution results. Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2172 tests** (2149 active, 23 ignored; unit + integration + doc). Browser-only inventory is separate: #894 adds 14 wasm tests (95 main-thread / 128 dedicated-worker tests in total); see `docs/testing/894-idb-flush-recovery.md` for execution results. Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.

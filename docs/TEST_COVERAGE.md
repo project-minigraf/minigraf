@@ -2,6 +2,13 @@
 
 ## Coverage Summary
 
+**#894 evaluator follow-up**: the nonempty smaller-import abort regression raises
+the flush suite to 14 browser-only tests (95 main-thread / 128 dedicated-worker
+tests in the inventory). Native counts are unchanged. The test checks failed-handle
+refusal, the unchanged durable page map, and the 400-row reopen integrity oracle.
+Firefox main-thread verification passes all 95 tests; the worker count is inventory
+only for this follow-up (the earlier worker run is recorded below).
+
 **#894 verification (2026-11-17)**: native default tests pass (2,149 active,
 23 ignored); strict native all-target and browser-target Clippy, build and
 formatting pass. Firefox passes **94 main-thread** and **127 dedicated-worker**
