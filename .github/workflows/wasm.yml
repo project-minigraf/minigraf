@@ -84,9 +84,21 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      - name: Enable safaridriver
-        run: sudo safaridriver --enable
+      # The test runner's own safaridriver launch times out on hosted runners
+      # ("driver failed to bind port"), so start it here and point the runner
+      # at it with SAFARIDRIVER_REMOTE.
+      - name: Start safaridriver
+        run: |
+          sudo safaridriver --enable
+          safaridriver -p 4444 &
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:4444/status >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::safaridriver did not start"; exit 1
       - name: wasm-bindgen tests in Safari
+        env:
+          SAFARIDRIVER_REMOTE: http://127.0.0.1:4444
         run: wasm-pack test --headless --safari --features browser ${{ matrix.args }}
 
   wasi:
