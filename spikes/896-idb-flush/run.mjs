@@ -57,11 +57,44 @@ async function session(build) {
   return { ctx, page, errors, pkg, load, mg, traces: [] }
 }
 
+// Names a session's writes acknowledged, from the traces: every `transact`
+// on the persisted handle 'a' whose promise resolved. A resolved import makes
+// the set unknown (null). Handles 'r'/'r2' (reopen checks) and 'src' (an
+// in-memory import source) do not count.
+function acknowledged(traces) {
+  const args = {}
+  const out = new Set()
+  for (const ev of traces.flat()) {
+    if (ev.ev === 'start' && ev.h === 'a') args[ev.id] = ev
+    if (ev.ev === 'settle' && ev.state === 'resolved' && args[ev.id]) {
+      const st = args[ev.id]
+      if (st.op === 'import') return null
+      if (st.op === 'execute' && st.arg?.startsWith('(transact')) for (const m of st.arg.matchAll(/"([^"]+)"/g)) out.add(m[1])
+    }
+  }
+  return out
+}
+
+// Which injected fault the traces show actually happened.
+function faultsSeen(traces) {
+  const seen = new Set()
+  for (const ev of traces.flat()) {
+    if (ev.ev === 'inject-abort') seen.add(ev.pending > 0 ? 'request-abort' : 'abort-only')
+    if (ev.ev === 'inject-sync-throw') seen.add('sync-throw')
+    if (ev.ev === 'tx-abort' && ev.error === 'QuotaExceededError') seen.add('quota')
+  }
+  return [...seen]
+}
+
 // Reopen in a fresh page load and compare with what was acknowledged.
-async function reopen(s, db, acked) {
+// `expected` is the case's intended acknowledged set; the verdict uses the set
+// derived from actual settlements, and the two are reported separately.
+async function reopen(s, db, expected) {
   const before = await s.mg(([h]) => window.mg.exportHashes(h), 'a').catch(() => null)
   const memNames = await s.mg(() => window.mg.names('a')).catch(() => null)
   s.traces.push(await s.page.evaluate(() => window.mg.trace))
+  const ackSet = acknowledged(s.traces)
+  const acked = ackSet ? [...ackSet] : expected
   await s.load()
   const raw = await s.mg(([n]) => window.mg.inspect(n), db)
   const open = await s.mg(([n]) => window.mg.open('r', n), db)
@@ -70,9 +103,13 @@ async function reopen(s, db, acked) {
   const got = names?.ok ? names.names : null
   const lost = got ? want.filter((n) => !got.includes(n)) : want
   const unacked = got ? got.filter((n) => !want.includes(n)) : []
+  // Page-set and content comparison; an export failure is a failure, not a match.
   const differs = before
-    ? Object.keys(raw.hashes).filter((k) => before[k] !== undefined && before[k] !== raw.hashes[k]).map(Number)
-    : []
+    ? [...new Set([...Object.keys(before), ...Object.keys(raw.hashes)])]
+        .filter((k) => before[k] !== raw.hashes[k])
+        .map(Number)
+        .sort((x, y) => x - y)
+    : null
   // Then a write on top of the reopened database, reopened again, read through
   // the full scan and the AVET / EAVT index paths.
   let after = null
@@ -94,21 +131,33 @@ async function reopen(s, db, acked) {
       by_value: open2.ok ? Object.fromEntries(await Promise.all(['A', 'F', 'C', 'D'].map(async (n) => [n, await q(`(query [:find ?e :where [?e :item/name "${n}"]])`)]))) : null,
       by_entity: open2.ok ? Object.fromEntries(await Promise.all(['A', 'F', 'C', 'D'].map(async (n) => [n, await q(`(query [:find ?v :where [:${n} :item/name ?v]])`)]))) : null,
     }
-    after.ok = open2.ok && after.names2?.ok && Object.values(after.by_value).every((r) => r.ok) && Object.values(after.by_entity).every((r) => r.ok)
+    // Expected after the second reopen: what the first reopen read, plus D.
+    const want2 = [...new Set([...(got ?? []), ...(d.state === 'resolved' ? ['D'] : [])])].sort()
+    const names2 = after.names2?.ok ? after.names2.names : null
+    const rowsOk = (n) => {
+      const present = names2?.includes(n)
+      const v = after.by_value[n], e = after.by_entity[n]
+      return v.ok && e.ok && v.rows.length === (present ? 1 : 0) && JSON.stringify(e.rows) === (present ? JSON.stringify([[n]]) : '[]')
+    }
+    after.ok = !!(open2.ok && d.state === 'resolved' && cp.state === 'resolved' && names2 &&
+      JSON.stringify(names2) === JSON.stringify(want2) && ['A', 'F', 'C', 'D'].every(rowsOk))
   }
-  const differsOk = differs.length === 0
+  const differsOk = differs !== null && differs.length === 0
   return {
     in_memory_before_reopen: memNames,
     open,
     names,
     acked: want,
+    acked_from_settlements: ackSet !== null,
+    acked_matches_case_expectation: JSON.stringify(want) === JSON.stringify([...expected].sort()),
+    faults_seen: faultsSeen(s.traces),
     lost,
     unacked_visible: unacked,
     raw: { header: raw.header, ids: raw.ids, missing: raw.missing, extra: raw.extra },
     pages_differing_from_last_in_memory_view: differs,
     after_reopen: after,
     stored_equals_in_memory: differsOk,
-    consistent: !!(open.ok && names?.ok && lost.length === 0 && raw.missing.length === 0 && differsOk && after?.ok),
+    consistent: !!(open.ok && names?.ok && lost.length === 0 && unacked.length === 0 && raw.missing.length === 0 && differsOk && after?.ok),
   }
 }
 
@@ -349,6 +398,8 @@ for (const build of builds) {
     s.traces.push(await s.page.evaluate(() => window.mg.trace).catch(() => []))
     out.traces = s.traces
     out.page_errors = s.errors
+    out.fnonce_errors = s.errors.filter((e) => e.includes('FnOnce called more than once')).length
+    out.other_page_errors = s.errors.filter((e) => !e.includes('FnOnce called more than once'))
     results.builds[build][name] = out
     await s.ctx.close()
     const r = out.reopen
@@ -357,7 +408,8 @@ for (const build of builds) {
         (out.harness_error
           ? `HARNESS ERROR ${out.harness_error.split('\n')[0]}`
           : `${(out.steps ?? []).map(([, v]) => v?.state ?? '-').join(',').padEnd(40)} reopen=${r.open.ok ? 'ok' : 'FAIL'} ` +
-            `lost=${r.lost.length} unacked=${r.unacked_visible.length} missing=${r.raw.missing.length} stale=[${r.pages_differing_from_last_in_memory_view}] after=${r.after_reopen?.ok ? 'ok' : 'FAIL'} ` +
+            `lost=${r.lost.length} unacked=${r.unacked_visible.length} missing=${r.raw.missing.length} stale=[${r.pages_differing_from_last_in_memory_view ?? 'export failed'}] after=${r.after_reopen?.ok ? 'ok' : 'FAIL'} ` +
+            `fault=[${r.faults_seen}] ack=${r.acked_from_settlements ? 'settled' : 'ASSUMED'}${r.acked_matches_case_expectation ? '' : '!=expected'} fnonce=${out.fnonce_errors} other_errors=${out.other_page_errors.length} ` +
             `${r.consistent ? 'CONSISTENT' : 'INCONSISTENT'}${r.open.ok ? '' : ' (' + r.open.reason + ')'}`),
     )
   }

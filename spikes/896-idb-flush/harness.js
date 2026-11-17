@@ -90,7 +90,7 @@ IDBObjectStore.prototype.put = function (value, key) {
 }
 
 // Settles a promise or reports it still pending after `ms`.
-async function settle(p, ms = 3000) {
+async function settle(p, ms = 3000, id = null) {
   let timer
   const timeout = new Promise((r) => (timer = setTimeout(() => r({ state: 'pending' }), ms)))
   const out = await Promise.race([
@@ -101,7 +101,7 @@ async function settle(p, ms = 3000) {
     timeout,
   ])
   clearTimeout(timer)
-  log('settle', { state: out.state })
+  log('settle', { id, state: out.state })
   return out
 }
 
@@ -191,21 +191,26 @@ window.mg = {
   // Starts an operation without awaiting it; `await mg.wait(id)` later.
   pending: {},
   start(id, h, op, arg) {
-    log('start', { id, op, arg: typeof arg === 'string' ? arg : undefined })
+    log('start', { id, h, op, arg: typeof arg === 'string' ? arg : undefined })
     const db = handles[h]
     let p
     if (op === 'execute') p = db.execute(arg)
     else if (op === 'checkpoint') p = db.checkpoint()
     else if (op === 'import') p = db.importGraph(new Uint8Array(arg))
     else throw new Error(`unknown op ${op}`)
+    // A handler now, so a rejection before wait() is not reported as an
+    // unhandled-rejection page error (a harness artifact, not BrowserDb's).
+    p.catch(() => {})
     this.pending[id] = p
   },
   wait(id, ms) {
-    return settle(this.pending[id], ms)
+    return settle(this.pending[id], ms, id)
   },
+  runs: 0,
   async run(h, op, arg, ms) {
-    this.start('_run', h, op, arg)
-    return this.wait('_run', ms)
+    const id = `_run${++this.runs}`
+    this.start(id, h, op, arg)
+    return this.wait(id, ms)
   },
   async names(h) {
     try {
