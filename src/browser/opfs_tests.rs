@@ -427,7 +427,9 @@ mod worker {
         let (a, b) = (unique("lock-a"), unique("lock-b"));
         let db = open(&a).await;
         let err = rejection(BrowserDb::open_opfs(a.clone()).await);
-        assert_eq!(code_of(&err), "STG-026");
+        // The message names the browser's exception when it is not the lock.
+        let message = err.as_string().unwrap_or_default();
+        assert_eq!(code_of(&err), "STG-026", "{message}");
         let other = open(&b).await;
         put(&other, 0..1).await;
         // Dependents still referenced do not hold the lock after close().

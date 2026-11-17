@@ -8,7 +8,8 @@
 //! cache holds pages in memory. Commits are the storage layer's copy-on-write
 //! protocol on the file itself; there is no WAL. The handle is exclusive: while
 //! one is open on a file, acquiring another, from any worker or tab, fails with
-//! `NoModificationAllowedError`, which is the database lock (STG-026).
+//! `NoModificationAllowedError` (WebKit: `InvalidStateError`), which is the
+//! database lock (STG-026).
 //!
 //! The database `name` is the file `<name>.graph` in the origin's root
 //! directory. An import into OPFS mode stages the new database in
@@ -404,10 +405,19 @@ pub(crate) async fn open_file(
             }
             Ok(Some(Arc::new(file)))
         }
-        Err(e) if exception_name(&e) == "NoModificationAllowedError" => bail_coded!(
-            ErrorCode::Stg026,
-            format!("OPFS file {entry} is open in another worker or tab")
-        ),
+        // The spec names NoModificationAllowedError for a held lock; WebKit
+        // (Safari) throws InvalidStateError ("access handle is active").
+        Err(e)
+            if matches!(
+                exception_name(&e).as_str(),
+                "NoModificationAllowedError" | "InvalidStateError"
+            ) =>
+        {
+            bail_coded!(
+                ErrorCode::Stg026,
+                format!("OPFS file {entry} is open in another worker or tab")
+            )
+        }
         Err(e) => Err(js_failure(format!("acquire a handle on {entry}"), &e)),
     }
 }
