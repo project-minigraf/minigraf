@@ -1,0 +1,1 @@
+(query [:w :where [?g ?am0 ?jyn]  :where [?e ?name ?n] [(!= ?n "A|ce$u?")]])

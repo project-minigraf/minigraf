@@ -1,0 +1,2 @@
+(query[:9e :where [?, ?doLor ??c] (or(q:whuey=r )
+ )])

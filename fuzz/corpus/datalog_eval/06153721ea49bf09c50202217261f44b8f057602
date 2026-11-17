@@ -1,1 +1,0 @@
-(query [:fi:w :where[ne :?ame n] [Vn=(ss"ic?")]])

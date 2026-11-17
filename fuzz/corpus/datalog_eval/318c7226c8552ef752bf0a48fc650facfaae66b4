@@ -1,0 +1,2 @@
+(query [: :where [?e ?FFFFFFF ?c] (not-join [?e ?_ct?5EEEEEEqfn]  [?E ?lynnufn ?c]  [?e ?l395579415211FEEEEEeEEEEEqfn ?nnnnnnnnnnnnnnnnnnnnnnnc]  [?_?e ?lEEneFFFunzqnjFqfn ?c] (query [:fin?2e :where [?nt-Zoo_e ?_?Tfe ?_]where [?e ?name ?Iind] [(= ?n "Alice")]])
+  [?e ?lynnueFF-nnyneFFFnnyneFFFfqfn ?ke])])

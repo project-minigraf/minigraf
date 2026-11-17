@@ -1,0 +1,1 @@
+(query [:f:where [?e :cr ?] (not[?e :d ?e] [?e :aind mine])])

@@ -1,0 +1,1 @@
+(query [:where(or(rE==ur) [ae b e])])

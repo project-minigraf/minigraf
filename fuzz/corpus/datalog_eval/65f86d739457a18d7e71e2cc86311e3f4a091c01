@@ -1,0 +1,1 @@
+(query [::where [?e :coor ?c] (nIf ?e{OOII=III ?eO}ojto-CIII)])

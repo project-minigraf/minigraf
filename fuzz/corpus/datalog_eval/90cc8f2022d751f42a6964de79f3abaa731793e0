@@ -1,0 +1,1 @@
+(query [ :where [?e ?nameEEne ?n] [ (=?n "Alice") ?n]  :where [?e ?name ?n] [(> ?n "Alice")]])

@@ -1,0 +1,1 @@
+(query [:fndsumm :where [?e l omc] (not-join [?] (not朼-[?njoi e] [?e :e]) re [?e l otr])])

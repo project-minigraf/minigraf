@@ -1,0 +1,3 @@
+(query [:where [?e :2me ?n] (not
+[?e wname ?n] (-=) (uuy) (p= ==) (uuy) (pare) (uy) (u *y:not-joinry 
+[: [?c anre5]])[ae :bane vreu])])

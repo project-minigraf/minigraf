@@ -1,1 +1,0 @@
-(query [:find :where [e hepeCr ?c] (not-join [?e=-] [? e])])

@@ -1,0 +1,1 @@
+(query [::where [?o lor ?s] (no4?r[]e e  ?q?[])])

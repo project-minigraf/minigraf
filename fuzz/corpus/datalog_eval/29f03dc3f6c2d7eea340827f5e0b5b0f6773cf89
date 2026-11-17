@@ -1,0 +1,1 @@
+(query [:ith:find ?e :where [?e :col ?c] (n?? ?"""""""""""""""""""" [c :ue]=)])

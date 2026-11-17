@@ -1,1 +1,0 @@
-(query[:find ?e :where [?e :colov ?c] (not-join [?ppppppe] [?nd une ?true])])

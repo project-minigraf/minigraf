@@ -1,0 +1,1 @@
+(query [:f:w :where [?g ?nam ,?jeryn]  :where [?e ?naEEneFFFueVFn6qf ?n] [(<= ?n "A|c]$")]])

@@ -1,2 +1,0 @@
-(query [:where [?e e ?] (not [?e d e])(e:e:y)(a:[z])
-])

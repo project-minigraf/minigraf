@@ -1,0 +1,1 @@
+(query [:f:where[? me ?n] (not(q)[e :db/tx-id()])])

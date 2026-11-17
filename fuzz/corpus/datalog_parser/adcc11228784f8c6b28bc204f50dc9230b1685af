@@ -1,0 +1,6 @@
+(query [:find ?e :where [?e  :db/valid-to ?n] (suery
+[])
+[?e :db/valid-to ?n] (ery
+[: [? ?]])
+[?e :db/valid-to ?n] (noe[ [?e an0:na]])
+[?e :db/valid-to ?n] (nose[?e :wher])])

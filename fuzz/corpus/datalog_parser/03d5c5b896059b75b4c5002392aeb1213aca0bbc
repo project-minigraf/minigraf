@@ -1,0 +1,1 @@
+(query  [:where (or( fn ?eehh ?e ji ) (h ? ?eehh ?e [L]))])

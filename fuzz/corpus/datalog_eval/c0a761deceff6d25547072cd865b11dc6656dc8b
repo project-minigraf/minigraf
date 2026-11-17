@@ -1,0 +1,2 @@
+(query [:find :where [?e l c] (not(ue[_]:n:0z)
+)])

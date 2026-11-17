@@ -1,0 +1,1 @@
+(query [:n:where [:(r=8.n "c")e]])

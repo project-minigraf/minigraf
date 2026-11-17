@@ -1,2 +1,0 @@
-(rule [(av s?s)
-(not-join[?e] (r)) (d::)])

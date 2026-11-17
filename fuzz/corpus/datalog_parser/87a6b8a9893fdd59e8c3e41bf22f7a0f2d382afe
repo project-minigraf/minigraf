@@ -1,2 +1,0 @@
-(query [:f:find ? ? ?d ? ?:where[e n qn](*?
-)])

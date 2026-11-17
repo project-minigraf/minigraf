@@ -1,0 +1,2 @@
+(query[:?e :where [?, ?doLor ?c] [?l ?doLor ?c] (or(q:wheu:?=fr [in7a?w])
+ )])

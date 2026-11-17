@@ -1,0 +1,3 @@
+(query [:where (n ?)(noe ?)(o ?
+6)(o ?
+4)])

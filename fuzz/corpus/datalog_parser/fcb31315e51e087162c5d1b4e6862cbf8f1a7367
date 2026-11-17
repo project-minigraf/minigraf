@@ -1,0 +1,2 @@
+(query[:where[q e ?n] (or(qs$sss?ssss+?)
+[?a n e])])

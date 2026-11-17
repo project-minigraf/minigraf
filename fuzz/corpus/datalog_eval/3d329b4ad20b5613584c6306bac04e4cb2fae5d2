@@ -1,0 +1,1 @@
+(query [:fnfniinn :w :whe :ere :where [?e ?nam ?n]  :where [?e ?name ?n] [(< ?n "A?ice") ?n]  :where [?e vhe ?n] [(< ?n "Al_ce")]])

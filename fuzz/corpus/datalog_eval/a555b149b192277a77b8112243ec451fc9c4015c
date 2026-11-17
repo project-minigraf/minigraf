@@ -1,0 +1,1 @@
+(query [:d?n :where [?e :n(=n "ie")]])

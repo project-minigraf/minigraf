@@ -1,1 +1,0 @@
-(query [:co:where [:asof?e -???e ?n][:a?e :name ?n] [(= ?n"")]])

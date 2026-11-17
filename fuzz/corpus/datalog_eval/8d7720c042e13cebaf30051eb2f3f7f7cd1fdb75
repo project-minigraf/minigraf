@@ -1,0 +1,1 @@
+(query [ :where   :mre :where [?e ?nameGGGGGGGGGGGGGG ?n]   [?_ ?name ?n] [ (+?n "Alice") ?n]  :where [?e ?name  ?n] [ (+?n "|ice")] :where [?e ?nameGGGGGGGGGGGGGG ?n]   [?_ ?name ?n] [ (+?n "Alice") ?n]  :where [?e ?name  ?n] [ (+?n "|ice")]])

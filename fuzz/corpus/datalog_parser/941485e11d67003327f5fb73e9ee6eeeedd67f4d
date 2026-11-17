@@ -1,0 +1,1 @@
+(query[:where(not [a :bndd ru])[?e:a en] (not [ae :b:]) (not [ae ::])])

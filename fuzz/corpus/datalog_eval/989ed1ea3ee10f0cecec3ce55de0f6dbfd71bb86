@@ -1,1 +1,0 @@
-(query [:fnn::where [?e e ,6]])

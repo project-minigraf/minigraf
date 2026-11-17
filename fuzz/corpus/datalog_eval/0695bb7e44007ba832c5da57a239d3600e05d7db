@@ -1,0 +1,1 @@
+(query [:fw :where [?e ?am0Eqfn ?nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn?znnc]  [?_?e ?lEEneFFFuqfn ?c]  [?e ??lynEEEEEEE415211FEEqfn ?nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnc]  [?_?e ?lEEneFFFuqfn ?c]  [?e ??lynEEEEEEEfn ?g]  [?E ?lfalseyn ?zeryn]  :where [?z ?name ?n] [(- ?n "ce")]])

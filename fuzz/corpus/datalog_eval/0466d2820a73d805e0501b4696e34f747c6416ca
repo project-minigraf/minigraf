@@ -1,0 +1,1 @@
+(query [:findsumm :where (not-join [?e] [?e :ac7hhe tre] (not-join [?e rtee]) :w)])

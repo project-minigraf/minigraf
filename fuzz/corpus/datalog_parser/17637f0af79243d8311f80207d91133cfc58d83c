@@ -1,0 +1,1 @@
+(query  [:where (or(rh ?LL eh ?eh ?eeh ?n ?L[ ne]))])

@@ -1,0 +1,1 @@
+(query [:finnfi:where [?e  ?n-m ?]  :where [?e ? ?n] [(= ?"Alice")]])

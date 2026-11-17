@@ -1,1 +1,0 @@
-(query[:find ?mihilnn :where [?e :name ?whn]])

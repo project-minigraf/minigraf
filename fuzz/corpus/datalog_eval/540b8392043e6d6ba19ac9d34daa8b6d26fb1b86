@@ -1,2 +1,0 @@
-(query[:?e :where [?l ?doLoear ?_?c] (or(q:wheq:y=r ?[:finkw])
- )])

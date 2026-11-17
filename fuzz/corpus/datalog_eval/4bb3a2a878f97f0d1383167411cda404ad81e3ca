@@ -1,1 +1,0 @@
-(query [:f:where [?e ?name ?n]  :where [?c?e ?namj ?n?eOIIIIIIIIIIIIIIIIIind] [(= ?n "Alice")]])

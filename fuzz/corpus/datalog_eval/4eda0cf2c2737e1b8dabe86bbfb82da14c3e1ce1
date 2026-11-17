@@ -1,0 +1,1 @@
+(query [:fumm :where [?enot-join l omaaasuc] (not-[?e ctiv tree]) :where [?e l omaaa?rsuc] (t-joi [?e] [?e :e tree])])

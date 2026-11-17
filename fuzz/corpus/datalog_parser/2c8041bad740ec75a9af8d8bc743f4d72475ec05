@@ -1,0 +1,4 @@
+(query [:fi:where  (not(q[])[
+?e falsewname ?](n)
+[?e w?ycc--e ?n]
+[?e w?yccmedt er])])

@@ -1,0 +1,1 @@
+(query [:finfnin :w :where [?e ?name ?p]  :ere :where [?e ?ame ?n] [(< ?n "Alic $)")]])

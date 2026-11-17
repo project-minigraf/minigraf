@@ -1,3 +1,0 @@
-(query[:where[A e e] (not-join[] (q)
-[?:db/valid-to ?n] (n[:])
-[?e e :wh])])

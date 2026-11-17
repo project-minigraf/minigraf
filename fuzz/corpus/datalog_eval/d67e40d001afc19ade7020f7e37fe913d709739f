@@ -1,1 +1,0 @@
-(query [:fin:o:where [:asof?e :na(= ?n "")]])

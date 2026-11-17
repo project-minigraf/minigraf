@@ -1,1 +1,0 @@
-(query [:fo:where [?e:name ?n] [(!= ?n "Aclie")]])

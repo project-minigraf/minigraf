@@ -1,0 +1,1 @@
+(query [:fzin:co:where [:as,f?me ?n][:Fd? m :a?n][:a?e :me ?][(< ?n "")]])

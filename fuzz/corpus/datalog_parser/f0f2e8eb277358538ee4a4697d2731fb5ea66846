@@ -1,4 +1,0 @@
-(rule [(av sss)
-(not-jss)
-(not-join[] (r))
-(not-join[] (r)) (d::)])

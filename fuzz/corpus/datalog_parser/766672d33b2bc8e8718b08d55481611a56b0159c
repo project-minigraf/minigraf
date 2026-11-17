@@ -1,0 +1,1 @@
+(query [ :where [?e ?-me ?n] (not(c)[(a :Ab)](LR-)[(a :__m_)](m)[(a :_gb)](R-)[(a:_)](L) [ae d e])])

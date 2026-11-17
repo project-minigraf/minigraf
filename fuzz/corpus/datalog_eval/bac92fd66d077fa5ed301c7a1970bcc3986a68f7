@@ -1,0 +1,1 @@
+(query [:m :where [<= l omaara?suc] (nI= ?eO ?e?__[?e] a ?:e[ctive]) :where [?m l oma?rsureec] (not-join [?e] [?e :active uree])])

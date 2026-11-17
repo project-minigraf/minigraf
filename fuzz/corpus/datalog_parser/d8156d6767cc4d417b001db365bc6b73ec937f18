@@ -1,0 +1,1 @@
+(query[:where (or-join[? ][fuf:n1 ?n][fua:m2 ?n][fuf0A:n ?n][f0efgf:nae ?n][fuf:nae0 ?n][ffa:m ?n][a:e0]e)])

@@ -1,0 +1,5 @@
+(query [ :where [?e :n?-e ?n] (not(s[ [?e :ma?]])
+[?_ wname ?] (rpa)
+[?x we n?]
+[?_ wne n?] (n)
+[?_ :ed vrum])])

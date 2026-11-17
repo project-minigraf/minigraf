@@ -1,0 +1,1 @@
+(query [:??0:where(=?y) (u ?x)[?x :ent BBnee] (s:)[(+:t ?x)] (orssc:)[(+:th ?y)?en] (lr:)[(+:h ?y)] ])

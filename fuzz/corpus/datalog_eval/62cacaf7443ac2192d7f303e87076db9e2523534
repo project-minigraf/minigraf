@@ -1,1 +1,0 @@
-(query [:find ?end ? :find ?e :where [?e :colr c] (nojto-in [])])
