@@ -3153,7 +3153,7 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 
 ### STG-046 Earlier checkpoint failed on this handle
 
-**Error text**: `an earlier checkpoint failed on this handle and is not retried; reopen the database`
+**Error text**: `an earlier checkpoint or IndexedDB flush failed on this handle and is not retried; reopen the database`
 
 **Cause**: A checkpoint (automatic, `checkpoint()`, `rebuild_indexes()`, or the one on close) failed with an I/O error after it may have written pages: a failed write, a full disk, or a failed `fsync`. After a failed `fsync` the operating system may have dropped the written pages while marking them clean, so a second `fsync` can report success for data that never reached the disk (the PostgreSQL "fsyncgate" problem). The checkpoint's meta page may also have reached the disk although the call failed; a retry would then overwrite pages that page references. So the handle never retries: every later write, checkpoint and index rebuild through it fails with STG-046.
 
@@ -3164,6 +3164,19 @@ rule: later writes/checkpoints fail with STG-046 while reads and `close()` keep
 working. There is no WAL. Close and reopen to select the complete previous or
 new generation; the rejected transaction may be wholly present. Closing does
 not retry the failed commit.
+
+In IndexedDB mode, a failed flush rejects with STG-048 (naming the IndexedDB
+write and DOM exception); failure to prepare its pages keeps its engine code.
+The handle then refuses newly admitted transact/retract, commit (even empty),
+checkpoint and import with STG-046, changing nothing. Reads, cursors, prepared
+queries, rules, transaction staging, `exportGraph()` and `close()` still work.
+Memory includes the failed operation and overlapping work applied before the
+failure became known. Export reflects that memory, not an acknowledgement of
+durability. Later flushes wait for earlier ones and send nothing if an earlier
+flush failed. Close and reopen recovers the state before the failed flush;
+a rejected IndexedDB write is never stored. A failed import stays visible in
+memory but its puts and deletes leave IndexedDB unchanged. Closing does not
+retry anything.
 
 **Resolution**:
 - Fix the cause (free disk space, check the device and the kernel log), then drop every clone of the handle and open the database again. Opening picks the newest complete checkpoint and replays the WAL.
@@ -3191,12 +3204,13 @@ not retry the failed commit.
 
 **Error text**: `browser storage operation failed: {} ({})`
 
-**Cause**: An OPFS operation failed: opening an entry, acquiring its sync access handle, reading, writing, flushing, checking size, truncating, or staging an import. The message names the operation and the browser exception (for example `QuotaExceededError`), or a short read/write. Short transfers are never accepted as complete pages. Lock contention uses STG-026; an unavailable OPFS context uses API-026.
+**Cause**: An IndexedDB write (transaction creation, request queueing, error or abort), or an OPFS operation failed: opening an entry, acquiring its sync access handle, reading, writing, flushing, checking size, truncating, or staging an import. The message names the operation and the browser exception (for example `QuotaExceededError`), or a short read/write. Short transfers are never accepted as complete pages. Lock contention uses STG-026; an unavailable OPFS context uses API-026.
 
 **Resolution**:
 - Check the operation and exception name, available origin quota and browser permissions.
-- After a commit may have written, later writes fail with STG-046. Call `close()` and reopen. Reads may still include the unconfirmed transaction; a rejected commit does not prove it is absent on disk.
-- An import failure at publication closes the database; reopen to recover the complete old or new image.
+- In OPFS mode, after a commit may have written, later writes fail with STG-046. Call `close()` and reopen. Reads may still include the unconfirmed transaction; a rejected commit does not prove it is absent on disk.
+- An OPFS import failure at publication closes the database; reopen to recover the complete old or new image.
+- After an IndexedDB flush fails, later durable operations fail with STG-046. Close and reopen to recover the successful prefix before the failed flush. The rejected write, including all its page deletes, is absent from IndexedDB.
 
 **Scenario**: Origin quota is exhausted while a worker writes a data page; `execute()` rejects with STG-048 naming the write and `QuotaExceededError`.
 

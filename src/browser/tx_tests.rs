@@ -271,8 +271,8 @@ async fn rollback_and_drop_discard_and_survive_reopen() {
     assert_eq!(names(&db).await.len(), 3, "neither after reopening");
 }
 
-/// A failed IndexedDB flush rejects the commit's promise and leaves what a
-/// failed flush of `execute` leaves: the facts in memory, not in the store.
+/// The first failed flush leaves its facts in memory, not in IndexedDB.
+/// A commit admitted afterwards is refused before applying its staged facts.
 #[wasm_bindgen_test]
 async fn failed_flush_rejects_like_execute() {
     let name = "minigraf-test-tx-flush";
@@ -283,12 +283,12 @@ async fn failed_flush_rejects_like_execute() {
     let failed_execute = db
         .execute(r#"(transact [[:dave :person/name "Dave"]])"#.to_string())
         .await;
-    assert!(failed_execute.is_err(), "execute's flush fails");
+    assert_eq!(code_of(&failed_execute.unwrap_err()), "STG-048");
     let mut tx = db.begin_write().expect("begin");
     tx.execute(r#"(transact [[:erin :person/name "Erin"]])"#)
         .unwrap();
-    assert!(commit(&mut tx).await.is_err(), "the commit's flush fails");
-    assert_eq!(names(&db).await.len(), 5, "both in memory, as before");
+    assert_eq!(code_of(&commit(&mut tx).await.unwrap_err()), "STG-046");
+    assert_eq!(names(&db).await.len(), 4, "Erin was never applied");
     assert!(
         tx.execute(NAMES).is_err(),
         "the transaction is finished after a failed flush"

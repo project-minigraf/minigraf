@@ -540,7 +540,7 @@ fn crash_kill_child_entrypoint() {
     let mut sync_rng = Rng::new(seed.rotate_left(29));
     let per_tx = matches!(variant, Variant::PerTxSync);
     let mut live = BTreeSet::new();
-    for k in 1.. {
+    for k in 1..=u64::MAX {
         let (stmt, next) = next_tx(&mut rng, &live);
         if per_tx {
             let opts = TxOptions::new().synchronous(tx_sync_mode(&mut sync_rng, k));
