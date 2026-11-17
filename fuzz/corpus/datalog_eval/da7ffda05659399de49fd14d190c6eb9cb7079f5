@@ -1,0 +1,1 @@
+(query[ :where [?t il ?c] (jo i ?[41.])])

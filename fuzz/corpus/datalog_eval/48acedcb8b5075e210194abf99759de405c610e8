@@ -1,0 +1,1 @@
+(query [:any-valid-time:find ?n :where [?e ?nmjfqnEEEGdEEqfn ?g]  [?e?d ?lynnfn ?g]  [?e:db/tx-id ?rrrrrrc]  [?e ?lynnueFFnnyneFFynEEEEEe ?n] [(>=?n "e")]])

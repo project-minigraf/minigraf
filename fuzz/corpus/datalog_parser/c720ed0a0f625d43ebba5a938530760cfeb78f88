@@ -1,2 +1,0 @@
-(query [:with ?e:where [?/ :Name ?n](nst[][?i(que[mrue])])
-:find (count ?e) :where [?e:nae ?n]])

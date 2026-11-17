@@ -1,0 +1,1 @@
+(query [:where[Ie :Nae n] (or-join [?ejd ?A][?jjjj e :n])])

@@ -1,0 +1,1 @@
+(query [:where [ph:name ?] (or(T)[(AfAAACdx ?y)  ?n] (d t)[(fAAAACdx ?y)  ?n] (nd )[(fAAAACdx ?y) ? n] (nd Ty) ) [2xy]])

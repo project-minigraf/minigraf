@@ -1,2 +1,0 @@
-(query [ :where [?/ :Name ?n](not-join[][?n?])
-[?nae ?n]])

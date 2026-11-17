@@ -1,1 +1,0 @@
-(query [:find ?x ?y :where (reach ?x ?y) :max-iterations $n])

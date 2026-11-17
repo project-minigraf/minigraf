@@ -1,0 +1,2 @@
+(query [:where [?or /C]:where [?or /C] (not(Cmqil)) (not(uer)) (not(q<<mquer)) (not(qre))]
+)

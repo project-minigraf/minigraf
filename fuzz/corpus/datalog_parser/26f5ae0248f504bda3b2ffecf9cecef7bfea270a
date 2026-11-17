@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e 5e??n ] (ne ?y:T) (nd t:T)[(in?fxx ?y)?n] (nd tAA)[(d ?n  )?y] (nd X)[(dx ?n  )?y] (nd e)])

@@ -1,2 +1,0 @@
-(query [:where [? :seaoe ?n] (or(eno,?y ?n) )(or(eA?yo,q) )])
-;

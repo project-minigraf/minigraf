@@ -1,0 +1,1 @@
+(query [:where[?:ne =,]:where [?:d ?] (not [? b ?_?])])

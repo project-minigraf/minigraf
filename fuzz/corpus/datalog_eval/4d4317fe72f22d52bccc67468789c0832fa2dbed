@@ -1,2 +1,0 @@
-(query [:where(not-join [?e] [?:aq truo](quey)
-d)])

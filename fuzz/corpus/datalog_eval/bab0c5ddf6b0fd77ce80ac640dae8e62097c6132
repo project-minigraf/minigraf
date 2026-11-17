@@ -1,0 +1,1 @@
+(query [:with ?e ?e ?c:where [?e :co:ci-](l)])

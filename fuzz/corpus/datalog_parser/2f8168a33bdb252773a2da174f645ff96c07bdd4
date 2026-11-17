@@ -1,0 +1,1 @@
+(query [:where(p:f#{7"""e]"true"1"})])

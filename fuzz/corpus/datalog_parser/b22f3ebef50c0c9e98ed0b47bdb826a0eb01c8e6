@@ -1,0 +1,5 @@
+(query [:with ?e  ?e ?:where [?	?iName ?n](transact[][?b])
+:find (count ?e) ;)
+:find (count ?e) ;
+:find (count ?e)
+:find (count ?) :where [?e:nAq ?n]])

@@ -1,0 +1,1 @@
+(query [:find ?e:where [?e :Nae ?n] (not [?e :nne:5][n_?e aaa ?_][e ?_a ?_][?e a:u?_][?e -N-- a_][?e at e])])

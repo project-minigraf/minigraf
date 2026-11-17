@@ -1,1 +1,0 @@
-(query [:find ?x :where (ch>o012?) :max-iterations 1n])

@@ -1,1 +1,0 @@
-(query [:where (qury[:as-f"7"])[?e ?l w?C] (not-join [?e] [?e ivr ?hc])])

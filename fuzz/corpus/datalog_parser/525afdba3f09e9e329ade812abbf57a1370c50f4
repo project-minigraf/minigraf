@@ -1,0 +1,2 @@
+(query [:with ? ?:where [?	 :Name ?n](not-join[?e/0 ?e "Afcee"]nt ?e) e [??n],,])
+,,

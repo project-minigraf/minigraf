@@ -1,0 +1,2 @@
+(query[:where [(=:ru"")?n ][( =:nu:ave)]])
+

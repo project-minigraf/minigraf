@@ -1,0 +1,2 @@
+(query [:find ?e  ?e :where [?:Name ?n](tract[?lid (qy [])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,2 @@
+(query [:where(or(ud) (and(q)(q87?)(A>6)
+) [n]A) ])

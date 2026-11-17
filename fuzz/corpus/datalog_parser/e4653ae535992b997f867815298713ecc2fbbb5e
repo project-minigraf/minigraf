@@ -1,0 +1,1 @@
+(query [:where [?:d ?z,] (not [0:b ?])(not [ ?:b ?_?])[?:n"",] (ot [b])])

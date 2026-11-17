@@ -1,0 +1,3 @@
+(query [:find  ?e :where [?e :me ?n](not [?e ?_i-naa ?_][?e aY(query [:?ee])])
+:find  ?e ?:where [?	 :Nqme ?n](not-join[][?e:db/val(query [:?rue]i[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

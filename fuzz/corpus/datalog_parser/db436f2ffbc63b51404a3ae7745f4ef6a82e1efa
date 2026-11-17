@@ -1,2 +1,0 @@
-(query [:where [?3:vAK0e ?nw] (or(enm,?q3 ?n) )[? :v ?or] (or(nO,?y ?u) (nO,?y ?u) )])
-;

@@ -1,0 +1,1 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](not-join[?_][?e:db/(query [:?rue])])  [AAAAQ?e:ne ?n]])

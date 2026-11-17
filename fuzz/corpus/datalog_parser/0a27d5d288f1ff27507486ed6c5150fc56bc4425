@@ -1,0 +1,1 @@
+ (query [:where(or(or(CD 72)(A 9)) (q[ ]))])

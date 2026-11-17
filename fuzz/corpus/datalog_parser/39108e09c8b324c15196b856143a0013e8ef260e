@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e aaaaaaaae ?_][?:alid- ?_][?e a c][?e aa ?_][?e aa ccc][?:db/tx-count c][?e :aa e_] (nlt ?m[e])])

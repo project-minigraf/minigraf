@@ -1,0 +1,2 @@
+(query [:with ?:where [? :me ?n](or-join[][?e:d ?d][?e aaa(qqe?e)])
+])

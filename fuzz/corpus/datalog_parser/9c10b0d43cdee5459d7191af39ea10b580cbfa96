@@ -1,2 +1,0 @@
-(query [:where [? :oe ?n] (or(eno,?y ?n) )(or(en636m0o,?y ?u) )])
-;

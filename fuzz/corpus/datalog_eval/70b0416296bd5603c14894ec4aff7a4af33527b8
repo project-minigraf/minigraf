@@ -1,2 +1,0 @@
-(query [ :where [m? ne ?n ][(!=?n "Al")?yufun](quer[:f])
-])

@@ -1,1 +1,0 @@
-(query [:where( OOmt:e):where(equ?y:e):where(q-O ?y:e)[(fx ?y)?n] ])
