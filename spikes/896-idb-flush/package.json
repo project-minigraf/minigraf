@@ -1,0 +1,14 @@
+{
+  "name": "spike-896-idb-flush",
+  "version": "1.0.0",
+  "description": "#896 IndexedDB flush fault-injection spike",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.65.1"
+  },
+  "private": true
+}

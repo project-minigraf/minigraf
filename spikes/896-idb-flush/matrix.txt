@@ -1,0 +1,42 @@
+main       baseline                   resolved,resolved,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+main       fail_then_checkpoint       resolved,rejected,-,resolved             reopen=ok lost=0 unacked=0 missing=0 stale=[0,2,3,4,5] after=ok INCONSISTENT
+main       fail_then_write            resolved,rejected,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+main       repeated_fail_then_write   resolved,rejected,rejected,resolved,resolved reopen=ok lost=0 unacked=0 missing=0 stale=[2,3] after=ok INCONSISTENT
+main       fail_big_then_write        resolved,rejected,resolved               reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+main       workaround_fresh_handle    resolved,rejected,-,-,resolved           reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+main       overlap                    resolved,rejected,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+main       overlap_big                resolved,rejected,resolved               reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+main       overlap_control            resolved,resolved,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+main       abort_only                 resolved,pending,resolved                reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+main       quota                      resolved,pending,resolved                reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+main       quota_workaround           resolved,pending,-,resolved              reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+main       sync_throw                 resolved,rejected,-                      reopen=ok lost=0 unacked=0 missing=0 stale=[0,2,3,4] after=ok INCONSISTENT
+main       import_fail                resolved,rejected,-,resolved,resolved    reopen=ok lost=0 unacked=0 missing=0 stale=[1] after=ok INCONSISTENT
+v2.0.11    baseline                   resolved,resolved,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+v2.0.11    fail_then_checkpoint       resolved,rejected,-,resolved             reopen=ok lost=0 unacked=0 missing=0 stale=[0,2,3,4,5] after=ok INCONSISTENT
+v2.0.11    fail_then_write            resolved,rejected,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+v2.0.11    repeated_fail_then_write   resolved,rejected,rejected,resolved,resolved reopen=ok lost=0 unacked=0 missing=0 stale=[2,3] after=ok INCONSISTENT
+v2.0.11    fail_big_then_write        resolved,rejected,resolved               reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+v2.0.11    workaround_fresh_handle    resolved,rejected,-,-,resolved           reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+v2.0.11    overlap                    resolved,rejected,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+v2.0.11    overlap_big                resolved,rejected,resolved               reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+v2.0.11    overlap_control            resolved,resolved,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+v2.0.11    abort_only                 resolved,pending,resolved                reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+v2.0.11    quota                      resolved,pending,resolved                reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+v2.0.11    quota_workaround           resolved,pending,-,resolved              reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+v2.0.11    sync_throw                 resolved,rejected,-                      reopen=ok lost=0 unacked=0 missing=0 stale=[0,2,3,4] after=ok INCONSISTENT
+v2.0.11    import_fail                resolved,rejected,-,resolved,resolved    reopen=ok lost=0 unacked=0 missing=0 stale=[1] after=ok INCONSISTENT
+published  baseline                   resolved,resolved,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+published  fail_then_checkpoint       resolved,rejected,-,resolved             reopen=ok lost=0 unacked=0 missing=0 stale=[0,2,3,4,5] after=ok INCONSISTENT
+published  fail_then_write            resolved,rejected,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+published  repeated_fail_then_write   resolved,rejected,rejected,resolved,resolved reopen=ok lost=0 unacked=0 missing=0 stale=[2,3] after=ok INCONSISTENT
+published  fail_big_then_write        resolved,rejected,resolved               reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+published  workaround_fresh_handle    resolved,rejected,-,-,resolved           reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+published  overlap                    resolved,rejected,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+published  overlap_big                resolved,rejected,resolved               reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+published  overlap_control            resolved,resolved,resolved               reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+published  abort_only                 resolved,pending,resolved                reopen=ok lost=0 unacked=0 missing=0 stale=[2] after=ok INCONSISTENT
+published  quota                      resolved,pending,resolved                reopen=FAIL lost=2 unacked=0 missing=3 stale=[2,3,4,5] after=FAIL INCONSISTENT ([INT-052] Page 6 not found)
+published  quota_workaround           resolved,pending,-,resolved              reopen=ok lost=0 unacked=0 missing=0 stale=[] after=ok CONSISTENT
+published  sync_throw                 resolved,rejected,-                      reopen=ok lost=0 unacked=0 missing=0 stale=[0,2,4,5] after=ok INCONSISTENT
+published  import_fail                resolved,rejected,-,resolved,resolved    reopen=ok lost=0 unacked=0 missing=0 stale=[1] after=ok INCONSISTENT
