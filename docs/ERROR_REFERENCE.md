@@ -2886,7 +2886,8 @@ Read-only handles (`OpenOptions::read_only`) share a file with each other, but n
 
 In browser OPFS mode, the same code means another tab or worker (or another
 handle in this worker) holds the file's exclusive sync access handle. The browser
-reports `NoModificationAllowedError`; `close()` or worker termination releases it.
+reports `NoModificationAllowedError` (Safari: `InvalidStateError`); `close()` or
+worker termination releases it.
 There is no retry on acquisition and no fallback to IndexedDB.
 
 **Resolution**:
