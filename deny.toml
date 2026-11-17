@@ -12,6 +12,13 @@ targets = [
 ]
 all-features = true
 
+[advisories]
+# chrono is unmaintained (all versions); not a vulnerability. Ignored until
+# it is replaced (#900).
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; replacement tracked in #900" },
+]
+
 [licenses]
 # Permissive licenses compatible with Minigraf's MIT OR Apache-2.0.
 allow = [
