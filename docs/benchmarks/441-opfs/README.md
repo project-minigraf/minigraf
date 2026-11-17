@@ -108,9 +108,13 @@ healthy OPFS open/read/cache paths are unchanged.
   `[API-026] OPFS mode is not available here: the browser denies access to this origin's storage (SecurityError)`.
 - WebKit private: **not tested** (see below).
 
-CI specifies Chrome/Firefox core main-thread and worker lanes and
-Chromium/Firefox/WebKit package-consumer lanes; this local record does not
-claim those remote CI jobs have run.
+CI results on the final PR revisions (core #899, minigraf-wasm #26): Chrome,
+Firefox and Safari core suites pass on the main thread (81) and in a dedicated
+worker (114); the packaged consumer test passes on Chromium, Firefox and
+macOS WebKit (54 checks each), and Linux WebKit records its missing
+`getDirectory()` as a limitation. Runs:
+[core](https://github.com/project-minigraf/minigraf/actions/runs/44093820254),
+[package](https://github.com/project-minigraf/minigraf-wasm/actions/runs/44065838738).
 
 ### WebKit coverage in CI
 
