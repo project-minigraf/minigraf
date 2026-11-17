@@ -75,16 +75,43 @@ function acknowledged(traces) {
   return out
 }
 
-// Which injected fault the traces show actually happened.
+// Faults the traces show took effect, counted per kind. An injected abort
+// counts only if that transaction then fired `abort`; quota counts each
+// transaction that aborted with QuotaExceededError; sync-throw counts each
+// throw whose transaction did not abort (the queued put commits).
 function faultsSeen(traces) {
-  const seen = new Set()
-  for (const ev of traces.flat()) {
-    if (ev.ev === 'inject-abort') seen.add(ev.pending > 0 ? 'request-abort' : 'abort-only')
-    if (ev.ev === 'inject-sync-throw') seen.add('sync-throw')
-    if (ev.ev === 'tx-abort' && ev.error === 'QuotaExceededError') seen.add('quota')
+  const counts = {}
+  const add = (k) => (counts[k] = (counts[k] ?? 0) + 1)
+  for (const t of traces) {
+    const aborted = new Map(t.filter((e) => e.ev === 'tx-abort').map((e) => [e.tx, e.error]))
+    const completed = new Set(t.filter((e) => e.ev === 'tx-complete').map((e) => e.tx))
+    for (const ev of t) {
+      if (ev.ev === 'inject-abort' && aborted.has(ev.tx)) add(ev.pending > 0 ? 'request-abort' : 'abort-only')
+      if (ev.ev === 'inject-sync-throw' && completed.has(ev.tx)) add('sync-throw')
+      if (ev.ev === 'tx-abort' && ev.error === 'QuotaExceededError') add('quota')
+    }
   }
-  return [...seen]
+  return counts
 }
+
+// The faults each case is meant to exercise, exactly.
+const EXPECTED_FAULTS = {
+  baseline: {},
+  overlap_control: {},
+  fail_then_checkpoint: { 'request-abort': 1 },
+  fail_then_write: { 'request-abort': 1 },
+  repeated_fail_then_write: { 'request-abort': 2 },
+  fail_big_then_write: { 'request-abort': 1 },
+  workaround_fresh_handle: { 'request-abort': 1 },
+  overlap: { 'request-abort': 1 },
+  overlap_big: { 'request-abort': 1 },
+  abort_only: { 'abort-only': 1 },
+  quota: { quota: 1 },
+  quota_workaround: { quota: 1 },
+  sync_throw: { 'sync-throw': 1 },
+  import_fail: { 'request-abort': 1 },
+}
+const sameCounts = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort())
 
 // Reopen in a fresh page load and compare with what was acknowledged.
 // `expected` is the case's intended acknowledged set; the verdict uses the set
@@ -128,7 +155,9 @@ async function reopen(s, db, expected) {
       checkpoint: cp,
       open2,
       names2: open2.ok ? await s.mg(() => window.mg.names('r2')) : null,
-      by_value: open2.ok ? Object.fromEntries(await Promise.all(['A', 'F', 'C', 'D'].map(async (n) => [n, await q(`(query [:find ?e :where [?e :item/name "${n}"]])`)]))) : null,
+      // AVET lookup by value, then the entity found is read back by EAVT: the
+      // row must be that entity's own name, so a wrong entity cannot pass.
+      by_value: open2.ok ? Object.fromEntries(await Promise.all(['A', 'F', 'C', 'D'].map(async (n) => [n, await q(`(query [:find ?v :where [?e :item/name "${n}"] [?e :item/name ?v]])`)]))) : null,
       by_entity: open2.ok ? Object.fromEntries(await Promise.all(['A', 'F', 'C', 'D'].map(async (n) => [n, await q(`(query [:find ?v :where [:${n} :item/name ?v]])`)]))) : null,
     }
     // Expected after the second reopen: what the first reopen read, plus D.
@@ -137,7 +166,8 @@ async function reopen(s, db, expected) {
     const rowsOk = (n) => {
       const present = names2?.includes(n)
       const v = after.by_value[n], e = after.by_entity[n]
-      return v.ok && e.ok && v.rows.length === (present ? 1 : 0) && JSON.stringify(e.rows) === (present ? JSON.stringify([[n]]) : '[]')
+      const want = present ? JSON.stringify([[n]]) : '[]'
+      return v.ok && e.ok && JSON.stringify(v.rows) === want && JSON.stringify(e.rows) === want
     }
     after.ok = !!(open2.ok && d.state === 'resolved' && cp.state === 'resolved' && names2 &&
       JSON.stringify(names2) === JSON.stringify(want2) && ['A', 'F', 'C', 'D'].every(rowsOk))
@@ -151,6 +181,8 @@ async function reopen(s, db, expected) {
     acked_from_settlements: ackSet !== null,
     acked_matches_case_expectation: JSON.stringify(want) === JSON.stringify([...expected].sort()),
     faults_seen: faultsSeen(s.traces),
+    // Set by the driver: whether faults_seen equals the case's expectation.
+    case_valid: null,
     lost,
     unacked_visible: unacked,
     raw: { header: raw.header, ids: raw.ids, missing: raw.missing, extra: raw.extra },
@@ -397,6 +429,10 @@ for (const build of builds) {
     }
     s.traces.push(await s.page.evaluate(() => window.mg.trace).catch(() => []))
     out.traces = s.traces
+    if (out.reopen) {
+      out.reopen.case_valid = sameCounts(out.reopen.faults_seen, EXPECTED_FAULTS[name])
+      if (!out.reopen.case_valid) out.reopen.consistent = false
+    }
     out.page_errors = s.errors
     out.fnonce_errors = s.errors.filter((e) => e.includes('FnOnce called more than once')).length
     out.other_page_errors = s.errors.filter((e) => !e.includes('FnOnce called more than once'))
@@ -409,7 +445,7 @@ for (const build of builds) {
           ? `HARNESS ERROR ${out.harness_error.split('\n')[0]}`
           : `${(out.steps ?? []).map(([, v]) => v?.state ?? '-').join(',').padEnd(40)} reopen=${r.open.ok ? 'ok' : 'FAIL'} ` +
             `lost=${r.lost.length} unacked=${r.unacked_visible.length} missing=${r.raw.missing.length} stale=[${r.pages_differing_from_last_in_memory_view ?? 'export failed'}] after=${r.after_reopen?.ok ? 'ok' : 'FAIL'} ` +
-            `fault=[${r.faults_seen}] ack=${r.acked_from_settlements ? 'settled' : 'ASSUMED'}${r.acked_matches_case_expectation ? '' : '!=expected'} fnonce=${out.fnonce_errors} other_errors=${out.other_page_errors.length} ` +
+            `fault=${JSON.stringify(r.faults_seen)} valid=${r.case_valid ? 'yes' : 'NO'} ack=${r.acked_from_settlements ? 'settled' : 'ASSUMED'}${r.acked_matches_case_expectation ? '' : '!=expected'} fnonce=${out.fnonce_errors} other_errors=${out.other_page_errors.length} ` +
             `${r.consistent ? 'CONSISTENT' : 'INCONSISTENT'}${r.open.ok ? '' : ' (' + r.open.reason + ')'}`),
     )
   }

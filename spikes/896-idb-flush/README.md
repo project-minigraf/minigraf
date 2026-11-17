@@ -42,7 +42,7 @@ A run counts as consistent only if all of these hold after reopen:
 - the stored page set and every page's contents equal the last in-memory view (`exportGraph` on the old handle; a failed export counts as a mismatch);
 - a later write and checkpoint resolve, and after a second reopen the names and the by-value (AVET) and by-entity (EAVT) query rows are exactly as expected.
 
-"Acknowledged" is derived from the traces (each `transact` on the persisted handle whose promise resolved), not assumed by the case. `faults_seen` records the injected fault each trace actually shows. Both match every case's intent in the committed run.
+"Acknowledged" is derived from the traces (each `transact` on the persisted handle whose promise resolved), not assumed by the case. The by-value query reads the found entity's name back, so a wrong entity cannot pass. `faults_seen` counts the faults that took effect: an injected abort only if that transaction then aborted, quota for each `QuotaExceededError` abort, sync-throw only if the transaction then committed. A case whose counts differ from what it is meant to exercise is marked `valid=NO` and fails. Every case in the committed run is `valid=yes`.
 
 ## Result matrix
 
