@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where  [?	 :N3ame ?n](not-join[]
+[?e :name ?][?e aa ?_][?e aaa ?_][CeCe a ?_][?e mi0aacccccccccd (q  ?e  [:?rue])])
+:find ?e :where  (ne ?y:T)[(fx  ?y)  ?n] (nd w8hgnt ??) ;whe])[zwith?e  ])
+:find (count ?e) :where [?e:e ?n]])

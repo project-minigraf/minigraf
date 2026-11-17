@@ -1,1 +1,0 @@
-(query [:find ?/:where [?x :a:b]:query-memory-limit $m :max-derived-facts $d])

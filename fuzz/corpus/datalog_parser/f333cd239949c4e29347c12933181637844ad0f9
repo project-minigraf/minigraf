@@ -1,0 +1,2 @@
+(query [ :any-valid-time:where [?e :Ne ?n] (n)[:e/1 ?ynelo"e"][:e/1 :db/valid-to"]Y:e."][:n
+t ?y]])

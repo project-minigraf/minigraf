@@ -1,1 +1,0 @@
-(query [:find ?e :where   [?_?e ?lysnufnFFEAeFEEEEEEEn ro-?jcoin]  [?_?e ?ly06772764176710315e ?n]  (or-join[][e?=ae])])

@@ -1,0 +1,3 @@
+(query [:with ?e ?:where [?	 :N351 ?n](nojoin[?e][?e:db/nzali/ (query [:?rue])])
+:find (ct ?e) ;w ;wh/
+:find  ?e ?:where [?	 :Namme ?n](not-join[?jj162jjyqjjjjjjyqjjjjjjjjjjjj ??d ?jjjjjjhjjqjjj ??e/ ?nw] ?t ?e) :wh])

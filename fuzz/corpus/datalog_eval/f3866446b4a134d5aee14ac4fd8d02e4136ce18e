@@ -1,2 +1,0 @@
-(query [:find ?e :where(not-join [?e] [(qu)]whe)
-re :w ])

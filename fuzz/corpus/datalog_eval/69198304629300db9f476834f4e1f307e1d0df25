@@ -1,0 +1,1 @@
+(query [ :where [?e ?nm ?q]  [?3e ?a ?n] [(>:n "")?]])

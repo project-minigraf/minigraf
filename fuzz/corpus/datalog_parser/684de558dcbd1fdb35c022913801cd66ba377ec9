@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e 3e?Bn ] (ne ?y:T) (nd tzT)[(float? ?y)?n] (nd tde ?y:T) (nd tzT)[(float? ?y)?n] (nd td+X)[(dx ?n  )?y] (nd e)])

@@ -1,0 +1,1 @@
+(query [:with ??e ?o:where[?e :a ?] :with    ?e  ? :with ?o:where[e :Na ?n] :with   ?e  ?:with ?ze :where])

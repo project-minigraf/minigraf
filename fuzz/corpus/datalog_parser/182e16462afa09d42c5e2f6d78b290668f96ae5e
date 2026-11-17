@@ -1,0 +1,1 @@
+(query [:where (pd 2)(A?nA:__b)(E:0)(A:U5)(A?n:__b)(E:n)(ew)])

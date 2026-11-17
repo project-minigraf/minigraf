@@ -1,0 +1,1 @@
+(query [:where[?e e ?n](or(ul[()]?2*?x ?)(ey) ) [0e y]])

@@ -1,0 +1,2 @@
+(query [:where [(/:ruee"ide") ?n ]:where [(/:ruve"ide") ?n ]:where [(/:e"ide") ?n ]:where [u:evr/()]])
+

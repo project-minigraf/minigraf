@@ -1,0 +1,3 @@
+(query [:with ?;?:)])
+:find  ?e ?:where [?	 :Name ?n](not-join[](qufry [])[?e:db/valid (query [:?rue])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e nae "le"][:0000000000e/1 :nannnnil-rfam 26][?:df/vqlid-from ?e?_?y]])

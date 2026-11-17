@@ -1,0 +1,2 @@
+(query [:with ? ?:where [?	 :Na ?n](or-join[][A2:db/vald (2r)])
+:find (count ?e) :where [?e:nae ?n]])

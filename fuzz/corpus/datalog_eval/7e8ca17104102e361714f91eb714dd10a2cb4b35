@@ -1,0 +1,1 @@
+(query [:find ?e :where   [?_?e nnn ?aUUUUUUU]  [?0e ?ynsunun ?h]  [?e ?lunuf ?a]  [?e ?l4176710314e ?n]  (or-join[][?=ae])])

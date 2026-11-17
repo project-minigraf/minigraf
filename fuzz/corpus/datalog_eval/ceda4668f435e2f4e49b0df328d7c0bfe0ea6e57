@@ -1,0 +1,1 @@
+(query [ :where [?eh ?colnuo2 ?c] (or[ea  ?l1e ?])])

@@ -1,0 +1,6 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](transacount ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (ry [:?rue])])
+:find (count ?e) ;wry [;wre mi3344e])])
+:find  ?e ?:where [?	 :Fame ?n](not-join[?][e:db/valid (qu                  ?e  ?e  [:?rue])])
+:find (count ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n] [?e:nae ?n]])

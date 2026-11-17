@@ -1,2 +1,0 @@
-(query [:with ?e ?e ?:where [?	 :Namd ?n](or-join[][?e:dbd (mi334 [:?rue])])
-:find (coute) :wheinteg?])

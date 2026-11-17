@@ -1,0 +1,2 @@
+(query [:where[?e coo c] (not-join [?c] ( ))]
+)

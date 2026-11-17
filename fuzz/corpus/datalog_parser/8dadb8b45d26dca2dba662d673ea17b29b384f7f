@@ -1,0 +1,1 @@
+(query [:find ?:where [?	:Name ?n](not-join[?e][?e:db/nlid (qu)])[t?e:nae ?n]])

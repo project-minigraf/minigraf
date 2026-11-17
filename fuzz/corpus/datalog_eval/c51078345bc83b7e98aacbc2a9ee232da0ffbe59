@@ -1,0 +1,2 @@
+(query [:find ?:where [?e r ?] (not[?e :or ?f](qqqqqqq[ebooAe])(qqqzq?-))]
+)

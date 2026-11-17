@@ -1,0 +1,1 @@
+(query [:where [?e :nam n] (or (and(q)(q)(dd) ) ) [5xt ?y]])

@@ -1,4 +1,0 @@
-(query [;:wit)
-:find (count ?e)(count ?e) ;[:with ?e  ue])])
-:find (count ?e) ;whe lid (?_A6query [:?e?ue])])
-:find (count ?e) :where [?e:nae ?n]])

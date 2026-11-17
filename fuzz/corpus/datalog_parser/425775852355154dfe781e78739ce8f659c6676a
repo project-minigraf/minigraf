@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e :nam ?n] (o3A7)
+:find (coupt ?e)
+ ?e ?:where [?	:Name ?y]])

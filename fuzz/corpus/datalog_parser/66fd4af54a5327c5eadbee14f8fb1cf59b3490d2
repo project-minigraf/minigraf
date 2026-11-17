@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :nae""]:order-by[0]])

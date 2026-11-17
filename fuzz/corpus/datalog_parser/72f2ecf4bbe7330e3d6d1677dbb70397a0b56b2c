@@ -1,0 +1,7 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/nalid (query [:?rue])])
+:find (count ?e) ;w
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][j?jjjjjbjjjjjjjhjjjjjjjjjhjjjjjjjjjjjjj ??d ?e ][?jjjjjjjjjjjjjjjjjhjjqjjj ??e/ w]( n?ow(enm,?q40y ?Hn) )[? :valceaod ?e ][?jjjjjlllljjjj ??e/d ?e])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:ed/banlid (query [:?rue])])
+:find (count ?e) ;wry ?n](transact[][?ee) ;wry ?n](tr
+:find (count ?e) :where [?e:nae ?n],,])
+,,

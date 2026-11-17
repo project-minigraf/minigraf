@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	 :Name ?n](transact[][?e:dbid (query)]):with ?e  ?e ?:where [?	 :Name ?n](tt[][?bed])
+:find  (count ?e) :where [?e:fae ?n]])

@@ -1,0 +1,2 @@
+(query [:find ?:where (D
+?):find (u1 ?)])

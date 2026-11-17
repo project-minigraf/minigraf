@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](trancount ?e) ;
+:find (count ?e)  :where [?e:nae ?n]])

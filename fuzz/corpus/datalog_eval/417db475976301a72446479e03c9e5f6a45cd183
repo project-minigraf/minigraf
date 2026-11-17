@@ -1,0 +1,1 @@
+(query [ :where [?:wr ?c] (or[c?enam$u ?])])

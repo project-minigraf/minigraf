@@ -1,0 +1,2 @@
+(query [:where(or(nO,?y ?u) (nO,?y ?u) )])
+;

@@ -1,0 +1,1 @@
+(rule[(zul) (not(q<<<)(qq <r)) (q?)])

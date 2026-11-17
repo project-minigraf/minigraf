@@ -1,0 +1,2 @@
+(query [:where [?or /C][?or /C] (n625_i:q<)(not(q<<))]
+)

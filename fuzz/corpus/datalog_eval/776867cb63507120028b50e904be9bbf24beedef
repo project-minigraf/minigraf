@@ -1,0 +1,2 @@
+(query [:where (not(q<Be)(q)(qq )(q)(qq n)(qqq))]
+)
