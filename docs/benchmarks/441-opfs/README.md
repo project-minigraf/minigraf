@@ -126,6 +126,8 @@ with API-026 for that reason. WebKit OPFS is covered on `macos-15` instead:
 
 **Omitted: Safari private browsing.** Neither WebDriver nor Playwright can
 open a Safari private window, so no automated run checks OPFS there, and no
-manual check was made. What `openOpfs` does in a Safari private window
-(open, or reject with API-026) is unverified. Firefox private and Chromium
+manual check was made. WebKit documents OPFS as unavailable in Private
+Browsing windows ([WebKit blog, 2022](https://webkit.org/blog/12257/the-file-system-access-api-with-origin-private-file-system/),
+"Persistence"), so `openOpfs` is expected to reject with API-026 there, as
+in Firefox private; that expectation is unverified. Firefox private and Chromium
 incognito results are above.
