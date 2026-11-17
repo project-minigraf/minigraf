@@ -61,6 +61,34 @@ jobs:
       - name: wasm-bindgen worker tests (OPFS and IndexedDB)
         run: wasm-pack test --headless --${{ matrix.browser }} --features browser --lib
 
+  safari:
+    name: Safari tests (${{ matrix.context }})
+    # Real Safari through safaridriver: Playwright's Linux WebKit has no OPFS
+    # in workers, so this is the WebKit OPFS lane. Safari has no headless mode;
+    # the hosted runner's GUI session runs it. Private windows cannot be
+    # opened over WebDriver, so Safari private browsing is not covered here.
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { context: main thread, rustflags: "", args: "" }
+          - { context: dedicated worker, rustflags: "--cfg minigraf_browser_worker", args: "--lib" }
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      WASM_BINDGEN_TEST_TIMEOUT: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Enable safaridriver
+        run: sudo safaridriver --enable
+      - name: wasm-bindgen tests in Safari
+        run: wasm-pack test --headless --safari --features browser ${{ matrix.args }}
+
   wasi:
     name: WASI tests (Wasmtime)
     runs-on: ubuntu-latest

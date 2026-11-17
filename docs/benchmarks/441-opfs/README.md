@@ -106,8 +106,26 @@ healthy OPFS open/read/cache paths are unchanged.
 - Firefox private: geckodriver launched with
   `browser.privatebrowsing.autostart = true`; `openOpfs` rejected with
   `[API-026] OPFS mode is not available here: the browser denies access to this origin's storage (SecurityError)`.
-- WebKit private: unchecked because the engine is absent.
+- WebKit private: **not tested** (see below).
 
 CI specifies Chrome/Firefox core main-thread and worker lanes and
 Chromium/Firefox/WebKit package-consumer lanes; this local record does not
 claim those remote CI jobs have run.
+
+### WebKit coverage in CI
+
+Playwright's Linux WebKit has no `navigator.storage.getDirectory()` in a
+dedicated worker, so its consumer lane only checks that `openOpfs` rejects
+with API-026 for that reason. WebKit OPFS is covered on `macos-15` instead:
+
+- core `wasm.yml` job `safari`: the main-thread and dedicated-worker
+  wasm-bindgen suites in real Safari through `safaridriver`;
+- minigraf-wasm consumer lane `browser, macos-15, webkit`: the packaged
+  consumer test on Playwright's macOS WebKit, where OPFS is required (an
+  API-026 there fails the run).
+
+**Omitted: Safari private browsing.** Neither WebDriver nor Playwright can
+open a Safari private window, so no automated run checks OPFS there, and no
+manual check was made. What `openOpfs` does in a Safari private window
+(open, or reject with API-026) is unverified. Firefox private and Chromium
+incognito results are above.
