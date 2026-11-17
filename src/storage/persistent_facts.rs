@@ -9,7 +9,7 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
 use crate::storage::btree::MutexStorageBackend;
 use crate::storage::btree::{build_btree, cow_insert};
 use crate::storage::cache::PageCache;
@@ -17,7 +17,7 @@ use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
 use crate::storage::page::PageAllocator;
 use crate::storage::reader::OnDiskReader;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
 use crate::storage::verify;
 use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page};
 use anyhow::Result;
@@ -59,8 +59,43 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
 
 /// Page cache size for the integrity walk: enough to keep a value page hot
 /// while its values are checked, without displacing the readers' cache.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
 const VERIFY_CACHE_PAGES: usize = 64;
+
+/// The meta slot an image ([`PersistentFactStorage::write_image`]) does not
+/// put its meta page in.
+#[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+#[derive(Clone, Copy)]
+pub(crate) enum OtherSlot {
+    /// The file's own page if it is a valid meta of an older generation
+    /// (an export: page 0 then usually starts with the magic), else zeros.
+    KeepOlder,
+    /// Zeros: the image's only valid meta is the one it is written with (an
+    /// import's staging file, whose meta page is its publication point).
+    Zero,
+}
+
+/// How open treats a file with exactly one valid meta slot (spec §4.1.1).
+#[derive(Clone, Copy)]
+enum Recovery {
+    /// The base generation of the WAL beside the file, if any: native rules.
+    Wal(Option<u64>),
+    /// No WAL can exist: open at the valid slot (#441).
+    #[cfg_attr(
+        not(any(test, all(target_arch = "wasm32", feature = "browser"))),
+        allow(dead_code)
+    )]
+    WalLess,
+}
+
+impl Recovery {
+    fn wal_base(self) -> Option<u64> {
+        match self {
+            Recovery::Wal(b) => b,
+            Recovery::WalLess => None,
+        }
+    }
+}
 
 /// What open found in the meta slots.
 enum Opened {
@@ -96,8 +131,29 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         page_cache_capacity: usize,
         wal_base_generation: Option<u64>,
     ) -> Result<Self> {
+        Self::open_with(
+            backend,
+            page_cache_capacity,
+            Recovery::Wal(wal_base_generation),
+        )
+    }
+
+    /// Open storage on a backend that never has a WAL beside it and whose
+    /// commits are its only record, such as a browser OPFS file (#441). With
+    /// exactly one valid meta slot it opens at that slot, whatever the other
+    /// slot or later-generation pages hold: a commit interrupted before its
+    /// meta page was complete leaves that state, and nothing else could
+    /// recover it. Every other outcome is [`open`](Self::open)'s with no WAL;
+    /// in particular a native open of the same bytes still refuses with
+    /// STG-033 where this opens.
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+    pub(crate) fn open_wal_less(backend: B, page_cache_capacity: usize) -> Result<Self> {
+        Self::open_with(backend, page_cache_capacity, Recovery::WalLess)
+    }
+
+    fn open_with(backend: B, page_cache_capacity: usize, recovery: Recovery) -> Result<Self> {
         let mut pfs = Self::unopened(backend, page_cache_capacity);
-        let meta = match pfs.select_meta(wal_base_generation, false)? {
+        let meta = match pfs.select_meta(recovery, false)? {
             Opened::Fresh => pfs.init_empty()?,
             Opened::Meta(m) => {
                 m.check_features()?;
@@ -128,7 +184,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         wal_base_generation: Option<u64>,
     ) -> Result<Self> {
         let mut pfs = Self::unopened(backend, page_cache_capacity);
-        let meta = match pfs.select_meta(wal_base_generation, true)? {
+        let meta = match pfs.select_meta(Recovery::Wal(wal_base_generation), true)? {
             Opened::Fresh => MetaPage::empty(1),
             Opened::Meta(m) => {
                 m.check_features()?;
@@ -199,7 +255,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// Choose the meta page to open at (spec §4.1.1). Never modifies the file,
     /// except to restore page 0 from the migration backup meta (§9 step 5),
     /// which `read_only` skips.
-    fn select_meta(&self, wal_base: Option<u64>, read_only: bool) -> Result<Opened> {
+    fn select_meta(&self, recovery: Recovery, read_only: bool) -> Result<Opened> {
+        let wal_base = recovery.wal_base();
+        let single_valid = |backend: &B, m: MetaPage| match recovery {
+            Recovery::Wal(_) => check_single_valid(backend, m, wal_base),
+            Recovery::WalLess => Ok(()),
+        };
         let mut backend = self.lock()?;
         let page_count = backend.page_count()?;
         if page_count == 0 {
@@ -234,14 +295,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 check_wal_not_later(m.generation, wal_base)?;
                 m.check_features()?;
                 check_fits(&*backend, &m)?;
-                check_single_valid(&*backend, m, wal_base)?;
+                single_valid(&backend, m)?;
                 Ok(Opened::Meta(m))
             }
             (SlotState::Valid(m), _) | (_, SlotState::Valid(m)) => {
                 // Refuse an unreadable file before probing its pages.
                 m.check_features()?;
                 check_fits(&*backend, &m)?;
-                check_single_valid(&*backend, m, wal_base)?;
+                single_valid(&backend, m)?;
                 Ok(Opened::Meta(m))
             }
             _ => {
@@ -516,8 +577,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    /// Check the committed file (#373). Never modifies it, and holds the
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
+    /// Check the committed file (#373); also an image a browser database
+    /// imports (#441). Never modifies it, and holds the
     /// backend lock only for each page read, so queries keep running.
     pub(crate) fn verify(&self) -> Result<verify::Findings> {
         let backend = MutexStorageBackend(self.backend.clone());
@@ -719,6 +781,64 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(())
     }
 
+    /// The committed state as a file of its own, one page at a time in
+    /// page order (#441): every page the active meta counts, its meta page
+    /// stamped `generation` (at least the active one) in that generation's
+    /// slot, the other slot as `other` says, and zeros in every free page.
+    /// Such a file holds nothing a later, interrupted commit wrote, so a
+    /// native open with no WAL never finds evidence of one (STG-033) in it.
+    /// A larger `generation` makes the image newer than any meta it replaces.
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+    pub(crate) fn write_image(
+        &self,
+        generation: u64,
+        other: OtherSlot,
+        mut emit: impl FnMut(u64, &[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let m = self.meta;
+        if generation < m.generation {
+            bail_coded!(
+                ErrorCode::Int048,
+                format!("image generation {generation} below {}", m.generation)
+            );
+        }
+        let meta = MetaPage { generation, ..m };
+        let free: std::collections::HashSet<u64> = if m.freelist_head == 0 {
+            std::collections::HashSet::new()
+        } else {
+            let backend = self.lock()?;
+            let probe = PageCache::new(0);
+            probe.set_generation_bound(m.generation);
+            let (ids, _) = freelist::read_chain(m.freelist_head, &*backend, &probe, m.page_count)?;
+            ids.into_iter().collect()
+        };
+        let zeros = vec![0u8; PAGE_SIZE];
+        for id in 0..m.page_count {
+            if id == slot_page(generation) {
+                emit(id, &meta.encode())?;
+            } else if id < 2 {
+                // Initial creation can stop after page 0, before the blank
+                // second slot. Only an absent slot is synthesized; a failed
+                // read of a slot that exists must still propagate.
+                let backend = self.lock()?;
+                let page = if id < backend.page_count()? {
+                    backend.read_page(id)?
+                } else {
+                    zeros.clone()
+                };
+                let keep = matches!(other, OtherSlot::KeepOlder)
+                    && matches!(MetaPage::decode(&page), SlotState::Valid(o) if o.generation < generation);
+                emit(id, if keep { &page } else { &zeros })?;
+            } else if free.contains(&id) {
+                emit(id, &zeros)?;
+            } else {
+                let page = self.lock()?.read_page(id)?;
+                emit(id, &page)?;
+            }
+        }
+        Ok(())
+    }
+
     fn refuse_if_failed(&self) -> Result<()> {
         if self.failed {
             bail_coded!(ErrorCode::Stg046);
@@ -745,7 +865,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.meta.last_checkpointed_tx_count
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
     /// The active meta page's generation. A WAL created now records it as its
     /// base generation.
     pub fn generation(&self) -> u64 {
@@ -783,7 +903,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// by an abandoned log writer, whose file is deleted next (#431), and on
     /// close under `wal_checkpoint_threshold(usize::MAX)`, whose WAL keeps
     /// the pending facts (#476).
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
     pub(crate) fn discard(&mut self) {
         self.dirty = false;
     }
@@ -1947,6 +2067,26 @@ mod tests {
         page.resize(PAGE_SIZE, 0);
         mem.write_page(0, &page).unwrap();
         mem
+    }
+
+    /// Rebuild the portable v7 input with the same legacy writer as migration tests.
+    #[test]
+    #[ignore]
+    fn regenerate_portability_v7_fixture() -> Result<()> {
+        use crate::query::datalog::{executor::DatalogExecutor, parser::parse_datalog_command};
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        for command in include_str!("../../tests/fixtures/portability/commands.txt").lines() {
+            executor.execute(parse_datalog_command(command)?)?;
+        }
+        let mem = v7_file(&storage.get_all_facts()?, storage.current_tx_count());
+        let mut bytes = Vec::new();
+        for id in 0..mem.page_count()? {
+            bytes.extend(mem.read_page(id)?);
+        }
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into()?), 7);
+        std::fs::write("tests/fixtures/portability/native_v7.graph", bytes)?;
+        Ok(())
     }
 
     fn sample_facts(n: u128) -> Vec<Fact> {
@@ -3804,5 +3944,417 @@ mod tests {
     fn size_per_fact_in_433_shape_1m() {
         let facts = assert_size_per_fact(80_000);
         assert!(facts > 1_000_000);
+    }
+
+    // ── WAL-less recovery (#441, spec D1) ──────────────────────────────────
+
+    /// Every `:test/n` value, sorted: the full answer to one query.
+    fn values<B: StorageBackend + 'static>(pfs: &PersistentFactStorage<B>) -> Vec<i64> {
+        let mut v: Vec<i64> = pfs
+            .storage()
+            .get_facts_by_attribute(&":test/n".to_string())
+            .unwrap()
+            .into_iter()
+            .filter_map(|f| match f.value {
+                Value::Integer(i) => Some(i),
+                _ => None,
+            })
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    fn open_wl(mem: &MemoryBackend) -> Result<PersistentFactStorage<MemoryBackend>> {
+        PersistentFactStorage::open_wal_less(mem.clone(), 16)
+    }
+
+    /// `pfs`'s [`write_image`](PersistentFactStorage::write_image) as a new
+    /// store.
+    fn image_of<B: StorageBackend + 'static>(pfs: &PersistentFactStorage<B>) -> MemoryBackend {
+        let mut img = MemoryBackend::new();
+        pfs.write_image(pfs.generation(), OtherSlot::KeepOlder, |id, page| {
+            img.write_page(id, page)
+        })
+        .unwrap();
+        img
+    }
+
+    /// The image of a store opens under the native rule (no WAL) with the
+    /// same answers, and verifies clean (spec AC7).
+    fn assert_image_opens_natively<B: StorageBackend + 'static>(pfs: &PersistentFactStorage<B>) {
+        let img = image_of(pfs);
+        let native = open_mem(&img, None).expect("image opens natively without a WAL");
+        assert_eq!(values(&native), values(pfs), "image answers");
+        assert!(
+            native.verify().unwrap().problems.is_empty(),
+            "image verifies"
+        );
+    }
+
+    /// A store at the state `batches` saves leave, with `per` facts each.
+    fn saved(batches: u128, per: u128) -> MemoryBackend {
+        let mem = MemoryBackend::new();
+        let mut pfs = open_wl(&mem).unwrap();
+        for b in 0..batches {
+            put_batch(&mut pfs, b * per..(b + 1) * per);
+            pfs.save().unwrap();
+        }
+        mem
+    }
+
+    /// Spec AC5(a): a crash at every write and sync of a commit, torn writes
+    /// of every page (meta pages among them) and a failed final sync, on the
+    /// first commit of a new database and on a later one. The reopen is
+    /// never refused, answers exactly the previous committed state or the
+    /// new one, holds the new one after a reported success, accounts for
+    /// every page, takes further commits, and exports an image that opens
+    /// natively with no WAL.
+    #[test]
+    fn wal_less_crash_at_every_point_of_a_commit_opens_old_or_new() {
+        const PER: u128 = 150;
+        let mut kinds: Vec<(bool, Option<usize>)> = Vec::new();
+        for torn in [None, Some(0usize), Some(16), Some(512), Some(4095)] {
+            kinds.push((true, torn));
+        }
+        kinds.push((false, None));
+        let mut points = 0;
+        for old_batches in [0u128, 3] {
+            let old: Vec<i64> = (0..(old_batches * PER) as i64).collect();
+            let new: Vec<i64> = (0..((old_batches + 1) * PER) as i64).collect();
+            for &(write, torn) in &kinds {
+                for k in 0u64.. {
+                    let mem = saved(old_batches, PER);
+                    let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+                    let mut pfs = PersistentFactStorage::open_wal_less(backend, 16).unwrap();
+                    put_batch(&mut pfs, old_batches * PER..(old_batches + 1) * PER);
+                    {
+                        let mut cfg = config.lock().unwrap();
+                        cfg.fail_write_after = write.then_some(k);
+                        cfg.fail_sync_after = (!write).then_some(k);
+                        cfg.torn_write_bytes = torn;
+                    }
+                    let ok = pfs.save().is_ok();
+                    pfs.dirty = false; // a kill: nothing more is written
+                    drop(pfs);
+
+                    let mut reopened = open_wl(&mem).expect("a WAL-less reopen is never refused");
+                    let got = values(&reopened);
+                    assert!(got == old || got == new, "old or new state, never a mix");
+                    if ok {
+                        assert!(got == new, "a reported success is kept");
+                    }
+                    assert_space_accounted(&reopened.meta(), &mem);
+                    assert_image_opens_natively(&reopened);
+
+                    // The reopened database takes the next commit, over
+                    // whatever the interrupted one left.
+                    let next = got.len() as u128;
+                    put_batch(&mut reopened, 10_000 + next..10_000 + next + 10);
+                    reopened.save().expect("commit after recovery");
+                    drop(reopened);
+                    let again = open_wl(&mem).expect("reopen after that commit");
+                    assert_eq!(values(&again).len(), got.len() + 10, "the later commit");
+                    assert_space_accounted(&again.meta(), &mem);
+
+                    if ok {
+                        break;
+                    }
+                    points += 1;
+                }
+            }
+        }
+        assert!(points > 50, "expected many crash points");
+    }
+
+    /// Spec AC5(a): interrupting the creation of a new database (the first
+    /// meta writes) reopens as an empty database.
+    #[test]
+    fn wal_less_crash_while_creating_opens_empty() {
+        for torn in [None, Some(0usize), Some(16), Some(512)] {
+            for k in 0u64..3 {
+                let mem = MemoryBackend::new();
+                let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+                {
+                    let mut cfg = config.lock().unwrap();
+                    cfg.fail_write_after = Some(k);
+                    cfg.torn_write_bytes = torn;
+                }
+                let created = PersistentFactStorage::open_wal_less(backend, 16);
+                drop(created);
+                let pfs = open_wl(&mem).expect("reopen after a torn creation");
+                assert!(values(&pfs).is_empty(), "nothing committed");
+                assert_image_opens_natively(&pfs);
+            }
+        }
+        for k in 0..2 {
+            let mem = MemoryBackend::new();
+            let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+            config.lock().unwrap().fail_sync_after = Some(k);
+            drop(PersistentFactStorage::open_wal_less(backend, 16));
+            let pfs = open_wl(&mem).expect("reopen after failed initial flush");
+            assert!(values(&pfs).is_empty());
+            assert_image_opens_natively(&pfs);
+        }
+    }
+
+    #[test]
+    fn initial_creation_exports_open_with_minigraf_and_verify() -> Result<()> {
+        let meta = MetaPage::empty(1).encode();
+        for prefix in [0, 16, 24, 40, 512, PAGE_SIZE, 2 * PAGE_SIZE] {
+            let dir = tempfile::tempdir()?;
+            let path = dir.path().join("initial.graph");
+            let mut original = vec![0; 2 * PAGE_SIZE];
+            original[..PAGE_SIZE].copy_from_slice(&meta);
+            std::fs::write(&path, &original[..prefix])?;
+            let pfs = PersistentFactStorage::open_wal_less(
+                crate::storage::backend::FileBackend::open(&path)?,
+                16,
+            )?;
+            let mut bytes = Vec::new();
+            pfs.write_image(pfs.generation(), OtherSlot::KeepOlder, |_, page| {
+                bytes.extend_from_slice(page);
+                Ok(())
+            })?;
+            let export = dir.path().join("export.graph");
+            std::fs::write(&export, bytes)?;
+            let native = crate::Minigraf::open(&export)?;
+            assert!(
+                native.verify()?.is_ok(),
+                "initial-interruption export verifies natively"
+            );
+        }
+        Ok(())
+    }
+
+    /// How many page writes one save of `PER` new facts makes on `mem`.
+    fn writes_of_a_save(mem: &MemoryBackend, ids: std::ops::Range<u128>) -> u64 {
+        for k in 0u64.. {
+            let copy = deep_copy(mem);
+            let (backend, config) = FaultInjectingBackend::with_config(copy);
+            let mut pfs = PersistentFactStorage::open_wal_less(backend, 16).unwrap();
+            put_batch(&mut pfs, ids.clone());
+            config.lock().unwrap().fail_write_after = Some(k);
+            let ok = pfs.save().is_ok();
+            pfs.dirty = false;
+            if ok {
+                return k;
+            }
+        }
+        unreachable!()
+    }
+
+    /// Run a save of `ids` on `mem` whose `k`-th write fails after writing
+    /// its first `torn` bytes.
+    fn interrupted_save(mem: &MemoryBackend, ids: std::ops::Range<u128>, k: u64, torn: usize) {
+        let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+        let mut pfs = PersistentFactStorage::open_wal_less(backend, 16).unwrap();
+        put_batch(&mut pfs, ids);
+        {
+            let mut cfg = config.lock().unwrap();
+            cfg.fail_write_after = Some(k);
+            cfg.torn_write_bytes = Some(torn);
+        }
+        assert!(pfs.save().is_err(), "the save is interrupted");
+        pfs.dirty = false;
+    }
+
+    /// Spec AC5(a) fixed cases. The commit point is the bytes, not the
+    /// write's result: a torn meta write that still decodes as the new meta
+    /// (the meaningful bytes and CRC are at the page's start) is the new
+    /// state; a tear that leaves it invalid is the previous one, where a
+    /// native open refuses (STG-033). And a commit that completed without
+    /// being acknowledged is the previous committed state for the next one.
+    #[test]
+    fn wal_less_fixed_cases() {
+        const PER: u128 = 100;
+        let a: Vec<i64> = (0..PER as i64).collect();
+        let b: Vec<i64> = (0..2 * PER as i64).collect();
+        let base = saved(1, PER);
+        let n = writes_of_a_save(&base, PER..2 * PER);
+        let meta_write = n - 1;
+
+        // A torn meta write whose first 512 bytes hold the whole new meta.
+        let mem = deep_copy(&base);
+        interrupted_save(&mem, PER..2 * PER, meta_write, 512);
+        let pfs = open_wl(&mem).unwrap();
+        assert_eq!(values(&pfs), b, "torn but valid meta: the new state");
+        assert_eq!(open_mem(&mem, None).unwrap().generation(), pfs.generation());
+
+        // A tear that leaves the new meta invalid.
+        let mem = deep_copy(&base);
+        interrupted_save(&mem, PER..2 * PER, meta_write, 16);
+        let before = snapshot(&mem);
+        assert_eq!(
+            code(open_mem(&mem, None).err().unwrap()),
+            "STG-033",
+            "a native open refuses these bytes"
+        );
+        assert!(snapshot(&mem) == before, "the refused open wrote nothing");
+        let pfs = open_wl(&mem).unwrap();
+        assert_eq!(values(&pfs), a, "invalid meta: the previous state");
+        assert_image_opens_natively(&pfs);
+
+        // B completes (never acknowledged); C fails before its meta, or
+        // tears it: B's state, not A's.
+        let c = 2 * PER..3 * PER;
+        let n_c = writes_of_a_save(&saved(2, PER), c.clone());
+        for (k, torn) in [(0, 0), (n_c / 2, 0), (n_c - 1, 0), (n_c - 1, 16)] {
+            let mem = saved(2, PER);
+            interrupted_save(&mem, c.clone(), k, torn);
+            let pfs = open_wl(&mem).unwrap();
+            assert_eq!(values(&pfs), b, "B's state survives C's failure");
+        }
+    }
+
+    /// Spec AC6: apart from the rule above, a WAL-less open has the native
+    /// outcome for the same bytes, and a refused open modifies nothing.
+    #[test]
+    fn wal_less_open_outcomes_match_native() {
+        let same = |mem: &MemoryBackend| {
+            let before = snapshot(mem);
+            let native = open_mem(mem, None).map(|p| (p.generation(), values(&p)));
+            let wal_less = open_wl(mem).map(|p| (p.generation(), values(&p)));
+            match (native, wal_less) {
+                (Ok(n), Ok(w)) => assert!(n == w, "same state"),
+                (Err(n), Err(w)) => {
+                    assert_eq!(code(n), code(w), "same refusal");
+                    assert!(snapshot(mem) == before, "a refused open writes nothing");
+                }
+                _ => panic!("one open refused and the other did not"),
+            }
+        };
+        // Two valid slots: the higher generation.
+        let mem = three_generations();
+        same(&mem);
+        assert_eq!(open_wl(&mem).unwrap().generation(), 3);
+        // Both slots damaged: STG-032.
+        let mut mem = three_generations();
+        damage(&mut mem, 0);
+        damage(&mut mem, 1);
+        same(&mem);
+        assert_eq!(code(open_wl(&mem).err().unwrap()), "STG-032");
+        // Not a Minigraf file: STG-002.
+        let mut mem = MemoryBackend::new();
+        for id in 0..3 {
+            mem.write_page(id, &vec![0xAA; PAGE_SIZE]).unwrap();
+        }
+        same(&mem);
+        assert_eq!(code(open_wl(&mem).err().unwrap()), "STG-002");
+        // An unsupported feature bit: STG-034.
+        let mut mem = three_generations();
+        let mut m = match MetaPage::decode(&mem.read_page(slot_page(3)).unwrap()) {
+            SlotState::Valid(m) => m,
+            _ => panic!("gen 3 valid"),
+        };
+        m.required_features = 1 << 40;
+        mem.write_page(slot_page(3), &m.encode()).unwrap();
+        same(&mem);
+        assert_eq!(code(open_wl(&mem).err().unwrap()), "STG-034");
+        // A meta page_count past the end of the file: STG-044.
+        let mut mem = three_generations();
+        forge_page_count(&mut mem, 1 << 40);
+        same(&mem);
+        assert_eq!(code(open_wl(&mem).err().unwrap()), "STG-044");
+        // A torn initial meta: initialised again.
+        let mut mem = MemoryBackend::new();
+        let mut page = vec![0u8; PAGE_SIZE];
+        page[..40].copy_from_slice(&MetaPage::empty(1).encode()[..40]);
+        mem.write_page(0, &page).unwrap();
+        assert_eq!(open_wl(&mem).unwrap().generation(), 1);
+        // A damaged page: the open succeeds, the read fails, in both.
+        let mut mem = corruptible();
+        let m = open_mem(&mem, None).unwrap().meta();
+        let leaf = *leaves_of(m.eavt_root, &mem).first().expect("a leaf");
+        flip(&mut mem, leaf);
+        same(&mem);
+        let pfs = open_wl(&mem).unwrap();
+        let read = pfs
+            .storage()
+            .get_facts_by_attribute(&":test/n".to_string())
+            .and_then(|_| pfs.verify().map(|f| f.problems));
+        assert!(
+            read.map(|p| !p.is_empty()).unwrap_or(true),
+            "the damage is found"
+        );
+    }
+
+    /// Spec AC6: a short file that is not a new Minigraf database is STG-045
+    /// in both modes, and is left as it was.
+    #[test]
+    fn wal_less_short_foreign_file_is_stg_045_and_unmodified() {
+        use crate::storage::backend::FileBackend;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("short.graph");
+        std::fs::write(&path, [0x55u8; 100]).unwrap();
+        let native = PersistentFactStorage::open(FileBackend::open(&path).unwrap(), 16, None);
+        assert_eq!(code(native.err().unwrap()), "STG-045");
+        let wal_less = PersistentFactStorage::open_wal_less(FileBackend::open(&path).unwrap(), 16);
+        assert_eq!(code(wal_less.err().unwrap()), "STG-045");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            vec![0x55u8; 100],
+            "unmodified"
+        );
+    }
+
+    /// Spec AC7 natively: the image of a WAL-less database reopened after an
+    /// interrupted commit, written as a file, opens with `Minigraf::open`
+    /// (no WAL beside it) and verifies clean.
+    #[test]
+    fn wal_less_image_after_recovery_opens_with_minigraf_open() {
+        const PER: u128 = 100;
+        let base = saved(1, PER);
+        let n = writes_of_a_save(&base, PER..2 * PER);
+        let mem = deep_copy(&base);
+        interrupted_save(&mem, PER..2 * PER, n - 1, 16);
+        let pfs = open_wl(&mem).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("export.graph");
+        let mut bytes = Vec::new();
+        pfs.write_image(pfs.generation(), OtherSlot::KeepOlder, |_, page| {
+            bytes.extend_from_slice(page);
+            Ok(())
+        })
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let db = crate::Minigraf::open(&path).expect("opens natively");
+        assert!(db.verify().unwrap().is_ok(), "verifies clean");
+        let rows = match db
+            .execute("(query [:find (count ?e) :where [?e :test/n _]])")
+            .unwrap()
+        {
+            crate::QueryResult::QueryResults { results, .. } => results,
+            _ => panic!("a query result"),
+        };
+        assert_eq!(rows.len(), 1);
+        assert!(
+            matches!(rows[0].first(), Some(Value::Integer(100))),
+            "the previous committed state"
+        );
+    }
+
+    /// An image stamped with a later generation (as an OPFS import stages
+    /// one) is the same database: it opens, answers and verifies the same.
+    #[test]
+    fn image_with_a_later_generation_is_the_same_database() {
+        let mem = saved(3, 50);
+        let pfs = open_wl(&mem).unwrap();
+        for later in [
+            pfs.generation(),
+            pfs.generation() + 1,
+            pfs.generation() + 10,
+        ] {
+            let mut img = MemoryBackend::new();
+            pfs.write_image(later, OtherSlot::Zero, |id, page| img.write_page(id, page))
+                .unwrap();
+            let opened = open_mem(&img, None).expect("opens");
+            assert_eq!(opened.generation(), later);
+            assert_eq!(values(&opened), values(&pfs));
+            assert!(opened.verify().unwrap().problems.is_empty());
+        }
+        assert!(
+            pfs.write_image(pfs.generation() - 1, OtherSlot::Zero, |_, _| Ok(()))
+                .is_err()
+        );
     }
 }

@@ -56,9 +56,93 @@ For example, a database opened `Full` can run a bulk load as `Normal` transactio
 
 **What durability assumes.** A sync is only as good as the storage under it. Minigraf assumes that when `fdatasync`/`fsync` (`FlushFileBuffers` on Windows) returns, the data is on stable storage. Disks or controllers with a volatile write cache that ignore flushes, virtual machines with an "unsafe" disk cache mode, and some network or FUSE filesystems break that assumption, and a power loss there can lose committed transactions or tear a page. A torn or rotted page is detected by its checksum on the next read (`STG-029`); it is not silently read.
 
-**Browser (`BrowserDb`).** There is no WAL. Each `transact` and `retract` is a checkpoint whose pages, meta page and freed page keys are written in one IndexedDB `readwrite` transaction, and the returned promise resolves after that transaction completes. Closing the tab before then loses that write, whole. How durable a completed IndexedDB transaction is on a power loss is up to the browser.
+**Browser IndexedDB (`BrowserDb.open`).** There is no WAL. Each `transact` and `retract` is a checkpoint whose pages, meta page and freed page keys are written in one IndexedDB `readwrite` transaction, and the returned promise resolves after that transaction completes. Closing the tab before then loses that write, whole. How durable a completed IndexedDB transaction is on a power loss is up to the browser.
 
 **WASI.** The `wasm32-wasip1` build has no file backend: its databases are in memory and end with the process.
+
+## Browser storage modes
+
+From v3.0.0 `BrowserDb.openOpfs(name)` is an explicit second persistent mode,
+starting at Tier 2 inside the Tier 1 browser binding. It requires a dedicated
+worker in a secure context (HTTPS or localhost). `BrowserDb.open(name)` keeps
+its IndexedDB mode, now also available in workers; `openInMemory()` is transient.
+The same name in the two persistent modes identifies separate databases. There
+is no automatic fallback or migration. Move data explicitly with `exportGraph()`
+and `importGraph()`; exported v8 bytes open natively without a WAL, and OPFS can
+import supported v7 files through migration.
+
+OPFS maps the name exactly to `<name>.graph` in the origin's root directory.
+Empty names, `.`, `..`, slash/backslash and NUL are API-017. No suffix is
+reserved: every database entry ends in `.graph`; an import staging entry is
+`<name>.graph-import`, which no database name maps to.
+The exclusive sync access handle is the lock: another open in the same worker,
+another worker or tab fails with STG-026. `close()` releases it immediately;
+worker termination also releases it. A refused open releases any handle it took.
+Unsupported contexts or denied origin directory access are API-026, with no
+fallback. Other storage failures are STG-048, naming the operation and browser
+exception (or short transfer).
+
+Every OPFS transaction commits directly through v8 copy-on-write: write data
+pages, `flush()`, write the alternate meta, `flush()`. Its Promise resolves after
+both flushes; there is no WAL or separate asynchronous persistence step. On
+interruption, reopen selects the complete previous or new commit, retaining
+acknowledged commits subject to the browser's storage guarantees. Worker kills
+exercise process interruption, not power loss. Browser `flush()` only attempts
+to transfer cached changes to underlying storage; it is not a power-loss promise.
+
+With exactly one valid meta page, OPFS opens at it regardless of later-generation
+pages or damage in the other slot. This recovers an interrupted WAL-less commit.
+It also gives up native STG-033's protection against silently losing a completed
+checkpoint when its newest meta later rots. Native recovery is unchanged.
+With two valid slots the higher generation wins; other integrity checks remain.
+
+A rejected commit is **unconfirmed**, not necessarily absent: a short/failed meta
+write may still have installed a complete valid meta. Later writes/checkpoints
+fail with STG-046 until close/reopen. Reads may include the attempted transaction.
+`close()` saves nothing and does not retry the failed commit. Reopen and inspect
+before retrying the transaction.
+
+`close()` is synchronous and idempotent in every mode. It discards open staged
+transactions and invalidates earlier dependents (API-018), even while they remain
+referenced. Reentrant close inside a running query's UDF or close during OPFS
+import is API-027 and leaves the database open. Disposal operations remain valid.
+Deferred execute/checkpoint/import bodies that start after close are API-018.
+An already applied OPFS/in-memory transaction commit resolves after close; an
+IndexedDB commit whose flush has not been submitted rejects with API-018 and
+never submits it. An already submitted IndexedDB flush settles by its own result.
+
+OPFS import admits an empty blob; a nonempty v8 image with a selectable meta
+and complete, verified contents (including an empty v8 image); or a supported v7
+image that migrates completely. Nonempty torn or zero-filled initial Minigraf
+images are rejected even if opening those bytes as a file could recover an
+interrupted creation.
+A meta counting pages beyond the input is STG-044. Exports normalize a missing
+second meta slot after interrupted creation, while failed reads of existing
+pages remain errors. Import stages the verified image in
+`<name>.graph-import`. Publication makes the new image recoverable before copying
+it over the main file; interruption and reopen finish with the complete old or
+new image. A pre-publication failure preserves the old database and dependents;
+a publication failure closes the handle because the outcome is unknown. Success
+invalidates earlier cursors/prepared queries. Cleanup failure after publication
+does not reject the import; a later open finishes it. The main file stays locked
+during staging, publication and recovery. Calls admitted while importing are
+API-027; API-018 takes precedence, and busy takes precedence over INT-001.
+
+OPFS reads healthy v8 pages on demand through a 256-page cache. The storage bound
+excludes query working state, results/export blobs, import input, v7 migration,
+transaction facts, pages and quarantine metadata held for long-open cursors,
+and recovery scans. [The measurement record](benchmarks/441-opfs/README.md)
+records the completed Chromium and Firefox memory checks: both used 1,245,184
+bytes of wasm memory for each OPFS size (zero growth between 4 MiB and 40 MiB).
+WebKit remains unrun because its browser binary is unavailable.
+
+Both persistent modes use browser-managed origin quota and eviction. Applications
+may request `navigator.storage.persist()` themselves; Minigraf never requests it.
+Quota errors during OPFS commit are STG-048 and follow the failed-handle rule.
+Private-browsing behavior is engine/policy dependent. Actual checks recorded
+Chromium incognito opening OPFS and querying `[[42]]`, and Firefox private mode
+rejecting with API-026 / SecurityError. WebKit private mode remains unrun; see
+the measurement record for the exact engines and harness limitations.
 
 ## Opening after a crash
 

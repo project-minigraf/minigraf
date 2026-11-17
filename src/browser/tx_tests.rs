@@ -3,11 +3,17 @@
 //! while a transaction is open, `[API-018]` after it finishes, and a
 //! differential check against the native transaction.
 
+use super::tests::{fresh_persistent, reopen_persistent, scratch};
 use super::*;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
 
+// The worker build (`--cfg minigraf_browser_worker`) runs every test in a
+// dedicated worker, where OPFS mode exists (#441).
+#[cfg(not(minigraf_browser_worker))]
 wasm_bindgen_test_configure!(run_in_browser);
+#[cfg(minigraf_browser_worker)]
+wasm_bindgen_test_configure!(run_in_dedicated_worker);
 
 const NAMES: &str = "(query [:find ?n :where [?e :person/name ?n]])";
 const SETUP: &str = r#"(transact [[:alice :person/name "Alice"] [:alice :person/age 30]
@@ -45,7 +51,7 @@ async fn names(db: &BrowserDb) -> Vec<String> {
 }
 
 async fn setup() -> BrowserDb {
-    let db = BrowserDb::open_in_memory().expect("open_in_memory");
+    let db = scratch().await;
     db.execute(SETUP.to_string()).await.expect("setup");
     db
 }
@@ -206,8 +212,7 @@ async fn fresh_db(name: &str) -> BrowserDb {
 
 #[wasm_bindgen_test]
 async fn commit_is_one_transaction_and_survives_reopen() {
-    let name = "minigraf-test-tx-commit";
-    let db = fresh_db(name).await;
+    let db = fresh_persistent("minigraf-test-tx-commit").await;
     db.execute(SETUP.to_string()).await.expect("setup");
     let before = db.inner.borrow().fact_storage.current_tx_count();
     let mut tx = db.begin_write().expect("begin");
@@ -241,15 +246,13 @@ async fn commit_is_one_transaction_and_survives_reopen() {
         vec!["[1]", "[1]", "[2]", "[2]"],
         "Alice and Carol from the setup, Dave and Erin from the one commit"
     );
-    drop(db);
-    let db = BrowserDb::open(name).await.expect("reopen");
+    let db = reopen_persistent(db).await;
     assert_eq!(names(&db).await.len(), 4, "the commit after reopening");
 }
 
 #[wasm_bindgen_test]
 async fn rollback_and_drop_discard_and_survive_reopen() {
-    let name = "minigraf-test-tx-rollback";
-    let db = fresh_db(name).await;
+    let db = fresh_persistent("minigraf-test-tx-rollback").await;
     db.execute(SETUP.to_string()).await.expect("setup");
 
     let mut tx = db.begin_write().expect("begin");
@@ -264,8 +267,7 @@ async fn rollback_and_drop_discard_and_survive_reopen() {
     drop(tx); // as JavaScript's free() does
     assert_eq!(names(&db).await.len(), 3, "dropped");
 
-    drop(db);
-    let db = BrowserDb::open(name).await.expect("reopen");
+    let db = reopen_persistent(db).await;
     assert_eq!(names(&db).await.len(), 3, "neither after reopening");
 }
 

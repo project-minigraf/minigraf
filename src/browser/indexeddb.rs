@@ -72,10 +72,13 @@ impl IndexedDbBackend {
     /// If the object store does not exist, it is created in `onupgradeneeded`.
     /// `db_name` is used as both the database name and the object store name.
     pub async fn open(db_name: &str) -> Result<Self, JsValue> {
-        let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window object"))?;
-        let idb_factory = window
-            .indexed_db()?
-            .ok_or_else(|| JsValue::from_str("IndexedDB not available"))?;
+        // `indexedDB` of the global scope: the window, or a worker's (#441).
+        let idb_factory: web_sys::IdbFactory =
+            js_sys::Reflect::get(&js_sys::global(), &"indexedDB".into())
+                .ok()
+                .filter(|f| !f.is_undefined() && !f.is_null())
+                .ok_or_else(|| JsValue::from_str("IndexedDB not available"))?
+                .unchecked_into();
 
         let store_name = db_name.to_string();
         let store_name_upgrade = store_name.clone();

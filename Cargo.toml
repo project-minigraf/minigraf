@@ -44,8 +44,15 @@ wasm-bindgen         = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys               = { version = "0.3", optional = true }
 web-sys              = { version = "0.3", optional = true, features = [
+    "DedicatedWorkerGlobalScope",
     "DomStringList",
     "Event",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetFileOptions",
+    "FileSystemHandle",
+    "FileSystemReadWriteOptions",
+    "FileSystemSyncAccessHandle",
     "IdbDatabase",
     "IdbFactory",
     "IdbIndex",
@@ -54,6 +61,7 @@ web-sys              = { version = "0.3", optional = true, features = [
     "IdbRequest",
     "IdbTransaction",
     "IdbTransactionMode",
+    "StorageManager",
     "Window",
 ] }
 
@@ -141,8 +149,9 @@ inherits = "release"
 workspace = true
 
 [workspace.lints.rust]
-# Kani proof harnesses (#627): `cargo kani` sets cfg(kani).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)'] }
+# Kani proof harnesses (#627): `cargo kani` sets cfg(kani). The browser tests'
+# worker build (#441) sets cfg(minigraf_browser_worker).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)', 'cfg(minigraf_browser_worker)'] }
 
 [workspace.lints.clippy]
 # Panic prevention — use Result/? or debug_assert! instead

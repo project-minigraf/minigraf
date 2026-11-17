@@ -281,7 +281,7 @@ See the [Mobile Integration](https://project-minigraf.github.io/minigraf-docs/la
 
 ### For WASM / Browser
 
-Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). `BrowserDb.beginWrite()` opens a write transaction (from v3.0.0): `execute` stages and reads back, `await tx.commit()` stores it in IndexedDB, `rollback()` discards it, and the database's other calls throw `[INT-001]` until it ends. The WASI package is the REPL: each command commits on its own, with no explicit transactions. WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
+Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (`wasm-pack`). `BrowserDb.open(name)` uses IndexedDB on the main thread or in a worker. From v3.0.0, `await BrowserDb.openOpfs(name)` uses one `<name>.graph` file in OPFS, in a dedicated worker on HTTPS or localhost, with a 256-page cache instead of a whole-file memory buffer. OPFS starts at Tier 2 inside the Tier 1 browser binding; the modes have separate namespaces and never fall back to each other. `close()` is synchronous and releases the database and its lock in every mode. See the [complete module-worker example](https://github.com/project-minigraf/minigraf-wasm/tree/v3#opfs-worker) and [browser durability contract](docs/DURABILITY.md#browser-storage-modes). `BrowserDb.beginWrite()` opens a write transaction (from v3.0.0): `execute` stages and reads back, `await tx.commit()` stores it in IndexedDB or flushes it to OPFS, `rollback()` discards it, and the database's other calls throw `[INT-001]` until it ends. The WASI package is the REPL: each command commits on its own, with no explicit transactions. WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
 
 ### For Python / Node.js / Java / C
 
@@ -292,7 +292,7 @@ Language bindings ship as `minigraf` on PyPI, `minigraf` on npm (Node.js native 
 Minigraf runs as:
 - ✅ An embedded library
 - ✅ A standalone binary (interactive REPL)
-- ✅ Browser WASM — `@minigraf/browser` (IndexedDB-backed, `wasm-pack`)
+- ✅ Browser WASM — `@minigraf/browser` (IndexedDB or OPFS in a dedicated worker, `wasm-pack`; OPFS starts at Tier 2 in v3.0.0)
 - ✅ Server-side WASM — `wasm32-wasip1` / WASI (Wasmtime, Wasmer, Cloudflare Workers)
 - ✅ Android, iOS, Python, Node.js, Java, C — via UniFFI / napi-rs / cbindgen
 

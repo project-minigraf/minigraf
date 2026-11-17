@@ -243,6 +243,7 @@ pub(crate) enum ErrorCode {
     Stg045,
     Stg046,
     Stg047,
+    Stg048,
     Wal001,
     Wal002,
     Wal003,
@@ -279,6 +280,8 @@ pub(crate) enum ErrorCode {
     Api023,
     Api024,
     Api025,
+    Api026,
+    Api027,
     Int001,
     Int002,
     Int003,
@@ -1477,6 +1480,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Storage,
     ),
     (
+        ErrorCode::Stg048,
+        "STG-048",
+        "browser storage operation failed: {} ({})",
+        ErrorCategory::Storage,
+    ),
+    (
         ErrorCode::Wal001,
         "WAL-001",
         "Invalid WAL magic number: not a .wal file",
@@ -1666,6 +1675,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Api025,
         "API-025",
         "query option {} is not allowed on this database; OpenOptions::allow_overrides does not list Overridable::{}",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api026,
+        "API-026",
+        "OPFS mode is not available here: {}",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api027,
+        "API-027",
+        "the database is busy: {}",
         ErrorCategory::Api,
     ),
     (
@@ -2478,6 +2499,7 @@ mod tests {
                 | ErrorCode::Stg045
                 | ErrorCode::Stg046
                 | ErrorCode::Stg047
+                | ErrorCode::Stg048
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2510,6 +2532,8 @@ mod tests {
                 | ErrorCode::Api023
                 | ErrorCode::Api024
                 | ErrorCode::Api025
+                | ErrorCode::Api026
+                | ErrorCode::Api027
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2758,6 +2782,7 @@ mod tests {
             ErrorCode::Stg045,
             ErrorCode::Stg046,
             ErrorCode::Stg047,
+            ErrorCode::Stg048,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,
@@ -2790,6 +2815,8 @@ mod tests {
             ErrorCode::Api023,
             ErrorCode::Api024,
             ErrorCode::Api025,
+            ErrorCode::Api026,
+            ErrorCode::Api027,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

@@ -208,6 +208,7 @@ with no `CodedError` anywhere in its chain.
 | STG-045 | File shorter than one page and not a new database | Storage |
 | STG-046 | Earlier checkpoint failed on this handle | Storage |
 | STG-047 | WAL is from a later checkpoint | Storage |
+| STG-048 | Browser storage operation failed | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -240,6 +241,8 @@ with no `CodedError` anywhere in its chain.
 | API-023 | Bind slot not permitted in attribute position | Database API |
 | API-024 | Bind slot type mismatch | Database API |
 | API-025 | Query option override not allowed | Database API |
+| API-026 | OPFS mode is not available here | Database API |
+| API-027 | Database is busy | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | Write transaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2881,6 +2884,12 @@ Read-only handles (`OpenOptions::read_only`) share a file with each other, but n
 
 **Cause**: Another process holds the kernel file lock on this `.graph` file. Minigraf is single-writer: one process at a time. This is reported only after a bounded retry (up to ~375ms) rules out a transient `fork`-related false positive — see the v2.0.0 CHANGELOG entry on the bounded retry.
 
+In browser OPFS mode, the same code means another tab or worker (or another
+handle in this worker) holds the file's exclusive sync access handle. The browser
+reports `NoModificationAllowedError` (Safari: `InvalidStateError`); `close()` or
+worker termination releases it.
+There is no retry on acquisition and no fallback to IndexedDB.
+
 **Resolution**:
 - Wait for the other process to exit; the kernel releases the lock automatically, including when the process is killed.
 - There is no lock file to delete. If you find a stale `.graph.lock`, it is a leftover from a version before 2.0 and has no effect — it is not read or deleted, and should not be removed by hand in case an old process still depends on it.
@@ -2968,6 +2977,11 @@ A read-only handle (`OpenOptions::read_only`) in another process also refuses a 
 **Error text**: `Meta page damaged after commit: generation {} is valid but a later commit existed ({}). Opening would silently drop that checkpoint`
 
 **Cause**: One meta page is valid and the other is damaged, and there is evidence that the damaged one held a newer, completed checkpoint: the WAL records a newer base generation, or there is no WAL and data pages from the newer generation exist. Opening at the older generation would lose the facts of the newest checkpoint, whose WAL is already deleted.
+
+OPFS mode has no WAL and deliberately opens at the sole valid meta instead
+of raising this error, even with later-generation data pages. That recovers an
+interrupted commit, but can silently lose the latest acknowledged checkpoint if
+its meta later rots. Native recovery keeps this refusal unchanged.
 
 **Resolution**:
 - Restore from backup. The file is not modified by the failed open.
@@ -3145,6 +3159,12 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 
 Nothing committed is lost. Every committed transaction is still in the WAL, and the `.graph` file holds either the previous checkpoint or the failed one complete. Queries through the handle keep working. The close-time checkpoint is skipped.
 
+In OPFS mode a failed write, short write or flush has the same failed-handle
+rule: later writes/checkpoints fail with STG-046 while reads and `close()` keep
+working. There is no WAL. Close and reopen to select the complete previous or
+new generation; the rejected transaction may be wholly present. Closing does
+not retry the failed commit.
+
 **Resolution**:
 - Fix the cause (free disk space, check the device and the kernel log), then drop every clone of the handle and open the database again. Opening picks the newest complete checkpoint and replays the WAL.
 - Do not copy the `.graph` file without its `.wal` while the handle is in this state.
@@ -3164,6 +3184,21 @@ Nothing committed is lost. Every committed transaction is still in the WAL, and 
 - If the `.graph` was replaced by mistake: put back the `.graph` that the WAL belongs to.
 
 **Scenario**: An operator copies last night's `app.graph` over the current one and leaves the current `app.graph.wal` in the directory.
+
+---
+
+### STG-048 Browser storage operation failed
+
+**Error text**: `browser storage operation failed: {} ({})`
+
+**Cause**: An OPFS operation failed: opening an entry, acquiring its sync access handle, reading, writing, flushing, checking size, truncating, or staging an import. The message names the operation and the browser exception (for example `QuotaExceededError`), or a short read/write. Short transfers are never accepted as complete pages. Lock contention uses STG-026; an unavailable OPFS context uses API-026.
+
+**Resolution**:
+- Check the operation and exception name, available origin quota and browser permissions.
+- After a commit may have written, later writes fail with STG-046. Call `close()` and reopen. Reads may still include the unconfirmed transaction; a rejected commit does not prove it is absent on disk.
+- An import failure at publication closes the database; reopen to recover the complete old or new image.
+
+**Scenario**: Origin quota is exhausted while a worker writes a data page; `execute()` rejects with STG-048 naming the write and `QuotaExceededError`.
 
 ---
 
@@ -3560,6 +3595,14 @@ let mut log = src.fact_log(&FactFilter::new())?;
 
 **Cause**: A language binding object was used after it was closed or finished, for example `append` or `finish` on a log writer after `finish` or `close`, or `execute` or `commit` on a write transaction after it committed (or failed to), rolled back, or its database was closed (#824). A finished transaction's `rollback` does nothing instead. Rust consumes these objects, so the Rust API never returns this code. Bindings cannot consume an object a caller still holds, so they return this error instead. A cursor or fact log reports the end (no more batches) after `close`, not this error. The `{}` names the object.
 
+`BrowserDb.close()` in every mode also closes its cursors, prepared queries and
+transactions logically, even while those objects are still referenced. A
+successful OPFS `importGraph()` invalidates earlier cursors and prepared queries.
+A failure at import publication closes the OPFS database itself. Disposal
+(`free()`, cursor `close()`, transaction `rollback()`, repeated database `close()`)
+remains permitted. API-018 takes precedence over busy (API-027) and an open
+transaction (INT-001).
+
 **Resolution**:
 - Create a new object instead of reusing a finished one.
 - In Python, use the writer as a context manager so it is finished once, on exit.
@@ -3664,6 +3707,32 @@ ValueSet::new(vec![inner]) // API-021
 - Or, if the embedder means to let queries override it, add the `Overridable` variant to `OpenOptions::allow_overrides`. The list replaces the defaults; chain `Overridable::DEFAULTS` to add to them.
 
 **Scenario**: An application opens its database with `OpenOptions::new().allow_overrides([])` so that query text from its users cannot raise `max_derived_facts`; a user query ending in `:max-derived-facts 100000000` is refused with API-025.
+
+---
+
+### API-026 OPFS mode is not available here
+
+**Error text**: `OPFS mode is not available here: {}`
+
+**Cause**: `BrowserDb.openOpfs(name)` requires a secure context and a dedicated Web Worker with OPFS and sync access handles. It is unavailable on the main thread, in shared/service workers, when the APIs are absent, or when the browser denies access to the origin directory (for example `SecurityError`). It never falls back to IndexedDB.
+
+**Resolution**:
+- Run the call in a dedicated worker served over HTTPS or localhost.
+- Check browser support and origin access policy. Choose `BrowserDb.open(name)` explicitly if IndexedDB suits the application.
+
+**Scenario**: A page calls `BrowserDb.openOpfs('memory')` on its main thread.
+
+### API-027 Database is busy
+
+**Error text**: `the database is busy: {}`
+
+**Cause**: A call starts work while an OPFS import is in progress, or `BrowserDb.close()` is called reentrantly while a database operation is running. Busy calls change nothing. Closed objects (API-018) take precedence over busy; busy takes precedence over an open transaction (INT-001). Disposal operations remain permitted.
+
+**Resolution**:
+- Await `importGraph()` before making other calls, including `close()` or another import.
+- Call `close()` after the current operation returns, rather than inside its UDF.
+
+**Scenario**: A worker calls `query()` while `importGraph()` is awaiting staging I/O.
 
 ---
 

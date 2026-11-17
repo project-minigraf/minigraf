@@ -112,6 +112,8 @@ Scope — query API:
 
 Scope — features:
 
+- OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441; implemented on the feature branch, browser evidence pending)
+
 - Query profiler (#185)
 - Set values `#{...}`, the set predicates `in?`/`not-in?`/`any-in?`/`all-in?`/`none-in?` and `collect-set` (#316; done on `v3`: core, `BrowserDb` set binds, and set values in Python, Java, Android, Swift, Node.js, C and the browser/WASI packages on their `v3` branches)
 - Prepared queries in every binding (#181; done on `v3`: core, `BrowserDb.prepare`, and Python, Java, Android, Swift, Node.js and C on their `v3` branches)
@@ -147,7 +149,6 @@ Scope — release-gate testing and documentation:
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
-- OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
 ---

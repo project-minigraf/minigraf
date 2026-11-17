@@ -165,6 +165,13 @@ without a layout change. The 84-byte `FileHeader` and its `index_checksum` and
 
 #### 4.1.1 Choosing the meta on open
 
+**2026-11-14 — OPFS exception (#441).** The native rules below are unchanged.
+Browser OPFS mode has no WAL and opens at the sole valid slot regardless of
+later-generation pages or the other slot's damage. This permits recovery after
+an interrupted commit, at the cost of silently falling back if a completed
+newest meta later rots. With two valid slots, the higher generation still wins.
+See [the OPFS design](2026-11-14-441-browser-opfs-design.md), D1.
+
 Each slot is classified as one of:
 
 - **empty:** no `"MGRF"`/`"META"` magic. This is slot B before generation 2.

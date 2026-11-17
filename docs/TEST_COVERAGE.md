@@ -4,12 +4,64 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,138 | 2,176 |
-| **Ignored** | 21 | 30 |
-| **Total** | 2,159 | 2,206 |
+| **Active** | 2,149 | 2,187 |
+| **Ignored** | 23 | 32 |
+| **Total** | 2,172 | 2,219 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871, #872 and #824 (Linux). Verification results below identify which suites ran.
+including #441, #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871, #872 and #824 (Linux). Verification results below identify which suites ran.
+
+**#441 verification (2026-11-14)**: the full native default suite passes
+(2,149 active, 23 ignored), including the grammar verifier and eight new
+WAL-less/image unit tests. The WASI suite passes (1,222 active, seven ignored). The CI-equivalent
+nightly branch-coverage run passes 2,127 tests with 19 ignored (doctests excluded),
+95.68% line / 86.65% branch coverage, and every module floor. The lock helper is
+supplied through `MINIGRAF_PID_NS_HELPER`.
+Native all-feature lib and browser/WASI lib strict clippy pass, as does formatting.
+The broader `--all-targets` lint fails on existing test-code lints on both the base
+and this branch (including 21 library-test diagnostics); complete `--keep-going` comparison
+against `9fd321e75` finds the same 4,345 diagnostics on each revision
+(4,322 Clippy lints and 23 compiler diagnostics), with no
+additions. It is not reported as passing. Rust 1.99.1's distribution binary is 1,269,568 bytes, below the unchanged
+1,280,000-byte gate; [build sizes](benchmarks/441-opfs/build-sizes.md) record the
+older compiler's oversized base/control and the wasm increase. A nightly build
+with wasm atomics enabled fails with E0277 because the JS handle is not
+`Send + Sync`, preserving worker confinement.
+Fresh Firefox 159.0.1 runs pass **113 worker** and **81 main-thread** tests.
+The packaged consumer passes **54 checks per engine** on Chromium 140.0.7339.16
+(Playwright) and Firefox 159.0.1 (installed Firefox via WebDriver, because the
+Playwright Firefox executable is absent). These include cross-worker locking,
+acknowledged-write recovery, six sequential-commit termination timings, four
+import-interruption timings, worker IndexedDB and the README worker example.
+The 4,239,360-byte and 42,135,552-byte fixtures both use 1,245,184 bytes of OPFS
+wasm memory high-water, on both engines: **0-byte growth**, passing AC13(c).
+Chromium incognito opens OPFS and queries `[[42]]`; Firefox private mode rejects
+with API-026 / SecurityError. Chrome core tests lack a matching driver/browser;
+WebKit and WebKit private tests lack an installed engine and remain unrun.
+See [measurement evidence and reproduction](benchmarks/441-opfs/README.md).
+
+The native additions are `wal_less_crash_at_every_point_of_a_commit_opens_old_or_new`,
+`wal_less_crash_while_creating_opens_empty`,
+`initial_creation_exports_open_with_minigraf_and_verify`, `wal_less_fixed_cases`,
+`wal_less_open_outcomes_match_native`,
+`wal_less_short_foreign_file_is_stg_045_and_unmodified`,
+`wal_less_image_after_recovery_opens_with_minigraf_open` and
+`image_with_a_later_generation_is_the_same_database` in
+`storage::persistent_facts`. They cover write/sync/tear boundaries, uncertain
+meta publication, completed-unacknowledged predecessors, native STG-033 parity,
+refused-open immutability and portable export after recovery.
+`tests/opfs_portability_test.rs` adds three active fixture checks and one ignored
+native fixture generator; a second ignored generator in the storage unit tests
+builds the real v7 portability fixture with the migration tests' legacy writer; long values, retraction, transaction/valid-time queries
+and `verify()` agree on checked-in native and browser images.
+
+The OPFS worker tests additionally cover invalid nonempty meta imports without
+replacement, complete export after every initial-creation prefix, missing/insecure/
+denied browser APIs, short/thrown reads and quota exception names, offsets refused
+before I/O, deferred close/admission precedence, submitted IndexedDB completion after
+reopen, drop without save, staging create/acquire/truncate/cleanup faults and every
+write/flush/truncate boundary in a repeated recovery copy. The full v7 portability
+query set runs before and after OPFS reopen.
 
 **#863 nightly candidates**: four engine unit tests check the `test-hooks`
 path events and memory peaks (both builds). With `test-hooks` only,
@@ -676,7 +728,17 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 80 `wasm_bindgen_test` tests (Firefox, 2026-11-11, after #824). The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+- **OPFS worker mode** (#441; `src/browser/opfs_tests.rs`, 34 worker tests plus one main-thread test):
+  - AC1/AC4: `acknowledged_writes_survive_close_and_reopen`, `the_database_is_one_file_and_no_wal`.
+  - AC2/AC8: `invalid_names_are_api_017_before_anything_is_created`, `a_second_open_is_stg_026_until_close`, `open_opfs_on_the_main_thread_is_api_026_and_creates_nothing`.
+  - AC9: `after_close_every_call_is_api_018_but_disposal`, `close_from_a_user_function_during_a_query_is_busy`, `calls_issued_before_close_change_nothing_after_it`.
+  - AC5/AC6/AC10: `a_failed_commit_is_stg_048_then_stg_046`, `a_torn_meta_reopens_at_the_previous_commit`, `open_outcomes_match_native_and_refusals_modify_nothing`.
+  - AC7/AC11: `export_is_a_complete_file_that_verifies`, `native_v8_and_v7_files_import_and_survive_reopen`, `a_smaller_import_leaves_no_trailing_bytes`.
+  - AC12: `import_validation_rejects_before_replacing_anything`, `a_published_import_invalidates_earlier_cursors_and_prepared_queries`, `calls_admitted_while_importing_are_busy`, `an_interrupted_import_reopens_old_or_new`, `leftover_staging_files_are_removed_not_replayed`, `foreign_import_keeps_shared_error_and_preserves_destination` (in-memory/OPFS STG-002 parity; preserved bytes, data, dependents and lock).
+  - AC13/AC14: `opfs_open_read_bound`, `opfs_cache_residency_bound`, `indexeddb_mode_works_in_a_worker`.
+  - AC3 parity: the worker build runs the existing transaction, prepared-query and UDF suites against OPFS as well as IndexedDB. The main-thread build preserves the existing IndexedDB tests. Worker CI sets `RUSTFLAGS=--cfg minigraf_browser_worker` for Firefox and Chrome.
+
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 81 `wasm_bindgen_test` tests (inherited Firefox main-thread result, 2026-11-14, after #441). The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
   - Three committed-memory-backend input-order fixtures: scalar Sort omission, streaming counts with Boolean/float representatives and mixed numeric group order, and partition windows preserving float edges and numeric group classes (#641).
   - Twenty-six for `BrowserDb`, including IndexedDB persistence, the default `allow_overrides` list (#869), the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
