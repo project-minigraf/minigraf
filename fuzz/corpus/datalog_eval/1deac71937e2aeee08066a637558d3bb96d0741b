@@ -1,0 +1,2 @@
+(query [:where [? /C][? /C](not(q?))(not(q?))]
+)

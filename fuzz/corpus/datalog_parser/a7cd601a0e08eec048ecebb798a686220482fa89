@@ -1,0 +1,1 @@
+(query [:where  (not [? n e][e d c][? a ?_][ue])])

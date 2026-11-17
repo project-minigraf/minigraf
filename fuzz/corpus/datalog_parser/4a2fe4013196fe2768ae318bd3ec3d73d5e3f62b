@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	 	 :Ne ?n](not-join[?_?e][?:e/dbnalid (query [:?rue])])
+ (ount ?e) ;wr,,,)
+:find (count ?e) ,])
+,,

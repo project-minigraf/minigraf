@@ -1,0 +1,2 @@
+(query [:with  ?e ?:where(tr) :find (falsecount ?e) ;wrn
+:find (falsAcouNt ?e)?(falsecount e)e [?e:e ?n]])

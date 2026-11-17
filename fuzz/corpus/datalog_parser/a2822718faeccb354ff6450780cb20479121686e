@@ -1,0 +1,1 @@
+(query [:where [?e me n] (or (and(q13"\eA"0)(E:m)(BE:fr)(AAA72e6)(d) ) ) [0,xaent ?y]])

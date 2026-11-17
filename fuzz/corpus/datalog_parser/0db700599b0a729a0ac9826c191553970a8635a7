@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :name ?n] (ony22$3$mi5$63e$3$mi3--3$mg$323$0j34$9?4/$min2$52itei$351033$12$n3m069A442$3293$y222222$00313$mi$31244$13$mi0$35y) [?x nt ?y]])

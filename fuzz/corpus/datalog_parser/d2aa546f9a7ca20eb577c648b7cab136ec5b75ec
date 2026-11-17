@@ -1,1 +1,0 @@
-(query [,:where (pi 1#{}),:where(pd ?1#{}0),(pd ?101#{}0)])

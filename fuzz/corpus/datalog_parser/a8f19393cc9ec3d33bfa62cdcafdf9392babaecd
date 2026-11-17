@@ -1,0 +1,1 @@
+(query [:where [? t ?][$e:dva _][$e:db/valid-to ?][$e:ale ?][$e:ea _][$e:db/valid-to ?][$e:lea ?_][$e:db/valid-to:a?_][$e:db/valid-to:a]])

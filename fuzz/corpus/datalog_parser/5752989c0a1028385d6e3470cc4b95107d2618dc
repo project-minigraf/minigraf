@@ -1,2 +1,0 @@
-(query [:where(not [?hn ?_b:ra] (d
-110?104345y) [?x r( [?e])])])

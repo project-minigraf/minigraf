@@ -1,0 +1,1 @@
+(query [:find ?e :where (rulA0 ?e ?_t)(-Afi#uuid "22222222222222222222222222222896")])

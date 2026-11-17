@@ -1,0 +1,1 @@
+(query [:where(not [?_ a?:o](a n) [v rb:o](a n) [av r( )])])

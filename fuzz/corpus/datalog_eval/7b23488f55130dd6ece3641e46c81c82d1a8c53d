@@ -1,0 +1,1 @@
+(query [ :where [?eh :?lr ?c] (or[ea  ?l2e0 ?])])

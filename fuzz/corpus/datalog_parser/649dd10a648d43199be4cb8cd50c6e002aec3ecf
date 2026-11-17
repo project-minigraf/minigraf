@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e pe ?n] (ony2$3$mi)[(in?f1xx ?y)  ?n] (nd $nd t:T)[(en?f1xx ?y)?n] (nd2223$0034454:T)[(in?f1xx ?y)  ?nty]])

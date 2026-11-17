@@ -1,0 +1,1 @@
+(query [:where [?e:m1e ?n] (not [?e ?_a ?_][?e Yae AAu])])

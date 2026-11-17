@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :e ??n][?e :e(fx 70)  ] (n:T)[(fx 35)  ?n] (nehe75 ?y)[(fx ?y)  ?n] (n ?y)[(fx ?y)  ?n] (ndmtOn:T):order-by[(fx ?y)  ?n]])

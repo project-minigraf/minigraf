@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :ne "u-)ae\r\e$"][?e a cc][?e atrafsami3345444t ?_][?e aa ?_][?1 :db/valid-to"][:e--"][:e/e
+t ?y]])

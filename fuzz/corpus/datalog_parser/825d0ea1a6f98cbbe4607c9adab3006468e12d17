@@ -1,0 +1,1 @@
+(query[:where (or(z2 ? ?)(z2 ?:na)(z2 ?:na))])

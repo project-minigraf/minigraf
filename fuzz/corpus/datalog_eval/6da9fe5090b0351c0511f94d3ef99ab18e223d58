@@ -1,2 +1,0 @@
-(query [ :where [(=:rue"ide") ][(!= ?n:actie)?_0][(!= ?n:ac)]])
-

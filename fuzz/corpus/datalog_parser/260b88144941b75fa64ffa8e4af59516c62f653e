@@ -1,1 +1,0 @@
-(query [ :where [? :a :b] :query-memory-limit 73ct])

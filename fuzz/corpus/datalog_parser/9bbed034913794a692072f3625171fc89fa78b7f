@@ -1,0 +1,1 @@
+(query [:find   ?e :where [?e :Nme ?n] (not [c?ec:d ccc][?e:alid-from ?_s?_H_][?e:db/valid-from s?_cc?cccc?_][?e:db/valid-from ?_LA34ez][Ce a ?n][?e aaaaa arue])])

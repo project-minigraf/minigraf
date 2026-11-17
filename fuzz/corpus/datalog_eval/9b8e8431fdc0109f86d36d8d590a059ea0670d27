@@ -1,1 +1,0 @@
-(query [:where [?eqfn ?nn  ?n] [(>=nil"nne")]])

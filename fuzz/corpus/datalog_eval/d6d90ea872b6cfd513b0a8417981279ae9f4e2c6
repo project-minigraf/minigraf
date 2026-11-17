@@ -1,0 +1,2 @@
+(query [:where  (_:Finot(q<quer)) (not(q<r))(not(q<er))]
+)

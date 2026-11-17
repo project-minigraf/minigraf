@@ -1,1 +1,0 @@
-(query [:find ?e4:where [?0:namen ?](or(p)[(x ?y)] ( a??y) ) ])

@@ -1,3 +1,0 @@
-(query [:where [?e ?loFF ?c] (not(q[??])[
-*_n:ee]) (not(quq?e :e [?e ])(re [??])[
-*?_:ee])])

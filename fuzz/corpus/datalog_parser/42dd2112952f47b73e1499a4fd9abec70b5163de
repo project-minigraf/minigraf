@@ -1,2 +1,0 @@
-(query [:with ?e  ?e  ?e ?:where [?:Name e?n](transact[?e (q)])
-:find(c5 ?e) :where [?e:nae ?n]])

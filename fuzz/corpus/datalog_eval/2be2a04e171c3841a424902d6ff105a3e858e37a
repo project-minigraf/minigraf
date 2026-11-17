@@ -1,0 +1,1 @@
+(query [:find ?n:distinct :where [?e ?u ?] :distinct :whe])

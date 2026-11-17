@@ -1,0 +1,1 @@
+(query[ :where(ne ?y)[(Gx nil)?y ][(fx nil )?] (n)[(fx nil )?y] (ct)])

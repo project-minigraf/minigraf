@@ -1,1 +1,0 @@
-(query [:where [?:0Dme ?] (no)[?e:aele ""][:/2 :db/valid-to"]ibbb"] (nquer e)])

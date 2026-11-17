@@ -1,0 +1,1 @@
+(query [:where[TTTT?e:?lc oork][TTTTDT:db/valid-to:f][TTTT:db/valid-to:gindrc][4col 2] (h [-c:u])])

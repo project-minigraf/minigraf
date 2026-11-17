@@ -1,0 +1,2 @@
+(query [:with ?e :where [z?/ :Name Io](not-join[][fae:dbval()])
+:find (co ?e)])

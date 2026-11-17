@@ -1,0 +1,1 @@
+(query[ :where [?_?_:name ?n]:where [?_?:_ ?n]])

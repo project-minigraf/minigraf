@@ -1,0 +1,1 @@
+(query [:with ?e0:where(or[(dx ?y) ?n][(fx ?y)  ?n] (tTT)[(fx ?)  n] (>>) ) ])

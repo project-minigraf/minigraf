@@ -1,0 +1,1 @@
+(query [ :where [?e m ?n] [?e:N:vv] (not[Ce a ?_][?e ct o])])
