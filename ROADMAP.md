@@ -8,6 +8,17 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## Next v2.x Patch — IndexedDB Durability (unreleased)
+
+Backport #894 from v3: atomic, always-settling IndexedDB flushes, ordered
+persistence and checkpoint boundaries, and STG-046 refusal of later durable
+work after a failed browser flush. The failure reports STG-048 (preparation
+errors retain their engine code). Reopen recovers the successful prefix before
+the failure. Format v7, IndexedDB schema, public methods and open behavior stay
+unchanged. See [Unreleased](CHANGELOG.md#unreleased).
+
+---
+
 ## v2.0.11 — Query and Write-Transaction Patch (released 2026-10-26)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
