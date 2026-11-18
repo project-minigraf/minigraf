@@ -12,6 +12,8 @@
 //! no way to trigger them from the public API without an unrealistic (multi-GB)
 //! fixture, so they are intentionally not exercised here.
 
+#![cfg(not(target_arch = "wasm32"))] // File-backed WAL tests use native-only tempfile.
+
 use minigraf::{ErrorCategory, Minigraf, OpenOptions};
 use std::io::Write;
 

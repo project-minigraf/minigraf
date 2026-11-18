@@ -7,6 +7,7 @@ fn in_memory_open_returns_ok() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn open_nonexistent_directory_returns_coded_error() {
     let bad_path = "/nonexistent-dir-for-minigraf-test-277/db.graph";
     let result = Minigraf::open(bad_path);

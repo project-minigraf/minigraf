@@ -159,6 +159,32 @@ The **26 `BrowserDb` wasm-bindgen tests** (12 existing, 14 added for #894) run
 only on wasm32 in a browser and are not in the native counts above. All 26 passed
 in headless Firefox on 2026-11-18.
 
+`.github/workflows/wasm.yml` runs these tests on pushes and pull requests to
+`main`: headless Firefox and Chrome on Ubuntu, and real Safari through
+`safaridriver` on `macos-15`. All three lanes run on the main thread. v2 has no
+`minigraf_browser_worker` cfg or OPFS/worker mode, so there are no worker lanes.
+Safari uses the hosted runner's GUI session; private browsing is not covered.
+
+Run locally with Rust's `wasm32-unknown-unknown` target, `wasm-pack`, and the
+chosen browser installed (with its WebDriver on `PATH` or installed by wasm-pack):
+
+```bash
+wasm-pack test --headless --firefox --features browser
+wasm-pack test --headless --chrome --features browser
+# macOS: enable Safari remote automation first.
+sudo safaridriver --enable
+wasm-pack test --headless --safari --features browser
+```
+
+The Safari `--headless` flag selects wasm-bindgen's automated WebDriver runner;
+Safari itself opens a visible window. CI starts `safaridriver` separately and
+sets `SAFARIDRIVER_REMOTE` to avoid the hosted runner's driver startup timeout.
+Native-only file and WAL tests are cfg-gated off wasm32, so the standard
+wasm-pack command can compile all test targets without the native `tempfile`
+dev-dependency. Native `cargo test` still runs those tests.
+The PID-namespace example helper also compiles with an empty main on wasm32,
+as the other native-only examples do.
+
 - The IndexedDB flush returns every page a write dirtied.
 - A dirty page that cannot be read is an error rather than left out.
 - A parse, query and transact error reject with their codes (`PRS-011`, `QRY-007`, `PRS-046`), as on the native API (#673).
@@ -189,9 +215,8 @@ cargo build
 python3 scripts/check_browser_exports.py target/browser-exports.log target/debug/minigraf
 ```
 
-`wasm-pack test --headless --firefox --features browser` currently also compiles
-native-only integration tests that call `Minigraf::open`, unavailable on wasm.
-The direct library runner above exercises the browser suite without those tests.
+The direct library runner above is for opt-in recovery-export verification;
+the standard browser test run uses wasm-pack as shown above.
 
 Before the production fix, the abort-only regression failed at its 1.5-second
 deadline (`deadline: flush did not settle`), and the multi-page regression failed

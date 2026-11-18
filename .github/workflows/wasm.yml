@@ -1,0 +1,68 @@
+name: WASM
+
+# Core's BrowserDb and IndexedDB tests only compile with the browser feature
+# on wasm32, so native CI never runs them. v2 supports main-thread tests only.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: Browser tests (headless ${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both browsers and their WebDriver binaries are preinstalled on
+        # ubuntu-latest; wasm-pack finds them on PATH.
+        browser: [firefox, chrome]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: wasm-bindgen tests (lib, incl. BrowserDb and IndexedDB)
+        run: wasm-pack test --headless --${{ matrix.browser }} --features browser
+
+  safari:
+    name: Safari tests (main thread)
+    # Real Safari through safaridriver. Safari has no headless mode; the
+    # hosted runner's GUI session runs it. Private windows cannot be opened
+    # over WebDriver, so Safari private browsing is not covered here.
+    runs-on: macos-15
+    env:
+      WASM_BINDGEN_TEST_TIMEOUT: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      # The test runner's own safaridriver launch times out on hosted runners
+      # ("driver failed to bind port"), so start it here and point the runner
+      # at it with SAFARIDRIVER_REMOTE.
+      - name: Start safaridriver
+        run: |
+          sudo safaridriver --enable
+          safaridriver -p 4444 &
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:4444/status >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::safaridriver did not start"; exit 1
+      - name: wasm-bindgen tests in Safari
+        env:
+          SAFARIDRIVER_REMOTE: http://127.0.0.1:4444
+        run: wasm-pack test --headless --safari --features browser
