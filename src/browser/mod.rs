@@ -6,11 +6,14 @@
 
 /// Synchronous in-memory page buffer with dirty-page tracking.
 pub mod buffer;
+#[cfg(test)]
+mod flush_tests;
 /// Async IndexedDB backend for browser WASM persistence.
 pub mod indexeddb;
 
 use crate::browser::buffer::BrowserBufferBackend;
 use crate::browser::indexeddb::IndexedDbBackend;
+use crate::error::{ErrorCode, err_coded};
 use crate::graph::FactStorage;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
 use crate::query::datalog::functions::FunctionRegistry;
@@ -31,11 +34,39 @@ struct BrowserDbInner {
     pfs: PersistentFactStorage<BrowserBufferBackend>,
     /// `None` for in-memory databases (no IDB backing).
     idb: Option<IndexedDbBackend>,
+    /// First failed flush, independent of the storage replaced by import.
+    failed_flush: Option<u64>,
+    /// Only the last outstanding barrier; settled batches are released.
+    flush_tail: Option<(u64, js_sys::Promise)>,
+    flush_sequence: u64,
 }
+
+impl BrowserDbInner {
+    fn refuse_failed_flush(&self) -> Result<(), JsValue> {
+        if self.failed_flush.is_some() {
+            return Err(to_js_error(err_coded!(ErrorCode::Stg046)));
+        }
+        Ok(())
+    }
+
+    fn fail_flush(&mut self, sequence: u64) {
+        self.failed_flush = Some(self.failed_flush.map_or(sequence, |old| old.min(sequence)));
+    }
+}
+
+/// Memory was applied; a preparation error keeps its engine code and fails
+/// the handle, unlike validation errors before application.
+struct FlushWork(Result<Vec<(u64, Vec<u8>)>, JsValue>);
 
 /// Browser-only Minigraf database handle backed by IndexedDB.
 ///
-/// All public methods return `Promise`s. Use `await` in JavaScript.
+/// Writes, checkpoint and open return `Promise`s. Use `await` in JavaScript.
+///
+/// IndexedDB flushes are atomic and ordered. A failed flush rejects with
+/// `[STG-048]`; page-preparation errors keep their engine code. Later writes,
+/// checkpoints and imports reject with `[STG-046]`. Reads, rules and export
+/// still work, including rejected work already applied in memory. Discard the
+/// failed handle and reopen to recover the successful prefix before failure.
 ///
 /// **Not compatible with Node.js.** Use `@minigraf/node` for server-side use.
 #[wasm_bindgen]
@@ -64,6 +95,9 @@ impl BrowserDb {
                 functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 pfs,
                 idb: None,
+                failed_flush: None,
+                flush_tail: None,
+                flush_sequence: 0,
             })),
         })
     }
@@ -89,11 +123,19 @@ impl BrowserDb {
                 functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 pfs,
                 idb: Some(idb),
+                failed_flush: None,
+                flush_tail: None,
+                flush_sequence: 0,
             })),
         })
     }
 
     /// Execute a Datalog command string and return a JSON-encoded result.
+    ///
+    /// In IndexedDB mode, a failed flush rejects with `[STG-048]` and later
+    /// transact/retract calls reject with `[STG-046]` without changing memory.
+    /// Queries and rules remain available; discard the handle and reopen to
+    /// recover. Page-preparation failures retain their original engine code.
     ///
     /// Returns a `Promise<string>` in JavaScript. The JSON shape is:
     /// - Query: `{"variables": [...], "results": [[...], ...]}`
@@ -121,6 +163,7 @@ impl BrowserDb {
             return Ok(query_result_to_json(result));
         }
 
+        self.inner.borrow().refuse_failed_flush()?;
         match cmd {
             DatalogCommand::Transact(tx) => {
                 let facts =
@@ -139,21 +182,24 @@ impl BrowserDb {
 
     /// Flush all dirty pages to IndexedDB.
     ///
-    /// Write-through means individual `execute()` calls already flush dirty pages,
-    /// so `checkpoint()` is only needed after `import_graph()` or explicit bulk ops.
-    /// No-op for in-memory databases.
+    /// Waits for every IndexedDB write applied before this call, even if it
+    /// has no pages of its own. Later writes are outside this boundary. Its
+    /// own flush failure is `[STG-048]`; an earlier failed flush is `[STG-046]`.
+    /// Discard the handle and reopen to recover. With no earlier work or dirty
+    /// pages it resolves immediately. No-op for in-memory databases.
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
-        let (dirty_pages, has_idb) = {
+        let work = {
             let mut inner = self.inner.borrow_mut();
-            inner.pfs.save().map_err(to_js_error)?;
-            let pages = take_dirty_pages(&mut inner.pfs)?;
-            (pages, inner.idb.is_some())
+            inner.refuse_failed_flush()?;
+            FlushWork(
+                inner
+                    .pfs
+                    .save()
+                    .map_err(to_js_error)
+                    .and_then(|()| take_dirty_pages(&mut inner.pfs)),
+            )
         };
-
-        if has_idb && !dirty_pages.is_empty() {
-            let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
-            idb.write_pages(dirty_pages).await?;
-        }
+        wasm_bindgen_futures::JsFuture::from(self.flush(work)).await?;
         Ok(())
     }
 
@@ -161,6 +207,8 @@ impl BrowserDb {
     ///
     /// The blob is byte-for-bit compatible with native `.graph` files opened by
     /// `Minigraf::open()`. Pages are always in ascending `page_id` order.
+    /// On a failed IndexedDB handle this includes rejected work already applied
+    /// in memory; export does not acknowledge durability.
     ///
     /// Call `checkpoint()` on native before importing a file here to ensure
     /// no WAL entries are missing from the main file.
@@ -188,8 +236,12 @@ impl BrowserDb {
     /// The blob must be a checkpointed native `.graph` file (no pending WAL sidecar).
     /// All existing data is overwritten. After import, the new data is immediately
     /// queryable and all dirty pages are flushed to IndexedDB.
+    /// A flush failure is `[STG-048]`: memory retains the imported graph, while
+    /// IndexedDB retains the previous graph. Later durable work is `[STG-046]`,
+    /// including imports (no live swap), until the handle is discarded and reopened.
     #[wasm_bindgen(js_name = importGraph)]
     pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
+        self.inner.borrow().refuse_failed_flush()?;
         let bytes = data.to_vec();
         if bytes.len() % crate::storage::PAGE_SIZE != 0 {
             return Err(JsValue::from_str(
@@ -203,32 +255,87 @@ impl BrowserDb {
         }
 
         // ── Sync section ──────────────────────────────────────────────────────────
-        let (dirty_pages, has_idb) = {
+        let work = {
             let mut inner = self.inner.borrow_mut();
             let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
             // Page cache capacity 0 — see comment in `open_in_memory` above.
-            let mut new_pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
+            let new_pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
             let new_fact_storage = new_pfs.storage().clone();
 
-            // Drain dirty set and collect owned page bytes before swapping inner.
-            let dirty_pages = take_dirty_pages(&mut new_pfs)?;
-
+            // Preserve the memory contract even if flush preparation fails.
+            // The failed-flush state belongs to the handle, not this new pfs.
             inner.pfs = new_pfs;
             inner.fact_storage = new_fact_storage;
 
-            (dirty_pages, inner.idb.is_some())
+            FlushWork(take_dirty_pages(&mut inner.pfs))
         };
         // ── Borrow dropped ────────────────────────────────────────────────────────
 
-        if has_idb && !dirty_pages.is_empty() {
-            let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
-            idb.write_pages(dirty_pages).await?;
-        }
+        wasm_bindgen_futures::JsFuture::from(self.flush(work)).await?;
         Ok(())
     }
 }
 
 impl BrowserDb {
+    /// Reserve the durability boundary before deferring its work. Barriers
+    /// always resolve; the operation itself reports any error, so an internal
+    /// predecessor cannot cause an unhandled promise rejection.
+    fn flush(&self, work: FlushWork) -> js_sys::Promise {
+        let mut inner = self.inner.borrow_mut();
+        let Some(idb) = inner.idb.as_ref().map(IndexedDbBackend::clone_handle) else {
+            return match work.0 {
+                Ok(_) => js_sys::Promise::resolve(&JsValue::UNDEFINED),
+                Err(error) => js_sys::Promise::reject(&error),
+            };
+        };
+        inner.flush_sequence += 1;
+        let sequence = inner.flush_sequence;
+        if work.0.is_err() {
+            // Fail admission now, but let the earlier successful prefix finish.
+            inner.fail_flush(sequence);
+        }
+        let previous = inner.flush_tail.take();
+        if previous.is_none() && work.0.as_ref().is_ok_and(Vec::is_empty) {
+            return js_sys::Promise::resolve(&JsValue::UNDEFINED);
+        }
+        let mut release = None;
+        let barrier = js_sys::Promise::new(&mut |resolve, _| release = Some(resolve));
+        inner.flush_tail = Some((sequence, barrier));
+        let db = self.inner.clone();
+        wasm_bindgen_futures::future_to_promise(async move {
+            if let Some((_, previous)) = previous {
+                let _ = wasm_bindgen_futures::JsFuture::from(previous).await;
+            }
+            let result = async {
+                if db
+                    .borrow()
+                    .failed_flush
+                    .is_some_and(|failed| failed < sequence)
+                {
+                    return Err(to_js_error(err_coded!(ErrorCode::Stg046)));
+                }
+                let pages = work.0?;
+                idb.write_pages(pages)
+                    .await
+                    .inspect_err(|_| db.borrow_mut().fail_flush(sequence))
+            }
+            .await;
+            let mut inner = db.borrow_mut();
+            if inner
+                .flush_tail
+                .as_ref()
+                .is_some_and(|(last, _)| *last == sequence)
+            {
+                inner.flush_tail.take();
+            }
+            drop(inner);
+            if let Some(release) = release {
+                let _ = release.call0(&JsValue::NULL);
+            }
+            result.map(|()| JsValue::UNDEFINED)
+        })
+    }
+
     /// Apply a batch of pre-materialized facts to the in-memory store and
     /// flush dirty pages to IndexedDB (if present).
     ///
@@ -243,7 +350,7 @@ impl BrowserDb {
         use crate::graph::types::tx_id_now;
 
         // ── Sync section: hold borrow, do ALL sync work, collect owned data ──
-        let (dirty_pages, result_json) = {
+        let (work, result_json) = {
             let mut inner = self.inner.borrow_mut();
 
             let tx_count = inner.fact_storage.allocate_tx_count();
@@ -261,17 +368,16 @@ impl BrowserDb {
                 })
                 .collect();
 
-            // One batch, so no query sees part of the transaction (#554).
-            inner
-                .fact_storage
-                .load_facts(stamped.iter().cloned())
-                .map_err(to_js_error)?;
-
-            inner.pfs.mark_dirty();
-            inner.pfs.save().map_err(to_js_error)?;
-
-            // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows escape
-            let dirty_pages = take_dirty_pages(&mut inner.pfs)?;
+            let work = FlushWork((|| {
+                // One batch, so no query sees part of the transaction (#554).
+                inner
+                    .fact_storage
+                    .load_facts(stamped)
+                    .map_err(to_js_error)?;
+                inner.pfs.mark_dirty();
+                inner.pfs.save().map_err(to_js_error)?;
+                take_dirty_pages(&mut inner.pfs)
+            })());
 
             let json = if is_retract {
                 format!(r#"{{"retracted":{}}}"#, tx_id)
@@ -279,18 +385,12 @@ impl BrowserDb {
                 format!(r#"{{"transacted":{}}}"#, tx_id)
             };
 
-            (dirty_pages, json)
+            (work, json)
         };
         // ── Borrow dropped here ───────────────────────────────────────────────
 
         // ── Async section: flush to IDB (no RefCell borrow held) ─────────────
-        if !dirty_pages.is_empty() {
-            let has_idb = self.inner.borrow().idb.is_some();
-            if has_idb {
-                let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
-                idb.write_pages(dirty_pages).await?;
-            }
-        }
+        wasm_bindgen_futures::JsFuture::from(self.flush(work)).await?;
 
         Ok(result_json)
     }

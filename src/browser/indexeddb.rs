@@ -4,7 +4,9 @@
 //! Called directly by `BrowserDb` after synchronous `PersistentFactStorage::save()`.
 
 use js_sys::{Array, Promise, Uint8Array};
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
@@ -34,25 +36,104 @@ fn request_to_promise(request: &IdbRequest) -> Promise {
     })
 }
 
-/// Converts an `IdbTransaction` completion into a JS `Promise`.
-fn transaction_to_promise(tx: &IdbTransaction) -> Promise {
-    let tx = tx.clone();
-    Promise::new(&mut |resolve, reject| {
-        let on_complete: Closure<dyn FnMut(web_sys::Event)> =
-            Closure::once(move |_: web_sys::Event| {
-                resolve.call0(&JsValue::NULL).ok();
-            });
-        let on_error: Closure<dyn FnMut(web_sys::Event)> =
-            Closure::once(move |_: web_sys::Event| {
-                reject
-                    .call1(&JsValue::NULL, &JsValue::from_str("IdbTransaction failed"))
-                    .ok();
-            });
-        tx.set_oncomplete(Some(on_complete.as_ref().unchecked_ref()));
-        tx.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        on_complete.forget();
-        on_error.forget();
-    })
+/// Own the transaction's listeners until settlement. Request errors bubble to
+/// the transaction, potentially more than once; all three events share one
+/// idempotent settlement flag. Dropping this guard detaches and frees them.
+struct TransactionWait {
+    tx: IdbTransaction,
+    promise: Promise,
+    _complete: Closure<dyn FnMut(web_sys::Event)>,
+    _error: Closure<dyn FnMut(web_sys::Event)>,
+    _abort: Closure<dyn FnMut(web_sys::Event)>,
+}
+
+impl TransactionWait {
+    fn new(tx: &IdbTransaction) -> Self {
+        let settled = Rc::new(Cell::new(false));
+        let mut listeners = None;
+        let promise = Promise::new(&mut |resolve, reject| {
+            let done = settled.clone();
+            let complete: Closure<dyn FnMut(web_sys::Event)> =
+                Closure::new(move |_: web_sys::Event| {
+                    if !done.replace(true) {
+                        let _ = resolve.call0(&JsValue::NULL);
+                    }
+                });
+            let done = settled.clone();
+            let failed_tx = tx.clone();
+            let reject_error = reject.clone();
+            let error: Closure<dyn FnMut(web_sys::Event)> =
+                Closure::new(move |event: web_sys::Event| {
+                    if !done.replace(true) {
+                        // On a bubbling request error tx.error may not yet be
+                        // set. Preserve the request's original exception name.
+                        let exception = event
+                            .target()
+                            .and_then(|t| t.dyn_into::<IdbRequest>().ok())
+                            .and_then(|r| r.error().ok().flatten())
+                            .or_else(|| failed_tx.error());
+                        let reason = transaction_error(exception);
+                        // Never allow a prevented request error to commit a
+                        // prefix of this batch.
+                        let _ = failed_tx.abort();
+                        let _ = reject_error.call1(&JsValue::NULL, &reason);
+                    }
+                });
+            let done = settled.clone();
+            let aborted_tx = tx.clone();
+            let abort: Closure<dyn FnMut(web_sys::Event)> =
+                Closure::new(move |_: web_sys::Event| {
+                    if !done.replace(true) {
+                        let reason = transaction_error(aborted_tx.error());
+                        let _ = reject.call1(&JsValue::NULL, &reason);
+                    }
+                });
+            tx.set_oncomplete(Some(complete.as_ref().unchecked_ref()));
+            tx.set_onerror(Some(error.as_ref().unchecked_ref()));
+            tx.set_onabort(Some(abort.as_ref().unchecked_ref()));
+            listeners = Some((complete, error, abort));
+        });
+        // Promise::new invokes its executor synchronously.
+        let (complete, error, abort) = match listeners {
+            Some(listeners) => listeners,
+            None => unreachable!("Promise executor runs synchronously"),
+        };
+        Self {
+            tx: tx.clone(),
+            promise,
+            _complete: complete,
+            _error: error,
+            _abort: abort,
+        }
+    }
+}
+
+impl Drop for TransactionWait {
+    fn drop(&mut self) {
+        self.tx.set_oncomplete(None);
+        self.tx.set_onerror(None);
+        self.tx.set_onabort(None);
+    }
+}
+
+fn write_error(error: JsValue) -> JsValue {
+    let name = js_sys::Reflect::get(&error, &"name".into())
+        .ok()
+        .and_then(|n| n.as_string())
+        .unwrap_or_else(|| error.as_string().unwrap_or_else(|| format!("{error:?}")));
+    super::to_js_error(crate::error::err_coded!(
+        crate::error::ErrorCode::Stg048,
+        "IndexedDB write",
+        name
+    ))
+}
+
+fn transaction_error(exception: Option<web_sys::DomException>) -> JsValue {
+    write_error(exception.map(JsValue::from).unwrap_or_else(|| {
+        // Explicit abort() has no transaction.error, but its DOM outcome is
+        // still AbortError.
+        JsValue::from_str("AbortError")
+    }))
 }
 
 /// Async wrapper around a browser IndexedDB database.
@@ -156,20 +237,26 @@ impl IndexedDbBackend {
         }
         let tx = self
             .db
-            .transaction_with_str_and_mode(&self.store_name, IdbTransactionMode::Readwrite)?;
-        let store = tx.object_store(&self.store_name)?;
-
-        for (page_id, data) in &pages {
-            let key = JsValue::from_f64(*page_id as f64);
-            let arr = Uint8Array::from(data.as_slice());
-            store.put_with_key(&arr, &key)?;
+            .transaction_with_str_and_mode(&self.store_name, IdbTransactionMode::Readwrite)
+            .map_err(write_error)?;
+        let wait = TransactionWait::new(&tx);
+        let queued = (|| {
+            let store = tx.object_store(&self.store_name)?;
+            for (page_id, data) in &pages {
+                let key = JsValue::from_f64(*page_id as f64);
+                let arr = Uint8Array::from(data.as_slice());
+                store.put_with_key(&arr, &key)?;
+            }
+            Ok::<(), JsValue>(())
+        })();
+        if let Err(error) = queued {
+            // A synchronous throw does not abort IndexedDB automatically.
+            // Roll back every earlier put, then observe settlement.
+            let _ = tx.abort();
+            let _ = JsFuture::from(wait.promise.clone()).await;
+            return Err(write_error(error));
         }
-
-        // Wait for the transaction to commit. The IDB transaction commits
-        // automatically once all put requests have been processed and no
-        // new requests are made. We wait here to ensure durability before
-        // returning to the caller.
-        JsFuture::from(transaction_to_promise(&tx)).await?;
+        JsFuture::from(wait.promise.clone()).await?;
         Ok(())
     }
 }

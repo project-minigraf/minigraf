@@ -2,11 +2,11 @@
 
 #777 corrects documentation only on v2; query behavior and test counts are unchanged. Ordinary `avg` still raises PRS-027 without `:over`.
 
-## v2.0.11 Coverage Summary
+## Unreleased v2.x Coverage Summary
 
 | | |
 |---|---|
-| **Verified** | 2026-10-26 with `cargo test` |
+| **Verified** | 2026-11-18 with `cargo test` |
 | **Passing** | 1,326 |
 | **Ignored** | 9 (see [Ignored Tests](#ignored-tests)) |
 | **Total** | 1,335, including the golden-file corpus (#391) |
@@ -155,11 +155,50 @@ These tests compare the database against an independent answer rather than a sin
 
 ### Browser
 
-The `BrowserDb` tests run only on wasm32 with `wasm-bindgen-test` in a browser and are not in the counts above.
+The **26 `BrowserDb` wasm-bindgen tests** (12 existing, 14 added for #894) run
+only on wasm32 in a browser and are not in the native counts above. All 26 passed
+in headless Firefox on 2026-11-18.
 
 - The IndexedDB flush returns every page a write dirtied.
 - A dirty page that cannot be read is an error rather than left out.
 - A parse, query and transact error reject with their codes (`PRS-011`, `QRY-007`, `PRS-046`), as on the native API (#673).
+
+The #894 tests in `src/browser/flush_tests.rs` use real IndexedDB transactions
+with test-only JavaScript interception. They cover abort-only settlement,
+recoverable abort, multiple bubbling request errors, queue-time exceptions,
+closed connections, a 400-fact failed write, checkpoint and smaller imports,
+repeated STG-046 refusal without state changes, and INT-052 preparation failures.
+Overlap cases cover write/write, write/import, import/write and write/checkpoint;
+controls cover successful mixed operations, checkpoint boundaries excluding later
+writes, earlier success before preparation failure, validation failures and
+release of settled barriers. Queries, rules and export stay usable. Fresh open
+performs no writeback and accepts subsequent writes.
+
+The quiescent oracle compares durable page bytes and recovered logical rows,
+checks that every v7 header page reference is present, and exports the recovered
+store. The verification run opened and queried **16 recovered exports with the
+native CLI** using `scripts/check_browser_exports.py`. Export transport is opt-in:
+
+```bash
+# Put matching wasm-bindgen-test-runner and geckodriver executables on PATH.
+# The native binary and all scratch files remain under target/.
+MINIGRAF_EXPORT_RECOVERY=1 WASM_BINDGEN_USE_BROWSER=1 MOZ_HEADLESS=1 \
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+cargo test --target wasm32-unknown-unknown --features browser --lib -- --nocapture > target/browser-exports.log 2>&1
+cargo build
+python3 scripts/check_browser_exports.py target/browser-exports.log target/debug/minigraf
+```
+
+`wasm-pack test --headless --firefox --features browser` currently also compiles
+native-only integration tests that call `Minigraf::open`, unavailable on wasm.
+The direct library runner above exercises the browser suite without those tests.
+
+Before the production fix, the abort-only regression failed at its 1.5-second
+deadline (`deadline: flush did not settle`), and the multi-page regression failed
+because durable bytes had changed after the queue-time exception. Both pass with
+the backport. v2 tests do not include v3 transactions, close, OPFS or open-time
+migration flushes. Empty-file import cases use a real v7 header: importing zero
+bytes on v2 sends no writes and cannot exercise an adapter failure.
 
 ## Ignored Tests
 

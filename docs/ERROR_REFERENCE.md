@@ -138,6 +138,8 @@ with no `CodedError` anywhere in its chain.
 | STG-026 | Database locked by another process | Storage |
 | STG-027 | Filesystem does not support file locking | Storage |
 | STG-045 | File shorter than one page and not a new database | Storage |
+| STG-046 | Earlier checkpoint or IndexedDB flush failed on this handle | Storage |
+| STG-048 | Browser storage operation failed | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Fact serialised size exceeds maximum | WAL |
@@ -2024,6 +2026,56 @@ See the [file format section in README](../README.md#file-format) for version hi
 - If the file is not needed, delete it and open the path again to create a new database.
 
 **Scenario**: A copy of a `.graph` file stops after its first kilobyte, and the copy is opened.
+
+---
+
+### STG-046 Earlier checkpoint or IndexedDB flush failed on this handle
+
+**Error text**: `an earlier checkpoint or IndexedDB flush failed on this handle and is not retried; reopen the database`
+
+**Cause**: In v2.x this code applies to `BrowserDb` backed by IndexedDB. A failed
+flush rejects with STG-048, naming the IndexedDB write and DOM exception; a
+failure preparing its pages keeps its engine code. The handle then refuses
+newly admitted transact/retract, checkpoint and import operations with STG-046,
+without changing facts, transaction counters or the live store. Native v2.x
+handles do not use this failed-handle rule.
+
+Reads, rules and `exportGraph()` still work. Memory includes the failed operation
+and overlapping work applied before the failure became known. Export reflects
+that memory, not an acknowledgement of durability. Later flushes wait for earlier
+ones and send nothing if an earlier flush failed. A checkpoint also waits for
+writes applied before it, even when it has no dirty pages of its own.
+
+**Resolution**:
+- Address the browser storage failure, discard the failed handle and open the
+  same name again. A fresh open loads the successful prefix before the failed
+  flush; a rejected IndexedDB write is never stored. There is no automatic retry.
+- A failed import remains visible in memory, but leaves every byte in IndexedDB
+  unchanged. Use the fresh handle for subsequent writes.
+
+**Scenario**: A multi-page write exceeds the origin quota. It remains queryable
+in memory, but every later durable operation is refused until the caller reopens.
+
+---
+
+### STG-048 Browser storage operation failed
+
+**Error text**: `browser storage operation failed: {} ({})`
+
+**Cause**: An IndexedDB write failed during transaction creation, request
+queueing, error or abort. The message names the operation (`IndexedDB write`)
+and the browser exception (for example `QuotaExceededError` or `AbortError`).
+None of the rejected flush's changes reach IndexedDB; even a synchronous
+exception after earlier puts were queued aborts the whole transaction.
+
+**Resolution**:
+- Check the operation and exception name, available origin quota and browser permissions.
+- Later durable operations on this handle fail with STG-046. Discard it and reopen
+  to recover the successful prefix before the failed flush. Reads and export on
+  the failed handle may still include rejected work held only in memory.
+
+**Scenario**: Origin quota is exhausted while writing a data page; `execute()`
+rejects with STG-048 naming the IndexedDB write and `QuotaExceededError`.
 
 ---
 
