@@ -9,6 +9,8 @@
 //! directly — see the unit tests inside `src/storage/*.rs` for codes that
 //! are only reachable at that lower level).
 
+#![cfg(not(target_arch = "wasm32"))] // Minigraf::open requires the native file backend.
+
 use minigraf::{ErrorCategory, Minigraf};
 use std::io::Write;
 

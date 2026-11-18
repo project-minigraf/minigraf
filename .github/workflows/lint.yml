@@ -4,7 +4,7 @@ name: Lint
 # is installed. Clippy lints the library and binary with every feature; tests,
 # examples and benches are not linted (the panic-prevention lints in Cargo.toml
 # would need thousands of changes there). A separate job lints the browser
-# library on wasm32, including code that native builds do not compile.
+# library on wasm32; wasm.yml runs the browser tests.
 
 on:
   push:
