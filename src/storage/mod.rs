@@ -9,6 +9,7 @@ pub mod backend;
 pub mod btree;
 pub mod btree_v6;
 pub mod cache;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod dir_sync;
 pub mod index;
 pub mod packed_pages;

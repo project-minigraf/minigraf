@@ -1065,6 +1065,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// The `last_checkpointed_tx_count` recorded in the on-disk header.
     ///
     /// Used by WAL replay to skip entries already present in the main file.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn last_checkpointed_tx_count(&self) -> u64 {
         self.last_checkpointed_tx_count
     }
@@ -1078,11 +1079,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     ///
     /// Used by checkpoint to ensure save() always writes even if no new
     /// facts have been added since the last save.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn force_dirty(&mut self) {
         self.mark_dirty();
     }
 
     /// Check if storage has unsaved changes
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -1104,6 +1107,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     where
         F: FnOnce(&B) -> R,
     {
+        // Preserve the existing panic on poison; recovering would expose suspect state.
+        #[allow(clippy::unwrap_used)]
         let guard = self.backend.lock().unwrap();
         f(&*guard)
     }
@@ -1116,6 +1121,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     where
         F: FnOnce(&mut B) -> R,
     {
+        // Preserve the existing panic on poison; recovering would expose suspect state.
+        #[allow(clippy::unwrap_used)]
         let mut guard = self.backend.lock().unwrap();
         f(&mut *guard)
     }

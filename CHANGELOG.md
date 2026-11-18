@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **IndexedDB flushes are atomic, settle on abort, and refuse later writes after a failure (#894)**, backported from v3 for the next v2.x patch. A synchronous exception while queueing pages aborts the whole batch; an abort with no request error rejects instead of hanging, and repeated request errors cannot throw from a consumed callback. The failed operation reports `STG-048` naming the IndexedDB write and browser exception (page-preparation errors retain their own code). Subsequent transact/retract, checkpoint and import calls report `STG-046` without changing memory. Overlapping flushes run in order; a checkpoint waits for earlier writes even when it has no dirty pages. Queries, rules and export remain available, including rejected work already applied in memory; export is not a durability acknowledgement. Discard the failed handle and reopen to recover the successful prefix before the failure. A failed import leaves IndexedDB unchanged. Format v7, the IndexedDB schema, public methods, healthy write volume and read-only open behavior are unchanged. Native v2.x behavior is unchanged; the two error codes retain their v3 meanings.
 
+### CI
+
+- Lint the browser library on `wasm32-unknown-unknown` with warnings denied in `lint.yml`, alongside the existing native gate. Gate unused native internals and clean up browser-only lints without changing behavior, the public API or format v7.
+
 ### Documentation
 
 - Fix the Rust Quick Start (#884): register recursive rule clauses in separate `execute()` calls and define the keyword entity IDs used by prepared queries. Clarify the entity ID in the prepared-query error example.
