@@ -7,7 +7,8 @@ This document records reproducible local benchmark snapshots. Completed release-
 The core workflow defines 14 JVM and 3 WASI routes with separate Ubuntu 24.04
 histories, pinned runtimes, exact-result checks, raw sample medians and artifact
 provenance. See [binding benchmarks](BINDING_BENCHMARKS.md) for timing boundaries
-and the Java adapter contract. Java integration, default-branch rollout and live
+and the Java adapter contract. The adapter exists in `minigraf-java` at
+`daf7b9c` (`feat/858-nightly-adapter`). Default-branch rollout and live
 baselines/notifications remain pending. No mobile lane is enabled before
 qualification, and no new runtime timings are claimed by this implementation.
 

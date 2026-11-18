@@ -58,7 +58,7 @@ test('JVM lifecycle/storage and WASI REPL shortlists are exact', () => {
   ].map(id => `binding/jvm/${id}`));
 });
 
-const { verifyEvidence, parseMetrics } = require('./bindings-report.cjs');
+const { parseMetrics } = require('./bindings-report.cjs');
 const crypto = require('node:crypto');
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 test('duplicate JSON metric keys fail instead of being overwritten', () => {
@@ -70,7 +70,30 @@ test('duplicate JSON metric keys fail instead of being overwritten', () => {
 
 for (const binding of ['jvm', 'wasi']) test(`${binding} checks raw medians, provenance and artifact bytes before upload`, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'binding-evidence-'));
+  const originalCwd = process.cwd();
   try {
+    // Model the default-branch workflow separately from the measured v3 tree.
+    // This fixture tests validator selection; Python's own suite tests #839's
+    // sample contract. It also keeps these shared Node tests runnable on main.
+    const measuredHarness = path.join(dir, 'benchmarks/bindings839');
+    const workflowHarness = path.join(dir, '.bench-workflow/benchmarks/bindings839');
+    const workflowHelpers = path.join(dir, '.bench-workflow/.github/bench');
+    fs.mkdirSync(measuredHarness, {recursive: true});
+    fs.mkdirSync(workflowHarness, {recursive: true});
+    fs.mkdirSync(workflowHelpers, {recursive: true});
+    for (const file of ['bindings-report.cjs', 'report.cjs']) {
+      fs.copyFileSync(path.join(__dirname, file), path.join(workflowHelpers, file));
+    }
+    fs.writeFileSync(path.join(measuredHarness, 'validate.py'), `import json, pathlib, sys
+pathlib.Path('measured-validator-ran').write_text(__file__)
+records = [json.loads(line) for line in pathlib.Path(sys.argv[2]).read_text().splitlines()]
+if records[-1]['type'] != 'complete':
+    sys.exit('missing complete marker')
+`);
+    for (const file of ['nightly.py', 'wasi.py']) fs.writeFileSync(path.join(measuredHarness, file), file);
+    fs.writeFileSync(path.join(workflowHarness, 'validate.py'), "raise SystemExit('tampered workflow validator ran')\n");
+    const { verifyEvidence } = require(path.join(workflowHelpers, 'bindings-report.cjs'));
+    process.chdir(dir);
     fs.mkdirSync(path.join(dir, 'benchmark'));
     const coreSha = 'a'.repeat(40), workflowSha = 'b'.repeat(40), bindingSha = binding === 'jvm' ? 'c'.repeat(40) : null;
     const ids = expected(binding);
@@ -102,7 +125,7 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} checks raw medians, prov
       ? Object.fromEntries(['bench/nightly.sh', 'bench/manual/build.sh', 'bench/manual/build.gradle.kts',
         'bench/manual/src/main/kotlin/io/github/project_minigraf/benchmark/Benchmark.kt',
         'bench/manual/src/main/kotlin/io/github/project_minigraf/benchmark/ResultChecks.kt'].map(p => [p, sha(p)]))
-      : Object.fromEntries(['nightly.py', 'wasi.py', 'validate.py'].map(p => [p, sha(fs.readFileSync(path.join(__dirname, '../../benchmarks/bindings839', p)))]));
+      : Object.fromEntries(['nightly.py', 'wasi.py', 'validate.py'].map(p => [p, sha(fs.readFileSync(path.join(measuredHarness, p)))]));
     if (binding === 'jvm') for (const file of Object.keys(harnessFiles)) {
       fs.mkdirSync(path.dirname(path.join(dir, file)), {recursive: true});
       fs.writeFileSync(path.join(dir, file), file);
@@ -116,6 +139,10 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} checks raw medians, prov
     const file = path.join(dir, 'binding-provenance.json');
     fs.writeFileSync(file, JSON.stringify(provenance));
     const identity = { coreSha, workflowSha, bindingSha };
+    assert.equal(verifyEvidence(binding, metrics, dir, identity).coreSha, coreSha);
+    assert.equal(fs.readFileSync('measured-validator-ran', 'utf8'), path.join(measuredHarness, 'validate.py'));
+    // main has no workflow harness at all; validation still uses measured v3.
+    fs.rmSync(workflowHarness, {recursive: true});
     assert.equal(verifyEvidence(binding, metrics, dir, identity).coreSha, coreSha);
     metrics[ids[0]].latency.value = 6;
     assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /median/);
@@ -135,5 +162,18 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} checks raw medians, prov
     assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /environment/);
     fs.writeFileSync(raw, records.slice(0, -1).map(r => JSON.stringify(r)).join('\n'));
     assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /samples/);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    fs.writeFileSync(raw, records.map(r => JSON.stringify(r)).join('\n'));
+    // A workflow copy cannot rescue a missing measured validator on v3.
+    fs.mkdirSync(workflowHarness, {recursive: true});
+    fs.writeFileSync(path.join(workflowHarness, 'validate.py'), '# accepts everything\n');
+    if (binding === 'wasi') {
+      fs.appendFileSync(path.join(measuredHarness, 'validate.py'), '# changed since measurement\n');
+      assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /harness hash/);
+    }
+    fs.unlinkSync(path.join(measuredHarness, 'validate.py'));
+    assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /validate.py|raw samples/);
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

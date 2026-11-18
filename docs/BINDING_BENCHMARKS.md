@@ -3,9 +3,8 @@
 The accepted [#839 manual evidence](benchmarks/839-bindings/README.md) remains
 historical evidence. #858 adds core workflow support for JVM (14 IDs) and WASI
 (3 IDs), alongside the existing 26 Python/browser/Node/C IDs. The Java nightly
-adapter and identical default-branch CI companion must land before rollout.
-The main companion must also carry `benchmarks/bindings839/` reporting/test
-dependencies, so its reporting CI can run without the v3 historical archives.
+adapter exists in `minigraf-java` at `daf7b9c` on `feat/858-nightly-adapter`;
+it and the identical default-branch CI companion must land before rollout.
 Three independent v3 runs (including a scheduled run), live notification checks,
 durable evidence and measured lane costs are still pending. This change does
 not complete #858 or activate a mobile simulator/emulator lane.
@@ -14,16 +13,38 @@ The `bindings` matrix in `.github/workflows/bench.yml` measures the once-resolve
 core SHA. JVM checks out `minigraf-java`; WASI has no binding repository. The
 14:00 UTC schedule measures v3; main/v2 checkouts skip with a step-summary note
 and no uploads. A required harness or artifact missing on v3 fails the job.
-Reporting helpers come from `github.workflow_sha`; the WASI driver comes from
-the measured core. Both identities are recorded.
+Reporting JS/shell helpers come from `github.workflow_sha`. All core harness
+Python, including `validate.py` for both JVM and WASI and the WASI driver/adapter,
+runs from the measured core checkout. The WASI provenance hashes that same
+`validate.py`; a different or missing workflow-checkout copy has no effect.
+Both checkout identities are recorded.
+
+This is the F1 option (b) design: the default-branch sparse checkout needs only
+`.github/bench/`, and main does not need `benchmarks/bindings839/`. The shared
+`bench-report.yml` keeps its harness path triggers and runs Python unit tests
+only when `hashFiles('benchmarks/bindings839/test_*.py')` finds tests. Its Node
+tests have self-contained fixtures and run on both branches. This reporting-CI
+guard does not apply to measurement: a missing measured v3 validator fails both
+JVM and WASI jobs, and missing WASI drivers also fail.
 
 Manual dispatch can set `jvm-ref` for a Java-only experiment, leaving every
 other binding on `binding-ref` (default `v3`). `binding-ref` still selects a
 common ref for all binding repositories, so use it only when that ref exists
 in all of them. WASI ignores binding refs and always uses the measured core.
 Non-v3 core or binding refs use `binding-experiment/<core-ref>/<binding-ref>`
-histories, with no production notifications. An experimental prior job cannot
-satisfy the production two-run repeat policy.
+histories, with no production notifications.
+
+For the two-run repeat policy (F2), search the latest 20 completed `bench.yml`
+runs on the default branch, newest first, considering only runs older than the
+current run with the same measured-branch title. For this suite, skip missing
+jobs and logs without the production `History branch: v3; testbed: <suite's
+testbed>;` line, including JVM-only experiments. Stop at the first matching
+production log, even if it has no alerts: a clean production run breaks the
+streak. Only exact IDs repeated in that log can notify. A failed API/log lookup
+stops the search and warns with an empty prior set; exhausting the 20-run window
+without a match also warns with an empty set. Upload failures still notify
+immediately. This bound can leave an older production run out of reach after
+many experiments; it never treats an experiment as production repetition.
 
 ## Existing Python/browser/Node/C lanes
 

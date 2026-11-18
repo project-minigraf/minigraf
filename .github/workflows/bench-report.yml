@@ -21,3 +21,4 @@ jobs:
           node-version: '24'
       - run: node --test .github/bench/*.test.cjs
       - run: python3 -I -m unittest discover -s benchmarks/bindings839 -p 'test_*.py'
+        if: ${{ hashFiles('benchmarks/bindings839/test_*.py') != '' }}

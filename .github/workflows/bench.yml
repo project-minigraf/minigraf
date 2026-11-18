@@ -591,10 +591,12 @@ jobs:
           # A missing harness on v3 is an error, never a successful empty run.
           if [ "$BENCH_REF" = v3 ] || [ -f src/query/engine/mod.rs ]; then
             test -f benches/minigraf_bench/prepared.rs
+            if [ "$BINDING" = jvm ] || [ "$BINDING" = wasi ]; then
+              test -f benchmarks/bindings839/validate.py
+            fi
             if [ "$BINDING" = wasi ]; then
               test -f benchmarks/bindings839/nightly.py
               test -f benchmarks/bindings839/wasi.py
-              test -f benchmarks/bindings839/validate.py
             fi
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
           else
@@ -608,7 +610,6 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/bench/
-            /benchmarks/bindings839/
           persist-credentials: false
       - uses: actions/checkout@v7
         if: steps.source.outputs.enabled == 'true' && matrix.binding != 'wasi'
@@ -709,9 +710,9 @@ jobs:
                 `**Run:** ${runUrl}`,
               ].join('\n');
             } else {
-              // Find this suite's job in the previous completed run of the same
-              // branch (by run name, see run-name) and read its alerts. Runs
-              // from before the branch was in the run name count as main.
+              // Search at most 20 completed runs for this suite's most recent
+              // production history. A JVM-only experiment shares the v3 run
+              // title but must not hide an earlier production repetition.
               let previous = new Set();
               let previousUrl = null;
               try {
@@ -726,10 +727,8 @@ jobs:
                   const m = /\(([^)]+)\)$/.exec(r.display_title || '');
                   return m ? m[1] : 'main';
                 };
-                const prevRun = runs.workflow_runs.find(
-                  r => r.id !== context.runId && runRef(r) === ref);
-                if (prevRun) {
-                  previousUrl = prevRun.html_url;
+                for (const prevRun of runs.workflow_runs) {
+                  if (prevRun.id >= context.runId || runRef(prevRun) !== ref) continue;
                   const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
                     owner, repo, run_id: prevRun.id, per_page: 100,
                   });
@@ -744,9 +743,13 @@ jobs:
                     const testbed = `binding-${suite.slice('binding_'.length)}-ubuntu24-v1`;
                     if (text.includes(`History branch: ${ref}; testbed: ${testbed};`)) {
                       previous = parseAlerts(text);
+                      previousUrl = prevRun.html_url;
+                      // A clean production run breaks the streak too.
+                      break;
                     }
                   }
                 }
+                if (!previousUrl) core.warning('No matching production history in the last 20 completed runs; using an empty prior alert set.');
               } catch (err) {
                 core.warning(`Could not read the previous run's alerts: ${err.message}`);
               }

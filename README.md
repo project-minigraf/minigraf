@@ -40,7 +40,8 @@ The [regression-history follow-up](docs/benchmarks/840-regression/completion.md)
 verifies numeric comparisons for all 427 native and 26 binding IDs, independent v3
 history, scheduled main/v3 routes and isolated live notification delivery with
 cleanup. Raw evidence and offline verifiers are retained in Git. Core workflow support for 14 JVM and 3 WASI nightly IDs is implemented for #858
-([contract](docs/BINDING_BENCHMARKS.md)); the Java adapter, default-branch rollout
+([contract](docs/BINDING_BENCHMARKS.md)); the Java adapter exists in `minigraf-java` at `daf7b9c`
+(`feat/858-nightly-adapter`). Default-branch rollout
 and live baseline/notification evidence remain pending. Mobile lanes remain
 excluded pending qualification; Rust test counts are unchanged.
 

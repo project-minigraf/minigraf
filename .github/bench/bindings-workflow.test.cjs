@@ -30,13 +30,43 @@ test('new rows use the actual binding suite job names', () => {
   assert.match(bindingJob, /binding: wasi/);
   assert.match(workflow, /jvm-ref:/);
 });
-test('main skips with a summary; a missing v3 harness fails', () => {
-  const main = shell('Check v3 binding suite availability', {BENCH_REF: 'main', BINDING: 'wasi'});
-  assert.equal(main.status, 0, main.stderr);
-  assert.match(main.summary, /Skipping/);
-  assert.doesNotMatch(main.output, /enabled=true/);
-  const missing = shell('Check v3 binding suite availability', {BENCH_REF: 'v3', BINDING: 'wasi'});
-  assert.notEqual(missing.status, 0);
+test('main skips; either v3 lane fails when its measured validator is absent', () => {
+  for (const binding of ['jvm', 'wasi']) {
+    const main = shell('Check v3 binding suite availability', {BENCH_REF: 'main', BINDING: binding});
+    assert.equal(main.status, 0, main.stderr);
+    assert.match(main.summary, /Skipping/);
+    assert.doesNotMatch(main.output, /enabled=true/);
+    for (const missing of [true, false]) {
+      const result = shell('Check v3 binding suite availability', {BENCH_REF: 'v3', BINDING: binding}, cwd => {
+        for (const file of ['benches/minigraf_bench/prepared.rs', 'benchmarks/bindings839/nightly.py',
+          'benchmarks/bindings839/wasi.py', ...(missing ? [] : ['benchmarks/bindings839/validate.py'])]) {
+          fs.mkdirSync(path.dirname(path.join(cwd, file)), {recursive: true});
+          fs.writeFileSync(path.join(cwd, file), 'fixture');
+        }
+      });
+      assert.equal(result.status === 0, !missing, result.stderr);
+      assert.equal(result.output.includes('enabled=true'), !missing);
+    }
+  }
+});
+test('workflow checkout needs only shared helpers, never the measured Python harness', () => {
+  const checkout = bindingJob.split('ref: ${{ github.workflow_sha }}')[1].split('persist-credentials: false')[0];
+  assert.match(checkout, /\/\.github\/bench\//);
+  assert.doesNotMatch(checkout, /bindings839/);
+});
+test('reporting CI skips absent Python tests on main and runs them on v3', () => {
+  const reporting = fs.readFileSync(path.join(__dirname, '../workflows/bench-report.yml'), 'utf8');
+  assert.equal((reporting.match(/'benchmarks\/bindings839\/\*\*'/g) || []).length, 2, 'keep both path triggers');
+  const step = reporting.split('      - ').find(s => s.includes('python3 -I -m unittest'));
+  assert.match(step, /if:.*hashFiles\('benchmarks\/bindings839\/test_\*\.py'\) != ''/);
+  const expression = step.match(/if: \$\{\{ (.+) \}\}/)[1];
+  for (const [hash, shouldRun] of [['', false], ['test-files-hash', true]]) {
+    const hashFiles = pattern => {
+      assert.equal(pattern, 'benchmarks/bindings839/test_*.py');
+      return hash;
+    };
+    assert.equal(new Function('hashFiles', `return ${expression}`)(hashFiles), shouldRun);
+  }
 });
 for (const binding of ['jvm', 'wasi']) test(`${binding} uploads only to its own testbed without inherited history`, () => {
   for (const history of ['v3', 'binding-experiment/experiment/v3']) {
@@ -146,5 +176,60 @@ test('JVM run refuses stale output and smoke that emits metrics', () => {
       const result = spawnSync('bash', args, {cwd, encoding: 'utf8'});
       assert.notEqual(result.status, 0, scenario);
     } finally { fs.rmSync(cwd, {recursive: true, force: true}); }
+  }
+});
+
+for (const binding of ['jvm', 'wasi']) test(`${binding} finds the most recent production history within a bounded search`, async () => {
+  const original = {...process.env};
+  const suite = `binding_${binding}`, id = `binding/${binding}/example`;
+  const alert = `- ${id} (Latency): https://bencher.dev/console/projects/minigraf/alerts/123`;
+  const production = `History branch: v3; testbed: binding-${binding}-ubuntu24-v1;`;
+  try {
+    Object.assign(process.env, {SUITE: suite, BENCH_REF: 'v3', BENCH_SHA: 'a'.repeat(40)});
+    for (const scenario of ['repeat-after-experiment', 'clean-production', 'wrong-testbed', 'no-suite', 'lookup-failure', 'exhausted']) {
+      const calls = [], warnings = [], visited = [];
+      const github = {rest: {actions: {
+        listWorkflowRuns: async args => {
+          assert.equal(args.status, 'completed');
+          assert.equal(args.per_page, 20);
+          return {data: {workflow_runs: [
+            {id: 100, display_title: 'Nightly Benchmarks (v3)'}, // current
+            {id: 99, display_title: 'Nightly Benchmarks (main)'},
+            ...Array.from({length: 18}, (_, i) => ({id: 98 - i, display_title: 'Nightly Benchmarks (v3)', html_url: `prior-${98 - i}`})),
+          ]}};
+        },
+        listJobsForWorkflowRun: async args => {
+          visited.push(args.run_id);
+          return {data: {jobs: scenario === 'no-suite' && args.run_id === 98 ? [] : [{id: args.run_id, name: `bench / ${suite}`}]}};
+        },
+        downloadJobLogsForWorkflowRun: async ({job_id}) => {
+          if (scenario === 'lookup-failure' && job_id === 97) throw new Error('unavailable logs');
+          if (job_id === 98 || scenario === 'exhausted') {
+            const history = scenario === 'wrong-testbed' ? 'History branch: v3; testbed: binding-python-ubuntu24-v1;' :
+              `History branch: binding-experiment/v3/java-only; testbed: binding-${binding}-ubuntu24-v1;`;
+            return {data: `${history}\n${alert}`};
+          }
+          return {data: `${production}\n${scenario === 'clean-production' && job_id === 97 ? '' : alert}`};
+        },
+      }, issues: {
+        listForRepo: async () => ({data: []}),
+        create: async args => { calls.push(args); return {data: {number: 1}}; },
+      }}};
+      const summary = {addHeading() {return this;}, addRaw() {return this;}, addList() {return this;}, addBreak() {return this;}, async write() {}};
+      await new AsyncFunction('require', 'github', 'context', 'core', 'console', body('Report regression', 'script'))(
+        () => ({readFileSync: () => alert}), github,
+        {repo: {owner: 'test', repo: 'test'}, runId: 100, serverUrl: 'https://example.com'},
+        {warning: message => warnings.push(message), summary}, {log() {}});
+      const reports = ['repeat-after-experiment', 'wrong-testbed', 'no-suite'].includes(scenario);
+      assert.equal(calls.length, reports ? 1 : 0, scenario);
+      if (reports) assert.match(calls[0].body, /Previous run:\*\* prior-97/);
+      assert.deepEqual(visited, scenario === 'exhausted' ? Array.from({length: 18}, (_, i) => 98 - i) : [98, 97]);
+      if (scenario === 'lookup-failure') assert.ok(warnings.some(w => w.includes('Could not read')));
+      if (scenario === 'exhausted') assert.ok(warnings.some(w => w.includes('No matching production history')));
+    }
+  } finally {
+    for (const key of ['SUITE', 'BENCH_REF', 'BENCH_SHA']) {
+      if (original[key] === undefined) delete process.env[key]; else process.env[key] = original[key];
+    }
   }
 });

@@ -6,8 +6,8 @@ least three independent v3 runs each. Merged fixes #853/#854 preserve the v3 hea
 after a measured main advance. Actual scheduled routes, isolated live notification
 delivery and cleanup are verified; complete evidence is archived beyond 30 days.
 The #858 core workflow now defines 14 JVM and 3 WASI routes
-([contract](BINDING_BENCHMARKS.md)); Java adapter integration, default-branch
-rollout and live baselines/notifications remain pending. No mobile lane is
+([contract](BINDING_BENCHMARKS.md)); the Java adapter exists in `minigraf-java` at
+`daf7b9c` (`feat/858-nightly-adapter`). Default-branch rollout and live baselines/notifications remain pending. No mobile lane is
 enabled before qualification. The original validation snapshot below is retained unchanged; its null
 baselines and X05 open status describe that earlier snapshot.
 

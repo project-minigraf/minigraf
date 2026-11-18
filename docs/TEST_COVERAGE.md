@@ -101,8 +101,9 @@ Sixteen isolated live notification scenarios verify four actual deliveries and
 cleanup of all 46 synthetic resources. Fresh extraction reproduces the evidence
 reports, and removing delivery/comparison evidence is rejected. No Rust tests
 are added; the inventory above is unchanged. The #858 core workflow adds 14 JVM and 3 WASI routes with raw-sample and
-provenance checks ([contract](BINDING_BENCHMARKS.md)). The Java adapter,
-default-branch rollout and live baselines/notifications remain pending; mobile
+provenance checks ([contract](BINDING_BENCHMARKS.md)). The Java adapter exists
+in `minigraf-java` at `daf7b9c` (`feat/858-nightly-adapter`). Default-branch
+rollout and live baselines/notifications remain pending; mobile
 lanes remain excluded pending qualification. No Rust tests are added.
 
 **#843 failure-path map**: [138 curated correctness tests](benchmarks/843-failure-correctness/README.md)

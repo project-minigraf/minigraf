@@ -60,9 +60,11 @@ function verifyEvidence(binding, metrics, directory, identity) {
     'bench/manual/src/main/kotlin/io/github/project_minigraf/benchmark/Benchmark.kt',
     'bench/manual/src/main/kotlin/io/github/project_minigraf/benchmark/ResultChecks.kt'] : ['nightly.py', 'wasi.py', 'validate.py'];
   if (!harness || required.some(file => !harness[file])) throw new Error('missing harness hashes');
-  // WASI is built and driven by the measured checkout; reporting follows the
-  // workflow checkout. Resolve the measured source explicitly, not __dirname.
-  const harnessRoot = binding === 'jvm' ? directory : path.resolve('benchmarks/bindings839');
+  // Python validation for both lanes belongs to the measured core, even when
+  // these reporting helpers come from main (which has no bindings839 harness).
+  // WASI provenance must hash the same validator that we execute below.
+  const measuredHarness = path.resolve('benchmarks/bindings839');
+  const harnessRoot = binding === 'jvm' ? directory : measuredHarness;
   for (const [file, digest] of Object.entries(harness)) {
     if (path.isAbsolute(file) || file.split('/').includes('..') ||
         sha(fs.readFileSync(path.join(harnessRoot, file))) !== digest) throw new Error('wrong harness hash');
@@ -82,7 +84,7 @@ function verifyEvidence(binding, metrics, directory, identity) {
   const rawPath = path.join(directory, 'benchmark/samples.jsonl');
   // Keep #839's validator authoritative for sample IDs/counts/iterations and
   // the complete/check markers, including rejection of smoke streams.
-  const validation = spawnSync('python3', ['-I', path.join(__dirname, '../../benchmarks/bindings839/validate.py'), binding, rawPath], { encoding: 'utf8' });
+  const validation = spawnSync('python3', ['-I', path.join(measuredHarness, 'validate.py'), binding, rawPath], { encoding: 'utf8' });
   if (validation.status !== 0) throw new Error(`invalid raw samples: ${validation.stderr || validation.error}`);
   const records = read('benchmark/samples.jsonl').trim().split('\n').map(parseMetrics);
   const environment = records.find(r => r.type === 'environment');
