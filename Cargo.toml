@@ -60,6 +60,7 @@ web-sys              = { version = "0.3", optional = true, features = [
     "IdbOpenDbRequest",
     "IdbRequest",
     "IdbTransaction",
+    "DomException",
     "IdbTransactionMode",
     "StorageManager",
     "Window",

@@ -2,6 +2,21 @@
 
 ## Coverage Summary
 
+**#894 evaluator follow-up**: the nonempty smaller-import abort regression raises
+the flush suite to 14 browser-only tests (95 main-thread / 128 dedicated-worker
+tests in the inventory). Native counts are unchanged. The test checks failed-handle
+refusal, the unchanged durable page map, and the 400-row reopen integrity oracle.
+Firefox main-thread verification passes all 95 tests; the worker count is inventory
+only for this follow-up (the earlier worker run is recorded below).
+
+**#894 verification (2026-11-17)**: native default tests pass (2,149 active,
+23 ignored); strict native all-target and browser-target Clippy, build and
+formatting pass. Firefox passes **94 main-thread** and **127 dedicated-worker**
+tests. The distribution binary is **1,270,880 bytes** (+16 bytes), below the
+1,280,000-byte gate. The pre-fix multi-page durable-map and abort-only deadline
+failures, one-line existing crash-harness Clippy correction, and unverified lanes
+are documented in the [PR 1 evidence](testing/894-idb-flush-recovery.md).
+
 | | Default features | With `--features test-hooks` |
 |---|---|---|
 | **Active** | 2,149 | 2,187 |
@@ -728,6 +743,8 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
+- **IndexedDB flush recovery** (#894; `src/browser/flush_tests.rs`, 13 new browser tests, plus the updated closed-connection case in `tx_tests.rs`): atomic puts/deletes after queue-time throws; abort-only settlement with a deadline; multiple request errors without callback exceptions; failed-handle refusal without counter/fact changes; execute/commit/checkpoint/smaller-import failures; missing dirty-page preparation errors; ordered overlaps and checkpoint boundaries; close/reopen with queued work; migration failure and intact-page-map recovery. Reopened exports pass the shared native image integrity walk, allowing absent free pages. Healthy operation retains no settled flush history. See [PR 1 evidence and scope](testing/894-idb-flush-recovery.md). Native test inventory is unchanged.
+
 - **OPFS worker mode** (#441; `src/browser/opfs_tests.rs`, 34 worker tests plus one main-thread test):
   - AC1/AC4: `acknowledged_writes_survive_close_and_reopen`, `the_database_is_one_file_and_no_wal`.
   - AC2/AC8: `invalid_names_are_api_017_before_anything_is_created`, `a_second_open_is_stg_026_until_close`, `open_opfs_on_the_main_thread_is_api_026_and_creates_nothing`.
@@ -738,7 +755,7 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - AC13/AC14: `opfs_open_read_bound`, `opfs_cache_residency_bound`, `indexeddb_mode_works_in_a_worker`.
   - AC3 parity: the worker build runs the existing transaction, prepared-query and UDF suites against OPFS as well as IndexedDB. The main-thread build preserves the existing IndexedDB tests. Worker CI sets `RUSTFLAGS=--cfg minigraf_browser_worker` for Firefox and Chrome.
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 81 `wasm_bindgen_test` tests (inherited Firefox main-thread result, 2026-11-14, after #441). The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 94 `wasm_bindgen_test` tests after #894 (81 inherited plus 13 flush-recovery tests); see the [#894 verification record](testing/894-idb-flush-recovery.md) for actual runs. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
   - Three committed-memory-backend input-order fixtures: scalar Sort omission, streaming counts with Boolean/float representatives and mixed numeric group order, and partition windows preserving float edges and numeric group classes (#641).
   - Twenty-six for `BrowserDb`, including IndexedDB persistence, the default `allow_overrides` list (#869), the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).

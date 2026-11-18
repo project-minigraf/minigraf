@@ -1470,7 +1470,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Stg046,
         "STG-046",
-        "an earlier checkpoint failed on this handle and is not retried; reopen the database",
+        "an earlier checkpoint or IndexedDB flush failed on this handle and is not retried; reopen the database",
         ErrorCategory::Storage,
     ),
     (
