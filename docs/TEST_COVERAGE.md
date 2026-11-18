@@ -2,7 +2,7 @@
 
 #777 corrects documentation only on v2; query behavior and test counts are unchanged. Ordinary `avg` still raises PRS-027 without `:over`.
 
-## Unreleased v2.x Coverage Summary
+## v2.0.12 Coverage Summary
 
 | | |
 |---|---|

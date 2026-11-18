@@ -46,7 +46,7 @@ In v2, the ordinary aggregates are `count`, `count-distinct`, `sum`, `sum-distin
 
 ```toml
 [dependencies]
-minigraf = "2.0.11"
+minigraf = "2.0.12"
 ```
 
 Or via cargo:
