@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.12 — 2026-11-18
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): a `BrowserDb` (IndexedDB) durability fix, for a failed flush that left the store with a meta referencing missing pages and later writes reporting success without persisting (#894). File format is unchanged (v7). No API changes; two error codes, `STG-046` and `STG-048`, are registered. Upgrading is recommended for every v2.x user who runs `BrowserDb` against IndexedDB. Native v2.x behavior is unchanged.
+
 ### Fixed
 
-- **IndexedDB flushes are atomic, settle on abort, and refuse later writes after a failure (#894)**, backported from v3 for the next v2.x patch. A synchronous exception while queueing pages aborts the whole batch; an abort with no request error rejects instead of hanging, and repeated request errors cannot throw from a consumed callback. The failed operation reports `STG-048` naming the IndexedDB write and browser exception (page-preparation errors retain their own code). Subsequent transact/retract, checkpoint and import calls report `STG-046` without changing memory. Overlapping flushes run in order; a checkpoint waits for earlier writes even when it has no dirty pages. Queries, rules and export remain available, including rejected work already applied in memory; export is not a durability acknowledgement. Discard the failed handle and reopen to recover the successful prefix before the failure. A failed import leaves IndexedDB unchanged. Format v7, the IndexedDB schema, public methods, healthy write volume and read-only open behavior are unchanged. Native v2.x behavior is unchanged; the two error codes retain their v3 meanings.
+- **IndexedDB flushes are atomic, settle on abort, and refuse later writes after a failure (#894)**, backported from v3. A synchronous exception while queueing pages aborts the whole batch; an abort with no request error rejects instead of hanging, and repeated request errors cannot throw from a consumed callback. The failed operation reports `STG-048` naming the IndexedDB write and browser exception (page-preparation errors retain their own code). Subsequent transact/retract, checkpoint and import calls report `STG-046` without changing memory. Overlapping flushes run in order; a checkpoint waits for earlier writes even when it has no dirty pages. Queries, rules and export remain available, including rejected work already applied in memory; export is not a durability acknowledgement. Discard the failed handle and reopen to recover the successful prefix before the failure. A failed import leaves IndexedDB unchanged. Format v7, the IndexedDB schema, public methods, healthy write volume and read-only open behavior are unchanged. Native v2.x behavior is unchanged; the two error codes retain their v3 meanings.
 
 ### CI
 
@@ -20,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix the Rust Quick Start (#884): register recursive rule clauses in separate `execute()` calls and define the keyword entity IDs used by prepared queries. Clarify the entity ID in the prepared-query error example.
 - Correct ordinary aggregate examples and lists (#777): v2 supports `count`, `count-distinct`, `sum`, `sum-distinct`, `min` and `max`; `avg` requires `:over`. Query behavior is unchanged.
 - Retire production-readiness tracker #383 in favor of the v3.0.0 milestone, preserving its release gates there.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.11 — 2026-10-26
 

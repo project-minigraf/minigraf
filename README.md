@@ -46,7 +46,7 @@ In v2, the ordinary aggregates are `count`, `count-distinct`, `sum`, `sum-distin
 
 ```toml
 [dependencies]
-minigraf = "2.0.11"
+minigraf = "2.0.12"
 ```
 
 Or via cargo:
@@ -200,11 +200,11 @@ See the [Mobile Integration](https://project-minigraf.github.io/minigraf-docs/la
 
 ### For WASM / Browser
 
-**Unreleased, next v2.x patch (#894):** after an IndexedDB flush fails, later
+**From v2.0.12 (#894):** after an IndexedDB flush fails, later
 writes, checkpoints and imports reject with `STG-046`. Discard the handle and
 reopen to recover the successful prefix before the failure. Queries, rules and
 export remain usable; export includes rejected work still held in memory and
-does not acknowledge durability. See the [changelog](CHANGELOG.md#unreleased)
+does not acknowledge durability. See the [changelog](CHANGELOG.md#v2012--2026-11-18)
 and [error reference](docs/ERROR_REFERENCE.md#stg-046-earlier-checkpoint-or-indexeddb-flush-failed-on-this-handle).
 
 Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
