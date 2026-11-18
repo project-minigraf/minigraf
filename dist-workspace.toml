@@ -13,3 +13,7 @@ installers = []
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # Skip checking whether the specified configuration files are up to date
 allow-dirty = ["ci"]
+
+# GitHub retired the macos-14 runner image that dist defaults to for this target
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
