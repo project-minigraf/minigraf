@@ -2,6 +2,15 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## JVM/WASI nightly workflow support (#858, unreleased)
+
+The core workflow defines 14 JVM and 3 WASI routes with separate Ubuntu 24.04
+histories, pinned runtimes, exact-result checks, raw sample medians and artifact
+provenance. See [binding benchmarks](BINDING_BENCHMARKS.md) for timing boundaries
+and the Java adapter contract. Java integration, default-branch rollout and live
+baselines/notifications remain pending. No mobile lane is enabled before
+qualification, and no new runtime timings are claimed by this implementation.
+
 ## Failure paths (#843, unreleased)
 
 The [X08 map](benchmarks/843-failure-correctness/README.md) assigns invalid

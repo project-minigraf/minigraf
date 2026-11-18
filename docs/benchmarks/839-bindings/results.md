@@ -1,5 +1,11 @@
 # Manual measurements (pending acceptance)
 
+Current status (#858 follow-up): #839 was accepted by both maintainer roles for
+evidence revision `10ff8003…`, merged in #852 as `cdad3e72…`. The pending-review
+wording below is the preserved historical record. New JVM/WASI nightly support
+and mobile qualification are separate #858 work; see
+[the current lane contract](../../BINDING_BENCHMARKS.md).
+
 Each cell is the median of ten sample means, in milliseconds. Runs remain separate.
 These runtimes and operations are not equivalent workloads or a ranking.
 

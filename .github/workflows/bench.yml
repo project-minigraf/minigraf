@@ -21,9 +21,14 @@ on:
         default: main
 
       binding-ref:
-        description: Binding ref for all P16 repos (phase B may select the PR branch)
+        description: Common binding ref (use jvm-ref for a JVM-only experiment)
         required: false
         default: v3
+
+      jvm-ref:
+        description: Override only minigraf-java (other bindings keep binding-ref)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -31,6 +36,7 @@ permissions:
   actions: read  # read the previous run's job logs to confirm an alert repeats
 
 env:
+  CARGO_BUILD_JOBS: "4"
   # One threshold per branch/testbed/measure; never race per-suite models.
   # 0.999 retains the noisy file/concurrency setting and existing testbed history.
   BENCH_THRESHOLD: "0.999"
@@ -568,9 +574,11 @@ jobs:
           - { binding: browser, repo: minigraf-wasm }
           - { binding: node, repo: minigraf-node }
           - { binding: c, repo: minigraf-c }
+          - { binding: jvm, repo: minigraf-java }
+          - { binding: wasi }
     env:
       BINDING: ${{ matrix.binding }}
-      BINDING_REF: ${{ inputs.binding-ref || 'v3' }}
+      BINDING_REF: ${{ matrix.binding == 'wasi' && 'v3' || (matrix.binding == 'jvm' && inputs.jvm-ref) || inputs.binding-ref || 'v3' }}
       BENCH_SHA: ${{ needs.compile.outputs.sha }}
       WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
@@ -580,10 +588,17 @@ jobs:
       - name: Check v3 binding suite availability
         id: source
         run: |
-          if [ -f benches/minigraf_bench/prepared.rs ]; then
+          # A missing harness on v3 is an error, never a successful empty run.
+          if [ "$BENCH_REF" = v3 ] || [ -f src/query/engine/mod.rs ]; then
+            test -f benches/minigraf_bench/prepared.rs
+            if [ "$BINDING" = wasi ]; then
+              test -f benchmarks/bindings839/nightly.py
+              test -f benchmarks/bindings839/wasi.py
+              test -f benchmarks/bindings839/validate.py
+            fi
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
           else
-            echo 'Skipping v3-only binding jobs for this measured checkout.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Skipping v3-only binding jobs for this measured main/v2 checkout.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/checkout@v7
         if: steps.source.outputs.enabled == 'true'
@@ -591,29 +606,33 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .bench-workflow
           sparse-checkout-cone-mode: false
-          sparse-checkout: /.github/bench/
+          sparse-checkout: |
+            /.github/bench/
+            /benchmarks/bindings839/
           persist-credentials: false
       - uses: actions/checkout@v7
-        if: steps.source.outputs.enabled == 'true'
+        if: steps.source.outputs.enabled == 'true' && matrix.binding != 'wasi'
         with:
           repository: project-minigraf/${{ matrix.repo }}
-          ref: ${{ inputs.binding-ref || 'v3' }}
+          ref: ${{ env.BINDING_REF }}
           path: binding
           persist-credentials: false
       - name: Pin binding source
         if: steps.source.outputs.enabled == 'true'
         run: |
           set -o pipefail
-          git -C binding rev-parse HEAD | tee binding-sha.txt
+          if [ "$BINDING" != wasi ]; then
+            git -C binding rev-parse HEAD | tee binding-sha.txt
+          fi
           history="$BENCH_REF"
-          if [ "$BINDING_REF" != v3 ]; then
+          if [ "$BINDING_REF" != v3 ] || [ "$BENCH_REF" != v3 ]; then
             history="binding-experiment/$BENCH_REF/$BINDING_REF"
           fi
           echo "BINDING_HISTORY=$history" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.source.outputs.enabled == 'true'
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, wasm32-wasip1
       - uses: actions/setup-python@v6
         if: steps.source.outputs.enabled == 'true'
         with:
@@ -622,6 +641,11 @@ jobs:
         if: steps.source.outputs.enabled == 'true'
         with:
           node-version: '20'
+      - uses: actions/setup-java@v5
+        if: steps.source.outputs.enabled == 'true' && matrix.binding == 'jvm'
+        with:
+          distribution: temurin
+          java-version: '17.0.17+10'
       - name: Build binding with measured core
         if: steps.source.outputs.enabled == 'true'
         run: bash .bench-workflow/.github/bench/bindings.sh build "$BINDING"
@@ -652,7 +676,7 @@ jobs:
             --threshold-max-sample-size 30 --threshold-upper-boundary "$BENCH_THRESHOLD" \
             --err --adapter json --file binding/binding-results.json 2>&1 | tee binding-bencher.txt
       - name: Report regression
-        if: steps.bencher.outcome == 'failure' && env.BINDING_REF == 'v3'
+        if: steps.bencher.outcome == 'failure' && env.BINDING_REF == 'v3' && env.BENCH_REF == 'v3'
         uses: actions/github-script@v9
         env:
           SUITE: binding_${{ matrix.binding }}
@@ -714,7 +738,13 @@ jobs:
                     const { data: log } = await github.rest.actions.downloadJobLogsForWorkflowRun({
                       owner, repo, job_id: prevJob.id,
                     });
-                    previous = parseAlerts(typeof log === 'string' ? log : Buffer.from(log).toString('utf8'));
+                    const text = typeof log === 'string' ? log : Buffer.from(log).toString('utf8');
+                    // A JVM-only experiment can share this run title. Its
+                    // alerts must never count as a production repetition.
+                    const testbed = `binding-${suite.slice('binding_'.length)}-ubuntu24-v1`;
+                    if (text.includes(`History branch: ${ref}; testbed: ${testbed};`)) {
+                      previous = parseAlerts(text);
+                    }
                   }
                 }
               } catch (err) {
@@ -808,3 +838,8 @@ jobs:
             binding-report.json
             binding/binding-results.json
             binding/target-metadata.json
+            binding/binding-provenance.json
+            binding/benchmark/
+            binding/smoke/
+            binding/minigraf.wasm
+            binding/bench/manual/build/evidence/

@@ -5,8 +5,10 @@ establishes numeric comparisons for all 427 native and 26 binding IDs with at
 least three independent v3 runs each. Merged fixes #853/#854 preserve the v3 head
 after a measured main advance. Actual scheduled routes, isolated live notification
 delivery and cleanup are verified; complete evidence is archived beyond 30 days.
-JVM/WASI and qualified iOS-simulator/Android-emulator expansion are tracked in
-#858. The original validation snapshot below is retained unchanged; its null
+The #858 core workflow now defines 14 JVM and 3 WASI routes
+([contract](BINDING_BENCHMARKS.md)); Java adapter integration, default-branch
+rollout and live baselines/notifications remain pending. No mobile lane is
+enabled before qualification. The original validation snapshot below is retained unchanged; its null
 baselines and X05 open status describe that earlier snapshot.
 
 Audit date: 2026-11-03. P01–P17 are merged. This closes out the implementation

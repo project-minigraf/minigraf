@@ -1,5 +1,11 @@
 # Binding release evidence (#839)
 
+Current status (#858 follow-up): #839 was accepted by both maintainer roles for
+evidence revision `10ff8003…`, merged in #852 as `cdad3e72…`. The pending-review
+wording below is the preserved historical record. New JVM/WASI nightly support
+and mobile qualification are separate #858 work; see
+[the current lane contract](../../BINDING_BENCHMARKS.md).
+
 Status: runtime evidence collected; binding and release-maintainer acceptance is pending.
 This document records execution and coverage, not a release sign-off.
 

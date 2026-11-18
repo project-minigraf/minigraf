@@ -100,7 +100,10 @@ The initial four-run schedule archive and five new measurement runs are retained
 Sixteen isolated live notification scenarios verify four actual deliveries and
 cleanup of all 46 synthetic resources. Fresh extraction reproduces the evidence
 reports, and removing delivery/comparison evidence is rejected. No Rust tests
-are added; the inventory above is unchanged. Additional runtime lanes are #858.
+are added; the inventory above is unchanged. The #858 core workflow adds 14 JVM and 3 WASI routes with raw-sample and
+provenance checks ([contract](BINDING_BENCHMARKS.md)). The Java adapter,
+default-branch rollout and live baselines/notifications remain pending; mobile
+lanes remain excluded pending qualification. No Rust tests are added.
 
 **#843 failure-path map**: [138 curated correctness tests](benchmarks/843-failure-correctness/README.md)
 (35 cells; 5 tests exist only in the `test-hooks` build) cover the failure paths excluded from
