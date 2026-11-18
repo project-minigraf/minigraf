@@ -164,6 +164,8 @@ impl IndexedDbBackend {
         let open_request = idb_factory.open_with_u32(db_name, 1)?;
 
         // Create the object store if this is a fresh database (version upgrade).
+        // Preserve the callback's existing trap on unexpected upgrade failures.
+        #[allow(clippy::unwrap_used)]
         let on_upgrade: Closure<dyn FnMut(web_sys::Event)> =
             Closure::once(move |event: web_sys::Event| {
                 let target = event.target().unwrap();
@@ -205,6 +207,8 @@ impl IndexedDbBackend {
         let mut pages = HashMap::with_capacity(keys_arr.length() as usize);
         for i in 0..keys_arr.length() {
             let key = keys_arr.get(i);
+            // Preserve v2's truncating, saturating conversion of numeric IndexedDB keys.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let page_id = key
                 .as_f64()
                 .ok_or_else(|| JsValue::from_str("page_id is not a number"))?

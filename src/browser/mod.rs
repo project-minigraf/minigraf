@@ -215,6 +215,8 @@ impl BrowserDb {
     #[wasm_bindgen(js_name = exportGraph)]
     pub fn export_graph(&self) -> Result<js_sys::Uint8Array, JsValue> {
         let inner = self.inner.borrow();
+        // page_count_raw returns the HashMap's usize length widened to u64; this round-trips.
+        #[allow(clippy::cast_possible_truncation)]
         let page_count = inner
             .pfs
             .with_backend(|b| b.page_count_raw())
@@ -243,7 +245,7 @@ impl BrowserDb {
     pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
         self.inner.borrow().refuse_failed_flush()?;
         let bytes = data.to_vec();
-        if bytes.len() % crate::storage::PAGE_SIZE != 0 {
+        if !bytes.len().is_multiple_of(crate::storage::PAGE_SIZE) {
             return Err(JsValue::from_str(
                 "import data length is not a multiple of PAGE_SIZE",
             ));
@@ -362,7 +364,7 @@ impl BrowserDb {
                     f.tx_id = tx_id;
                     f.tx_count = tx_count;
                     if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
-                        f.valid_from = tx_id as i64;
+                        f.valid_from = tx_id.cast_signed();
                     }
                     f
                 })
