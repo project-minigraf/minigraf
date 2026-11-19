@@ -5,6 +5,14 @@ The [scope and coverage plan](../../docs/benchmarks/839-bindings/README.md) and
 manual runs from existing GitHub nightly benchmarks. No release acceptance or
 latency threshold is implied.
 
+## Nightly integration (#858)
+
+`nightly.py` adapts the unchanged WASI driver/validator for hosted Ubuntu 24.04
+nightlies. See [the lane and adapter contracts](../../docs/BINDING_BENCHMARKS.md)
+for runtime pins, provenance, fresh-output rules and raw-sample recomputation.
+The dedicated-bench instructions below describe historical #839 reproduction;
+#858 separately authorizes these hosted JVM/WASI lanes.
+
 ## WASI reproduction
 
 Use a clean core checkout at the recorded revision and Rust 1.99.1. Copy the

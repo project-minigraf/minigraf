@@ -15,8 +15,11 @@ verifies numeric comparisons for all 427 native and 26 binding IDs, at least thr
 independent v3 runs per ID, preserved history after main advances, actual scheduled
 routes and isolated live notification delivery/cleanup. Fixes #853/#854 are merged;
 checksummed evidence outlives Actions retention. This changes no database runtime
-behavior or Rust test counts. Additional JVM/WASI and qualified mobile nightly
-lanes are tracked separately in #858.
+behavior or Rust test counts. Core workflow support for 14 JVM and 3 WASI nightly IDs is implemented for #858
+([contract](docs/BINDING_BENCHMARKS.md)); the Java adapter exists in `minigraf-java` at `daf7b9c`
+(`feat/858-nightly-adapter`). Default-branch rollout
+and live baseline/notification evidence remain pending. Mobile lanes remain
+excluded pending qualification. Rust test counts are unchanged.
 
 The [#842 semantic permutation map](docs/benchmarks/842-semantic-permutations/README.md)
 ties the excluded numeric, bind, join and forced-plan permutations to 128

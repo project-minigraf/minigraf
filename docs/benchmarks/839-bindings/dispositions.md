@@ -1,5 +1,11 @@
 # Remaining API and lifecycle dispositions
 
+Current status (#858 follow-up): #839 was accepted by both maintainer roles for
+evidence revision `10ff8003…`, merged in #852 as `cdad3e72…`. The pending-review
+wording below is the preserved historical record. New JVM/WASI nightly support
+and mobile qualification are separate #858 work; see
+[the current lane contract](../../BINDING_BENCHMARKS.md).
+
 These are **proposals for binding and release-maintainer acceptance**, not
 approved exclusions. If a disposition is rejected, its applicable cases must be
 measured on the bench or Device Farm before #839 closes. Existing P16 coverage

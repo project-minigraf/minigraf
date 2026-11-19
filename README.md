@@ -39,8 +39,11 @@ The [manual v7-to-v8 migration sweep](docs/benchmarks/838-migration/README.md) (
 The [regression-history follow-up](docs/benchmarks/840-regression/completion.md) (#840)
 verifies numeric comparisons for all 427 native and 26 binding IDs, independent v3
 history, scheduled main/v3 routes and isolated live notification delivery with
-cleanup. Raw evidence and offline verifiers are retained in Git. JVM/WASI and
-qualified mobile nightly expansion are tracked separately in #858.
+cleanup. Raw evidence and offline verifiers are retained in Git. Core workflow support for 14 JVM and 3 WASI nightly IDs is implemented for #858
+([contract](docs/BINDING_BENCHMARKS.md)); the Java adapter exists in `minigraf-java` at `daf7b9c`
+(`feat/858-nightly-adapter`). Default-branch rollout
+and live baseline/notification evidence remain pending. Mobile lanes remain
+excluded pending qualification; Rust test counts are unchanged.
 
 The [semantic permutation map](docs/benchmarks/842-semantic-permutations/README.md)
 (#842) ties excluded numeric, bind, join and forced-plan permutations to

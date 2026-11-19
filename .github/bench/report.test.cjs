@@ -96,3 +96,17 @@ test('CLI retains provenance, IDs and summary on success and early failure', () 
     assert.equal(JSON.parse(fs.readFileSync(path.join(cwd, 'bench-report.json'))).sha, env.BENCH_SHA);
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });
+
+for (const runtime of ['jvm', 'wasi']) test(`${runtime} requires selected = executed = uploaded`, () => {
+  const { expected } = require('./bindings-report.cjs');
+  const selected = expected(runtime);
+  const execution = selected.map(id => `Benchmarking ${id}: Analyzing`).join('\n');
+  const uploaded = selected.map(id => `- ${id} (Latency): https://bencher.dev/console/projects/minigraf/perf?x=1`).join('\n');
+  assert.deepEqual(audit(selected, execution, uploaded, 'success').errors, []);
+  for (const bad of ['', execution + '\n' + execution, execution.split('\n').slice(1).join('\n')]) {
+    assert.ok(audit(selected, bad, uploaded, 'success').errors.length);
+  }
+  for (const bad of ['', uploaded + '\n' + uploaded, uploaded.split('\n').slice(1).join('\n')]) {
+    assert.ok(audit(selected, execution, bad, 'success').errors.length);
+  }
+});
