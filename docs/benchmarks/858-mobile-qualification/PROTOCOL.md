@@ -80,7 +80,7 @@ seeing results. Implementing these harness flags is subsequent work.
 
 ## Configuration pins — fill and record before timing
 
-A named runner label alone is not a pin. No following TODO is a measured fact.
+A named runner label alone is not a pin. The values below were observed in build-only runs before timing; every timed run re-records its own actual values.
 Every original run stream and retained manifest must record its actual public
 configuration, source revisions, Release profile, flag state and executed
 artifact hash. The raw decision input declares one immutable configuration and
@@ -89,13 +89,13 @@ matches it. Device and simulator artifacts have their **own** hashes.
 
 | Physical configuration | Pre-registered reference | Fields to complete before timing |
 | --- | --- | --- |
-| iOS physical | Device Farm iPhone 15 / iOS 18.5 | TODO: availability, exact public model/OS build; if unavailable, closest replacement and selection rationale |
-| Android physical | Device Farm Pixel 7 / Android 14 | TODO: availability, exact public model/OS build; if unavailable, closest replacement and selection rationale |
+| iOS physical | Device Farm iPhone 15 / iOS 18.5 | Available on 2026-11-19 (Device Farm listing: `Apple iPhone 15`, iOS 18.5, public fleet, highly available); no replacement. Upload acceptance and a physical smoke (`BenchmarkTests/testSmoke`, 1 test selected, PASSED, 8.06 device minutes) completed before timing. The exact OS build comes from each run's own environment record. |
+| Android physical | Device Farm Pixel 7 / Android 14 | Available on 2026-11-19 (`Google Pixel 7`, Android 14, public fleet, highly available); no replacement. Upload acceptance and a physical smoke (`BenchmarkTest#verifyAndMeasure`, 1 test selected, PASSED, 0.35 device minutes) completed before timing. ABI of the physical device library: arm64-v8a. |
 
 | Candidate | Required pins (currently unchosen) |
 | --- | --- |
-| iOS simulator on hosted macOS | TODO: runner label; exact image/version; host architecture; full Xcode version/build; simulator runtime version/build; simulated device type; guest ABI; any translation |
-| Android emulator on hosted Linux | TODO: runner label; exact image/version; host architecture; emulator version; API level; full system image package/version; guest ABI; acceleration backend/version; observed hardware acceleration evidence; guest/host ABI translation or explicit none |
+| iOS simulator on hosted macOS | Runner label `macos-15`; image `macos15` version `20261118.0550.1` (macOS 15.8.2, build 24H232); host ARM64; Xcode 16.4 (16F6); simulator runtime iOS 18.6 (22G86); device type `iPhone-15`; guest/native slice `aarch64-apple-ios-sim` on the arm64 host, no guest/host translation (the build script records `sysctl.proc_translated`). **Disclosed difference:** the simulator runtime is iOS 18.6 and the physical reference iOS 18.5; no 18.5 runtime was selected because the pinned device type and newest iOS 18.x runtime available on the image are used, and the selection is recorded per run. Values observed in the build-only run 44500184518 of the Swift qualification workflow; each run re-records them. |
+| Android emulator on hosted Linux | Runner label `ubuntu-24.04`; image `ubuntu24` version `20261111.127.1`; host x86_64 (kernel `7.0.0-1014-aws`); emulator 37.2.13 (build 16740729); API level 34 (Android 14), system image `system-images;android-34;google_apis;x86_64` revision 14; AVD device profile `pixel_7`; guest ABI x86_64; acceleration backend KVM: `/dev/kvm` present and `emulator -accel-check` reports "KVM (version 12) is installed and usable", and the executing guest records `acceleration_active: true` (build-only run 44506574166). x86_64 guest on an x86_64 host: no guest/host ABI translation. **Disclosed difference:** the emulator runs the x86_64 build of the native library, the physical Pixel the arm64-v8a build; each has its own hash. Boot policy: one cold boot with `-no-snapshot`, then a warm guest with the app and test package force-stopped before every attempt. |
 
 Use a new configuration ID and repeat qualification if image, Xcode, runtime,
 system image, ABI, acceleration or timing boundary changes. Do not pool
@@ -139,10 +139,23 @@ There are 5 compute/callback, 6 allocation/conversion and 3 storage/startup
 cases. These labels are immutable input-independent mappings. A category count
 never qualifies or rejects any individual case.
 
+## Matched-build procedure (pre-registered)
+
+For each platform the timed collection is started by one commit to the binding
+repository that sets `collect: true` in the qualification workflow's committed
+`run-config.json` (core revision `b0d2d014d57c90680a6adc1d10e749a3db5df40c`). That
+workflow run builds the device package and the simulator/emulator package from
+the same core, binding and harness revisions, runs the simulator or emulator
+batches, and uploads the device package. The physical Device Farm series uses
+exactly that uploaded package, so physical and simulated runs share revisions,
+Release profile and flag handling. Only the one source flag differs between
+baseline and slowdown methods. A build whose revisions differ from the simulated
+run's is not used.
+
 ## Pre-timing checklist
 
-- [ ] Commit this protocol and tooling before any timing; record the commit/hash.
-- [ ] Fill every configuration TODO; resolve physical-reference availability
+- [ ] Commit this protocol and tooling before any timing; record the commit/hash. (Committed with the pins below filled; the commit hash is recorded in the run manifests.)
+- [x] Fill every configuration TODO; resolve physical-reference availability
   and document any replacement **before timing**.
 - [ ] Pin core, binding and harness revisions. Use matched Release sources and
   boundaries; record workflow, compiler/build flags, source hashes and separate
@@ -150,7 +163,7 @@ never qualifies or rejects any individual case.
 - [ ] Implement and review the one source flag in both binding harnesses;
   confirm it is absent/disabled in production builds and both operations receive
   complete result checks. Preserve explicit physical/simulated identities.
-- [ ] Prove Android hardware acceleration on the actual candidate; record ABI
+- [x] Prove Android hardware acceleration on the actual candidate; record ABI
   translation and the public runtime details for both platforms.
 - [ ] Run untimed exact-result, wrong-but-plausible-result and teardown controls;
   keep physical mode runnable. A provider PASS alone is not stream validity.
