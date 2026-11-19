@@ -204,3 +204,25 @@ baselines, a real scheduled run and notification evidence. Rejected/inconclusive
 cases stay excluded with reasons. If a platform has no qualified case, report a
 costed physical-device-lane proposal; do not implement it here. No lane is
 activated by this report generator, including when synthetic cases pass.
+
+## Deviation log (appended after the protocol commit; no threshold changed)
+
+1. **iOS simulator collection run 1 (Swift workflow run 44513978880, binding
+   `042ec9c98647919e90a48d451eb3ee3d7617821f`).** All 54 attempts were classified
+   "no valid stream" by a parser defect: the simulator driver wrote a
+   pretty-printed JSON header into the same log, and the parser also accepted
+   unprefixed lines beginning with `{`. The raw logs, retained unmodified as
+   evidence, contain the complete records. No values were analysed and no
+   decision was derived from them (apart from one sample line of one log seen
+   while diagnosing the defect). Because the registered retry cap (two retries per
+   slot) was exhausted by the defect, the run is not used. The parser now parses
+   only `MinigrafBench:`-prefixed lines, with regression tests, and the whole
+   simulator collection is re-run from scratch at the new binding revision
+   (`a566cb246a235b10a93e27b571b7a8cbdc6aea36`). The matched-build procedure
+   applies to the new revision: the physical iOS series uses that run's package.
+   The Android emulator collection (run 44509606389) was unaffected: all 18
+   slots valid on the first attempt.
+2. **Android Device Farm collection.** The collection driver stops on a failed
+   status poll (CLI exit 255) and resumes from its durable state; resumption
+   recovers the in-flight provider run and never schedules a second run for the
+   same slot. These interruptions are logged in the collection log.
