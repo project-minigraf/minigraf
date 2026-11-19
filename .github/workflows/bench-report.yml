@@ -3,10 +3,10 @@ name: Benchmark reporting checks
 on:
   push:
     branches: [main, 'v[0-9]*']
-    paths: ['.github/bench/**', '.github/workflows/bench*.yml']
+    paths: ['.github/bench/**', '.github/workflows/bench*.yml', 'benchmarks/bindings839/**']
   pull_request:
     branches: [main, 'v[0-9]*']
-    paths: ['.github/bench/**', '.github/workflows/bench*.yml']
+    paths: ['.github/bench/**', '.github/workflows/bench*.yml', 'benchmarks/bindings839/**']
 
 permissions:
   contents: read
@@ -20,3 +20,5 @@ jobs:
         with:
           node-version: '24'
       - run: node --test .github/bench/*.test.cjs
+      - run: python3 -I -m unittest discover -s benchmarks/bindings839 -p 'test_*.py'
+        if: ${{ hashFiles('benchmarks/bindings839/test_*.py') != '' }}
