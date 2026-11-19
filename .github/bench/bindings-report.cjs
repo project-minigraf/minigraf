@@ -74,12 +74,17 @@ function verifyEvidence(binding, metrics, directory, identity) {
   }
   const runtime = provenance.runtime;
   if (binding === 'jvm') {
+    if (provenance.launchEnvironment?.LD_LIBRARY_PATH !== null) throw new Error('wrong JVM launch environment');
     if (runtime?.distribution !== 'temurin' || runtime.vendor !== 'Eclipse Adoptium' || runtime.version !== '17.0.17+10' ||
         JSON.stringify(runtime.flags) !== JSON.stringify(['-Xms512m', '-Xmx512m', '-XX:+UseG1GC'])) throw new Error('wrong JVM runtime');
   } else if (runtime?.version !== 'wasmtime 49.0.2 (3c8a3e79a 2026-10-02)' ||
       runtime.sha256 !== 'd0a014e0d5b0cf48dd3549c38e2e6ecd78ff09fb3e3f10d751b87b72bdfd8635' ||
       JSON.stringify(runtime.flags) !== JSON.stringify(['run', '-C', 'cache=n', '-C', 'parallel-compilation=n'])) {
     throw new Error('wrong WASI runtime');
+  }
+  if (binding === 'wasi' && (provenance.cargoLockPath !== 'Cargo.lock' ||
+      sha(fs.readFileSync(path.join(directory, 'Cargo.lock'))) !== provenance.cargoLockSha256)) {
+    throw new Error('wrong WASI lockfile hash');
   }
   const rawPath = path.join(directory, 'benchmark/samples.jsonl');
   // Keep #839's validator authoritative for sample IDs/counts/iterations and

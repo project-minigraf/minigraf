@@ -88,12 +88,21 @@ class NightlyTests(unittest.TestCase):
         self.assertIn('do not disable', result.stderr)
 
     def test_publish_only_after_successful_exit_and_reject_stale_outputs(self):
-        for mode in ('success', 'smoke', 'late-exit-failure'):
+        for mode in ('success', 'smoke', 'late-exit-failure', 'changed-lock', 'missing-lock', 'wrong-lock-copy', 'changed-wasm'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
                 root = pathlib.Path(tmp)
                 runtime, wasm = root / 'runtime', root / 'minigraf.wasm'
                 runtime.write_bytes(b'test runtime')
                 wasm.write_bytes(b'test artifact')
+                lock = root / 'Cargo.lock'
+                lock.write_bytes(b'resolved dependencies')
+                output_root = root / 'binding'
+                output_root.mkdir()
+                (output_root / 'Cargo.lock').write_bytes(lock.read_bytes())
+                if mode == 'missing-lock':
+                    lock.unlink()
+                if mode == 'wrong-lock-copy':
+                    (output_root / 'Cargo.lock').write_bytes(b'wrong dependencies')
                 runtime_sha = hashlib.sha256(runtime.read_bytes()).hexdigest()
                 records = copy.deepcopy(self.records)
                 records[0]['runtime_sha256'] = runtime_sha
@@ -106,12 +115,16 @@ class NightlyTests(unittest.TestCase):
                     output = pathlib.Path(command[command.index('--output') + 1])
                     output.mkdir()  # the real driver's fresh-directory rule
                     (output / 'samples.jsonl').write_text('\n'.join(map(json.dumps, records)))
+                    if mode == 'changed-lock':
+                        lock.write_bytes(b'changed dependencies')
+                    if mode == 'changed-wasm':
+                        wasm.write_bytes(b'changed artifact')
                     if mode == 'late-exit-failure':
                         # Even a complete stream cannot override process failure.
                         raise subprocess.CalledProcessError(1, command)
 
                 argv = ['nightly.py', '--runtime', str(runtime), '--wasm', str(wasm),
-                        '--core-dir', str(root), '--output', str(root)]
+                        '--core-dir', str(root), '--output', str(output_root)]
                 if mode == 'smoke':
                     argv.append('--test')
                 with mock.patch.object(sys, 'argv', argv), \
@@ -123,13 +136,22 @@ class NightlyTests(unittest.TestCase):
                     if mode == 'late-exit-failure':
                         with self.assertRaises(subprocess.CalledProcessError):
                             self.adapter.main()
+                    elif mode == 'missing-lock':
+                        with self.assertRaises(FileNotFoundError):
+                            self.adapter.main()
+                    elif mode in ('changed-lock', 'wrong-lock-copy', 'changed-wasm'):
+                        with self.assertRaisesRegex(AssertionError, 'lockfile|artifact'):
+                            self.adapter.main()
                     else:
                         self.adapter.main()
-                metrics_file = root / 'binding-results.json'
+                metrics_file = output_root / 'binding-results.json'
                 self.assertEqual(metrics_file.exists(), mode == 'success')
-                self.assertEqual((root / 'binding-provenance.json').exists(), mode == 'success')
+                self.assertEqual((output_root / 'binding-provenance.json').exists(), mode == 'success')
                 self.assertEqual(stdout.getvalue().count('ok: '), 3 if mode == 'success' else 0)
                 if mode == 'success':
+                    provenance = json.loads((output_root / 'binding-provenance.json').read_text())
+                    self.assertEqual(provenance['cargoLockPath'], 'Cargo.lock')
+                    self.assertEqual(provenance['cargoLockSha256'], hashlib.sha256(lock.read_bytes()).hexdigest())
                     self.assertEqual(json.loads(metrics_file.read_text()), self.adapter.metrics(records))
                     with mock.patch.object(sys, 'argv', argv), \
                          mock.patch.dict(os.environ, BENCH_SHA=records[0]['core_revision'], WORKFLOW_SHA='a' * 40), \

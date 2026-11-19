@@ -747,6 +747,15 @@ jobs:
                       // A clean production run breaks the streak too.
                       break;
                     }
+                    const experiment = text.split('\n').some(line =>
+                      line.includes('History branch: binding-experiment/') && line.includes(`; testbed: ${testbed};`));
+                    if (prevJob.conclusion === 'failure' && !experiment) {
+                      // A failure before the history summary cannot establish
+                      // production repetition. Do not bridge it to older alerts.
+                      previousUrl = prevRun.html_url;
+                      core.warning('Previous suite job failed without a production history summary; breaking the alert streak.');
+                      break;
+                    }
                   }
                 }
                 if (!previousUrl) core.warning('No matching production history in the last 20 completed runs; using an empty prior alert set.');
@@ -845,4 +854,5 @@ jobs:
             binding/benchmark/
             binding/smoke/
             binding/minigraf.wasm
+            binding/Cargo.lock
             binding/bench/manual/build/evidence/

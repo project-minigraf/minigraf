@@ -148,6 +148,9 @@ test('JVM manual builder owns the patch and wrong Cargo resolutions fail', () =>
         test "$CARGO_BUILD_JOBS" = 4
         test "$CARGO_TARGET_DIR" = "$PWD/target"
         test "$CORE_REVISION" = "$BENCH_SHA"
+        test "\${LD_LIBRARY_PATH+x}" != x
+        test ! -e ../Cargo.lock
+        echo resolved > Cargo.lock
         mkdir .cargo
         echo 'owned by manual build' > .cargo/config.toml
       `);
@@ -156,9 +159,9 @@ test('JVM manual builder owns the patch and wrong Cargo resolutions fail', () =>
         manifest_path: path.join(resolution === 'other-checkout' ? '/wrong' : cwd, 'Cargo.toml')};
       const metadata = {packages: resolution === 'duplicate' ? [pkg, pkg] : [pkg]};
       fs.writeFileSync(path.join(cwd, 'metadata.json'), JSON.stringify(metadata));
-      fs.writeFileSync(path.join(cwd, 'bin/cargo'), '#!/bin/sh\ncat ../metadata.json\n', {mode: 0o755});
+      fs.writeFileSync(path.join(cwd, 'bin/cargo'), '#!/bin/sh\ntest -f Cargo.lock || exit 9\ncat ../metadata.json\n', {mode: 0o755});
       const result = spawnSync('bash', [helper, 'build', 'jvm'], {cwd, encoding: 'utf8',
-        env: {...process.env, PATH: `${cwd}/bin:${process.env.PATH}`, BENCH_SHA: 'a'.repeat(40)}});
+        env: {...process.env, PATH: `${cwd}/bin:${process.env.PATH}`, LD_LIBRARY_PATH: '/hosted/python/lib', BENCH_SHA: 'a'.repeat(40)}});
       assert.equal(result.status === 0, resolution === 'correct', result.stderr);
     } finally { fs.rmSync(cwd, {recursive: true, force: true}); }
   }
@@ -186,7 +189,7 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} finds the most recent pr
   const production = `History branch: v3; testbed: binding-${binding}-ubuntu24-v1;`;
   try {
     Object.assign(process.env, {SUITE: suite, BENCH_REF: 'v3', BENCH_SHA: 'a'.repeat(40)});
-    for (const scenario of ['repeat-after-experiment', 'clean-production', 'wrong-testbed', 'no-suite', 'lookup-failure', 'exhausted']) {
+    for (const scenario of ['repeat-after-experiment', 'clean-production', 'wrong-testbed', 'no-suite', 'lookup-failure', 'exhausted', 'failed-before-summary', 'failed-experiment', 'failed-production-alert']) {
       const calls = [], warnings = [], visited = [];
       const github = {rest: {actions: {
         listWorkflowRuns: async args => {
@@ -200,10 +203,12 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} finds the most recent pr
         },
         listJobsForWorkflowRun: async args => {
           visited.push(args.run_id);
-          return {data: {jobs: scenario === 'no-suite' && args.run_id === 98 ? [] : [{id: args.run_id, name: `bench / ${suite}`}]}};
+          return {data: {jobs: scenario === 'no-suite' && args.run_id === 98 ? [] : [{id: args.run_id, name: `bench / ${suite}`, status: 'completed', conclusion: scenario.startsWith('failed-') ? 'failure' : 'success'}]}};
         },
         downloadJobLogsForWorkflowRun: async ({job_id}) => {
           if (scenario === 'lookup-failure' && job_id === 97) throw new Error('unavailable logs');
+          if (job_id === 98 && scenario === 'failed-before-summary') return {data: `build failed\n${alert}`};
+          if (job_id === 98 && scenario === 'failed-production-alert') return {data: `${production}\n${alert}`};
           if (job_id === 98 || scenario === 'exhausted') {
             const history = scenario === 'wrong-testbed' ? 'History branch: v3; testbed: binding-python-ubuntu24-v1;' :
               `History branch: binding-experiment/v3/java-only; testbed: binding-${binding}-ubuntu24-v1;`;
@@ -220,10 +225,10 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} finds the most recent pr
         () => ({readFileSync: () => alert}), github,
         {repo: {owner: 'test', repo: 'test'}, runId: 100, serverUrl: 'https://example.com'},
         {warning: message => warnings.push(message), summary}, {log() {}});
-      const reports = ['repeat-after-experiment', 'wrong-testbed', 'no-suite'].includes(scenario);
+      const reports = ['repeat-after-experiment', 'wrong-testbed', 'no-suite', 'failed-experiment', 'failed-production-alert'].includes(scenario);
       assert.equal(calls.length, reports ? 1 : 0, scenario);
-      if (reports) assert.match(calls[0].body, /Previous run:\*\* prior-97/);
-      assert.deepEqual(visited, scenario === 'exhausted' ? Array.from({length: 18}, (_, i) => 98 - i) : [98, 97]);
+      if (reports) assert.match(calls[0].body, new RegExp(`Previous run:\\*\\* prior-${scenario === 'failed-production-alert' ? 98 : 97}`));
+      assert.deepEqual(visited, scenario === 'exhausted' ? Array.from({length: 18}, (_, i) => 98 - i) : ['failed-before-summary', 'failed-production-alert'].includes(scenario) ? [98] : [98, 97]);
       if (scenario === 'lookup-failure') assert.ok(warnings.some(w => w.includes('Could not read')));
       if (scenario === 'exhausted') assert.ok(warnings.some(w => w.includes('No matching production history')));
     }
@@ -233,3 +238,77 @@ for (const binding of ['jvm', 'wasi']) test(`${binding} finds the most recent pr
     }
   }
 });
+
+function executable(cwd, name, source) {
+  fs.mkdirSync(path.join(cwd, 'bin'), {recursive: true});
+  fs.writeFileSync(path.join(cwd, 'bin', name), `#!/bin/bash\nset -euo pipefail\n${source}\n`, {mode: 0o755});
+}
+
+test('WASI builds in a fresh core checkout and retains the generated lockfile', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'binding-wasi-build-'));
+  try {
+    fs.mkdirSync(path.join(cwd, 'benchmarks/bindings839'), {recursive: true});
+    for (const name of ['nightly.py', 'wasi.py', 'validate.py']) fs.writeFileSync(path.join(cwd, 'benchmarks/bindings839', name), 'fixture');
+    executable(cwd, 'git', 'echo "$BENCH_SHA"');
+    // Model Cargo's lockfile rule; allow either explicit generation or an
+    // unlocked initial build, but never --locked without a resolved lockfile.
+    executable(cwd, 'cargo', `
+      if [[ " $* " = *' --locked '* && ! -f Cargo.lock ]]; then
+        echo 'cannot create the lock file Cargo.lock because --locked was passed' >&2
+        exit 101
+      fi
+      [[ -f Cargo.lock ]] || echo 'resolved dependency fixture' > Cargo.lock
+      if [[ "$1" = build ]]; then
+        [[ " $* " = *' --release '* && " $* " = *' --target wasm32-wasip1 '* && " $* " = *' --bin minigraf '* ]]
+        mkdir -p "$CARGO_TARGET_DIR/wasm32-wasip1/release"
+        echo wasm > "$CARGO_TARGET_DIR/wasm32-wasip1/release/minigraf.wasm"
+      else
+        [[ "$1" = generate-lockfile ]]
+      fi`);
+    executable(cwd, 'curl', ':');
+    executable(cwd, 'tar', ':');
+    // No real runtime downloaded: retain the production checksum assertion.
+    executable(cwd, 'sha256sum', `[[ "$*" = '--check --strict' ]]
+      read -r digest filename
+      [[ "$digest" = d0a014e0d5b0cf48dd3549c38e2e6ecd78ff09fb3e3f10d751b87b72bdfd8635 ]]
+      [[ "$filename" = binding/wasmtime-v49.0.2-x86_64-linux/wasmtime ]]`);
+    assert.ok(!fs.existsSync(path.join(cwd, 'Cargo.lock')));
+    const result = spawnSync('bash', [path.join(__dirname, 'bindings.sh'), 'build', 'wasi'], {
+      cwd, encoding: 'utf8', env: {...process.env, PATH: `${cwd}/bin:${process.env.PATH}`, BENCH_SHA: 'a'.repeat(40)},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(path.join(cwd, 'binding/Cargo.lock'), 'utf8'), fs.readFileSync(path.join(cwd, 'Cargo.lock'), 'utf8'));
+    assert.equal(fs.readFileSync(path.join(cwd, 'binding/minigraf.wasm'), 'utf8'), 'wasm\n');
+    assert.match(bindingJob, /            binding\/Cargo.lock\n/);
+  } finally { fs.rmSync(cwd, {recursive: true, force: true}); }
+});
+
+for (const [step, smoke] of [['Verify every binding case (untimed)', true], ['Measure binding shortlist', false]]) {
+  test(`JVM ${step} removes hosted LD_LIBRARY_PATH and records the timed launch environment`, () => {
+    const result = shell(step, {BINDING: 'jvm', LD_LIBRARY_PATH: '/hosted/python/lib'}, cwd => {
+      const helpers = path.join(cwd, '.bench-workflow/.github/bench');
+      fs.mkdirSync(helpers, {recursive: true});
+      fs.copyFileSync(path.join(__dirname, 'bindings.sh'), path.join(helpers, 'bindings.sh'));
+      fs.writeFileSync(path.join(helpers, 'bindings-report.cjs'), `
+        const assert = require('node:assert/strict');
+        const p = require(process.cwd() + '/binding/binding-provenance.json');
+        assert.deepEqual(p.launchEnvironment, {LD_LIBRARY_PATH: null});
+      `);
+      fs.mkdirSync(path.join(cwd, 'binding/bench'), {recursive: true});
+      fs.writeFileSync(path.join(cwd, 'binding/bench/nightly.sh'), `set -euo pipefail
+        if [[ "\${LD_LIBRARY_PATH+x}" = x ]]; then
+          echo 'nightly: LD_LIBRARY_PATH must be unset for a nightly run' >&2
+          exit 1
+        fi
+        if [[ "\${1:-}" = --test ]]; then
+          echo smoke
+        else
+          echo '{}' > binding-provenance.json
+          echo benchmark
+        fi
+      `);
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, smoke ? /smoke/ : /benchmark/);
+  });
+}

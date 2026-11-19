@@ -65,6 +65,10 @@ def main():
     assert sha(args.runtime) == WASMTIME_SHA256, 'wrong Wasmtime binary'
     assert subprocess.check_output([str(args.runtime.resolve()), '--version'], text=True).strip() == WASMTIME_VERSION
     wasm_sha = sha(args.wasm)
+    lock = args.core_dir / 'Cargo.lock'
+    retained_lock = args.output / 'Cargo.lock'
+    lock_sha = sha(lock)
+    assert sha(retained_lock) == lock_sha, 'retained lockfile differs from build'
     harness_files = {name: sha(HERE / name) for name in ('nightly.py', 'wasi.py', 'validate.py')}
     args.output.mkdir(parents=True, exist_ok=True)
     result_path = args.output / 'binding-results.json'
@@ -78,6 +82,7 @@ def main():
     records = [json.loads(line) for line in (output / 'samples.jsonl').read_text().splitlines()]
     check_environment(records[0], core_sha, wasm_sha)
     assert sha(args.wasm) == wasm_sha and sha(args.runtime) == WASMTIME_SHA256, 'artifact changed during run'
+    assert sha(lock) == lock_sha and sha(retained_lock) == lock_sha, 'lockfile changed during run'
     if args.test:
         assert not any(r['type'] == 'sample' for r in records), 'smoke emitted timing data'
         return
@@ -86,6 +91,7 @@ def main():
                       harnessFiles=harness_files,
                       harnessSha256=hashlib.sha256(json.dumps(harness_files, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
                       artifactSha256=wasm_sha, artifactPath='minigraf.wasm',
+                      cargoLockSha256=lock_sha, cargoLockPath='Cargo.lock',
                       runtime=dict(version=WASMTIME_VERSION, sha256=WASMTIME_SHA256, flags=FLAGS),
                       environment=records[0])
     with provenance_path.open('x') as stream:

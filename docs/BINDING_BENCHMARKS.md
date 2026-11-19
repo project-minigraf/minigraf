@@ -37,14 +37,22 @@ histories, with no production notifications.
 For the two-run repeat policy (F2), search the latest 20 completed `bench.yml`
 runs on the default branch, newest first, considering only runs older than the
 current run with the same measured-branch title. For this suite, skip missing
-jobs and logs without the production `History branch: v3; testbed: <suite's
-testbed>;` line, including JVM-only experiments. Stop at the first matching
+jobs and explicitly identified experiment histories, including JVM-only
+experiments (even if their job failed). Stop at the first matching
 production log, even if it has no alerts: a clean production run breaks the
-streak. Only exact IDs repeated in that log can notify. A failed API/log lookup
+streak. The matching line is `History branch: v3; testbed: <suite's testbed>;`.
+If a completed suite job has conclusion `failure` but no matching production
+line or explicit experiment history, stop with an empty prior set and a warning:
+a build/verification failure before the summary must not bridge two alerts.
+A failed job with a matching production line still supplies its actual alerts;
+Bencher regression failures can therefore repeat. Other nonmatching logs are
+skipped. Only exact IDs repeated in the matching log can notify. A failed API/log lookup
 stops the search and warns with an empty prior set; exhausting the 20-run window
 without a match also warns with an empty set. Upload failures still notify
 immediately. This bound can leave an older production run out of reach after
 many experiments; it never treats an experiment as production repetition.
+An early failure without a history line cannot prove whether it was an experiment;
+it conservatively breaks the streak too.
 
 ## Existing Python/browser/Node/C lanes
 
@@ -144,9 +152,21 @@ core helper does not create one for JVM. It sets `CARGO_BUILD_JOBS=4`,
 `CARGO_TARGET_DIR=<binding>/target`, `CORE_REVISION=BENCH_SHA`, and
 `BINDING_REVISION=<actual binding HEAD>`. The manual builder must keep its
 metadata assertion before compilation and run `ResultChecksTest`. After it
-returns, the helper runs `cargo metadata --locked` again and requires exactly
+returns, the helper runs `cargo metadata --locked` in **the binding directory**
+again and requires exactly
 one `minigraf` package, `source=null`, at the measured checkout's manifest.
+This lock is valid: the builder's `cargo update -p minigraf` has already resolved
+`binding/Cargo.lock`. A path dependency does not require a separate core lockfile.
 The manual builder's existing `target/release` and Gradle copy paths agree.
+
+The core helper unsets `LD_LIBRARY_PATH` for the JVM build, untimed verification
+and timed measurement. Hosted `actions/setup-python` exports that variable;
+the Java adapter continues to reject native search overrides. After a successful
+timed adapter invocation, the helper adds
+`launchEnvironment: {"LD_LIBRARY_PATH": null}` to its provenance, recording the
+actual unset environment. The reporter requires this field before upload.
+This cleanup is scoped to JVM: Python/browser/Node/C and WASI have no corresponding
+adapter rejection, and Python keeps its setup-provided runtime environment.
 
 The later binding-repo implementation must provide **`bash bench/nightly.sh`**,
 invoked from the binding root after the build. Its only optional argument is
@@ -201,8 +221,10 @@ artifact/harness hashes, runtime configuration, samples or medians.
 
 ## WASI lane (#858)
 
-Suite `binding_wasi` uses `binding-wasi-ubuntu24-v1` on Ubuntu 24.04. The workflow
-builds `minigraf.wasm` from the measured core with `--locked --release` and
+Suite `binding_wasi` uses `binding-wasi-ubuntu24-v1` on Ubuntu 24.04. The core
+checkout has no tracked `Cargo.lock`. The workflow first runs
+`cargo generate-lockfile`, then builds `minigraf.wasm` from the measured core
+with `--locked --release` and
 `wasm32-wasip1`, then runs `benchmarks/bindings839/nightly.py`. It wraps the
 unchanged `wasi.py` and `validate.py`; smoke and benchmark directories are fresh.
 The adapter publishes metrics and `ok:` lines only after successful driver exit
@@ -230,6 +252,20 @@ Arguments are exactly `run -C cache=n -C parallel-compilation=n`, followed by th
 WASM path: **no preopened directory**. The adapter records core/workflow SHAs,
 WASM SHA-256, runtime version/checksum/flags, and individual plus combined
 SHA-256 hashes of `nightly.py`, `wasi.py` and `validate.py`.
+The generated build lockfile is retained as `binding/Cargo.lock`; provenance
+records `cargoLockPath: "Cargo.lock"` (relative to the evidence directory) and
+`cargoLockSha256`. The adapter requires the retained copy to match the core
+lockfile and checks both before and after execution. The reporter rehashes the
+retained bytes before upload and includes the provenance in the final report.
+The existing WASM and Wasmtime hashes are still checked before and after each run.
+Dependency resolution can vary across fresh runs; the retained lockfile captures
+the exact resolution used for each build and permits locked reproduction.
+
+The remaining locked commands have existing lockfiles: JVM metadata uses the
+builder's binding lock as above; `cargo install wasm-pack --locked` uses that
+tool's published lockfile, not the core's. Python/browser/Node/C metadata runs
+after their binding-local `cargo update` without `--locked`. Historical #839
+WASI reproduction explicitly copies its retained lockfile before its locked build.
 
 ## Rollout, histories and remaining exclusions
 
