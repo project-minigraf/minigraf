@@ -226,3 +226,23 @@ activated by this report generator, including when synthetic cases pass.
    status poll (CLI exit 255) and resumes from its durable state; resumption
    recovers the in-flight provider run and never schedules a second run for the
    same slot. These interruptions are logged in the collection log.
+3. **iOS simulator collection run 2** (Swift workflow run 44552046673, binding
+   `a566cb246a235b10a93e27b571b7a8cbdc6aea36`): 18 of 18 slots valid on the first
+   attempt. Xcode 16.4 (16F6), iOS 18.6 runtime (22G86), macOS 15.8.2 (24H232) and
+   the arm64 host match the pins; only the hosted runner image version label
+   differs from the earlier build-only run (`20261104.0514.1` against
+   `20261118.0550.1`). The actual value is recorded in `host.json` of the run.
+4. **Physical Android: one unit is not guaranteed.** Device Farm assigns any
+   Pixel 7 / Android 14 unit. The pre-timing smoke recorded build
+   `AP2A.240905.003`; the collector rejected four attempts that landed on a unit
+   with build `AP2A.240705.004` (identity only, never values) and retried them, and
+   one more attempt failed stream integrity ("missing, extra or duplicate
+   records"). All 18 slots ended valid. Invalid attempts are retained in the raw
+   data with their reasons.
+5. **Physical iOS OS build probe.** The exact iOS build string (`kern.osversion`)
+   is emitted only by qualification-mode runs, not by the smoke test, so it
+   cannot be known before timing. Before the registered physical iOS series, one
+   physical run of `testQualificationBaseline` is made solely to read the build
+   string for the pin. That probe run is excluded from the dataset (it is not a
+   registered slot), retained as evidence with its Device Farm minutes, and no
+   timing value from it is used in any decision.
