@@ -15,8 +15,12 @@ if [[ "$binding" = wasi ]]; then
     test -f benchmarks/bindings839/validate.py
     # No binding repo. Build the CLI from this once-resolved core checkout.
     export CARGO_TARGET_DIR="$core_dir/target"
+    # Core does not track Cargo.lock. Resolve once, then keep the build locked
+    # and retain those exact dependencies with the measured artifact.
+    cargo generate-lockfile
     cargo build --locked --release --target wasm32-wasip1 --bin minigraf
     mkdir binding
+    cp Cargo.lock binding/Cargo.lock
     cp target/wasm32-wasip1/release/minigraf.wasm binding/minigraf.wasm
     curl -sSfL 'https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.2/wasmtime-v49.0.2-x86_64-linux.tar.xz' \
       -o binding/wasmtime.tar.xz
@@ -31,6 +35,9 @@ if [[ "$binding" = wasi ]]; then
   exit
 fi
 if [[ "$binding" = jvm ]]; then
+  # setup-python exports this on hosted runners. The adapter intentionally
+  # rejects native search overrides; clear it for build, smoke and measurement.
+  unset LD_LIBRARY_PATH
   # manual/build.sh and Gradle use target/release explicitly. It alone owns
   # the patch, so do not create .cargo/config.toml before calling it.
   export CARGO_TARGET_DIR="$core_dir/binding/target"
@@ -40,6 +47,8 @@ if [[ "$binding" = jvm ]]; then
     test "$(git -C "$core_dir" rev-parse HEAD)" = "$BENCH_SHA"
     CORE_REVISION="$BENCH_SHA" BINDING_REVISION="$(git rev-parse HEAD)" \
       bash bench/manual/build.sh "$core_dir"
+    # The manual builder already resolved binding/Cargo.lock via cargo update.
+    # This is the binding workspace, not the lockfile-free core workspace.
     cargo metadata --format-version 1 --locked > target-metadata.json
     python3 -I - "$core_dir" <<'PY_METADATA'
 import json, pathlib, sys
@@ -62,6 +71,16 @@ PY_METADATA
     if [[ "${1:-}" = --test ]]; then
       test ! -e binding-results.json
       test ! -e binding-provenance.json
+    else
+      # Record the helper's actual launch environment alongside adapter evidence.
+      python3 -I - <<'PY_ENVIRONMENT'
+import json, os, pathlib
+assert 'LD_LIBRARY_PATH' not in os.environ
+path = pathlib.Path('binding-provenance.json')
+provenance = json.loads(path.read_text())
+provenance['launchEnvironment'] = {'LD_LIBRARY_PATH': None}
+path.write_text(json.dumps(provenance, indent=2, allow_nan=False) + '\n')
+PY_ENVIRONMENT
     fi
   fi
   exit

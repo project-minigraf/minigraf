@@ -136,6 +136,13 @@ if records[-1]['type'] != 'complete':
         ? { distribution: 'temurin', vendor: 'Eclipse Adoptium', version: '17.0.17+10', flags: ['-Xms512m', '-Xmx512m', '-XX:+UseG1GC'] }
         : { version: 'wasmtime 49.0.2 (3c8a3e79a 2026-10-02)', sha256: 'd0a014e0d5b0cf48dd3549c38e2e6ecd78ff09fb3e3f10d751b87b72bdfd8635', flags: ['run', '-C', 'cache=n', '-C', 'parallel-compilation=n'] },
     };
+    if (binding === 'wasi') {
+      fs.writeFileSync(path.join(dir, 'Cargo.lock'), 'resolved lockfile');
+      provenance.cargoLockPath = 'Cargo.lock';
+      provenance.cargoLockSha256 = sha('resolved lockfile');
+    } else {
+      provenance.launchEnvironment = {LD_LIBRARY_PATH: null};
+    }
     const file = path.join(dir, 'binding-provenance.json');
     fs.writeFileSync(file, JSON.stringify(provenance));
     const identity = { coreSha, workflowSha, bindingSha };
@@ -144,6 +151,26 @@ if records[-1]['type'] != 'complete':
     // main has no workflow harness at all; validation still uses measured v3.
     fs.rmSync(workflowHarness, {recursive: true});
     assert.equal(verifyEvidence(binding, metrics, dir, identity).coreSha, coreSha);
+    if (binding === 'wasi') {
+      for (const value of [undefined, 'bad-hash', '0'.repeat(64)]) {
+        fs.writeFileSync(file, JSON.stringify({...provenance, cargoLockSha256: value}));
+        assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /lockfile/);
+      }
+      fs.writeFileSync(file, JSON.stringify({...provenance, cargoLockPath: '../Cargo.lock'}));
+      assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /lockfile/);
+      fs.writeFileSync(file, JSON.stringify(provenance));
+      fs.writeFileSync(path.join(dir, 'Cargo.lock'), 'changed lockfile');
+      assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /lockfile/);
+      fs.unlinkSync(path.join(dir, 'Cargo.lock'));
+      assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /Cargo.lock/);
+      fs.writeFileSync(path.join(dir, 'Cargo.lock'), 'resolved lockfile');
+    } else {
+      for (const value of [undefined, {}, {LD_LIBRARY_PATH: ''}, {LD_LIBRARY_PATH: '/hosted/python/lib'}]) {
+        fs.writeFileSync(file, JSON.stringify({...provenance, launchEnvironment: value}));
+        assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /launch environment/);
+      }
+      fs.writeFileSync(file, JSON.stringify(provenance));
+    }
     metrics[ids[0]].latency.value = 6;
     assert.throws(() => verifyEvidence(binding, metrics, dir, identity), /median/);
     metrics[ids[0]].latency.value = 5.5;
