@@ -1,0 +1,1 @@
+(query [:find (d ?e)(zd ?e)(c ?e):where[?e 0:fn]])

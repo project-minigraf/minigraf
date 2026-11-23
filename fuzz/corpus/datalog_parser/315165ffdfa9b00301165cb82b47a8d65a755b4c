@@ -1,1 +1,0 @@
-(query[:where [wE ?e ?,](not [ain ?a zu])[e ?e ?-]])

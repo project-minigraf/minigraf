@@ -1,0 +1,1 @@
+(query[:where (or-join[?  ?eh ?,0]e)])

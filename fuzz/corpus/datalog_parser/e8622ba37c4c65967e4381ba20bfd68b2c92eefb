@@ -1,3 +1,0 @@
-(query[:where[ Aa =?](not-join[][c:me:z](q
-:))])
-

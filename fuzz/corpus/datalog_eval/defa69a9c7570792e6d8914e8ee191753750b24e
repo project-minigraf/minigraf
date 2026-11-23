@@ -1,0 +1,2 @@
+(query [:fin:colo:where [?e:name ?n] [(!= :co"w")] [?e l ?maaarsuc] (not-join [?e] [?e tve
+re-])])

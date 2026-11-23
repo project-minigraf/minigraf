@@ -1,0 +1,1 @@
+(query [::where :any-valid-time[e q qn] (or(L =) (=)[(a:_sg)])])

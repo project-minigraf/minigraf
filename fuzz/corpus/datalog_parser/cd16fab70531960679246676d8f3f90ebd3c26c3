@@ -1,0 +1,1 @@
+(query[:where [e:e ?ne][?e Bnm ?l] (not(pLp)[(a ?)])])

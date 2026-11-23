@@ -1,0 +1,2 @@
+(query [:waere [ere [ ?c] (n2t[] [u?tend true true]e [e :where [or ?c] (not[] [u?tend true true])])
+h] (n)])

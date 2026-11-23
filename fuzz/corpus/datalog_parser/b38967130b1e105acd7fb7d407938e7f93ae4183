@@ -1,4 +1,0 @@
-(query[:f :where (not(q)
-[?: ?n] 
-[?:hevee ?n] (e)
-[?: ?n])])

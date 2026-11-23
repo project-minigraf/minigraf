@@ -1,0 +1,1 @@
+(query [:/ :where [?e ?kame ?n] [(- 7. "Ac")]])

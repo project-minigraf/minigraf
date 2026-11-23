@@ -1,0 +1,3 @@
+(query [:? :where  (or(ln: ??: ?n: ?n?,?n-t);
+ 
+ )])

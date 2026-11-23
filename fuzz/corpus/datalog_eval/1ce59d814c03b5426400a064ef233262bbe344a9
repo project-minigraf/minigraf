@@ -1,0 +1,1 @@
+(query [:fzn:co:where [:aTof?E :name n][:Fa?e :n ?n][:a?e :n?pe ?][(= ?n "")]])

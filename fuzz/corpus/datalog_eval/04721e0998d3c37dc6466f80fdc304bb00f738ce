@@ -1,0 +1,1 @@
+(query[:f:where [o /c] (n ?:o ?:we ?:e )])

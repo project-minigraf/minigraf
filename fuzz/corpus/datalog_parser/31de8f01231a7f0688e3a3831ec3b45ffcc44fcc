@@ -1,3 +1,0 @@
-(query [:where [?e :n?-m ?n] (not(q?)[?x :Lst ?] (c?e=n)(?ye[[?x 
-]])[?x srnt ?] (ck[[?8,+
-]])[?x : ?] (sss)[ae n true])])

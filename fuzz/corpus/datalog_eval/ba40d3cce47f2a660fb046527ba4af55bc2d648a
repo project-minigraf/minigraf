@@ -1,0 +1,1 @@
+(query [:find ?mme :where [?e r ?c] (not[i- e ppppe] [u?tend T pe] [u?tend t true])])

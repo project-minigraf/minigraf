@@ -1,0 +1,5 @@
+(query [::where(q
+
+?y) [(+:th ?y)] (u ssw)[(+:th ?y)]:where(q
+
+uerss:)[(+:th ?y)]  ])

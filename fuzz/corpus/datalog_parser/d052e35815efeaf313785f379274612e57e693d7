@@ -1,0 +1,2 @@
+(query [:find ?e :where [?:nnime ?ne?n]  :any-valid-time[?e :n?-me ?n] (not(sy :
+[: [?e ?]])) (not-join[] [aint ?e u])])

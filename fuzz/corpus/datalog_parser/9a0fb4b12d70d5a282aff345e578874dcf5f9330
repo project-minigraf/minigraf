@@ -1,0 +1,1 @@
+(query [:where(or(pay) (uy)(Q) (_:) [e:nz tr])(n:u)])

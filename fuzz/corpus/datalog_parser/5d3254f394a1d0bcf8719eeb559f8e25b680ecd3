@@ -1,0 +1,1 @@
+(query[::where[?: n](not(q= =) (nts=) (ul:reny) (l [ ([])])[e on e])])

@@ -1,0 +1,1 @@
+(query [:fin?2:where [?nt-Zoo_e ?_?Tfe ?n]  :wiee2er :where [?nt-ZoT?e ?_ ?n]  :where [?e ?name ?Iind] [(= ?n "Alice")]])

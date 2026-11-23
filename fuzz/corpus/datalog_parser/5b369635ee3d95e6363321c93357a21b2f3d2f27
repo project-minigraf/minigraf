@@ -1,3 +1,0 @@
-(query [:f?e :where[?e e ?n] (not(y)
-[?e $name ?n] (nog[])
-[?e $name?n] [?e $e tru])])

@@ -1,0 +1,1 @@
+(query [:fin:where [?e :color ?c] (not[?e :ainde? umine] [?e :de? tumi555e] [?e :dde? trumine] [?e :ery ?n] [(= ?n "Alice")] :w :where [?e ??m2e ?p]  :where :where [] [?e :ede? trmine])])

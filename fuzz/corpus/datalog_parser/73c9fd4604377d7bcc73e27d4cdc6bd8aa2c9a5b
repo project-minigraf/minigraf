@@ -1,1 +1,0 @@
-(query [:where [n: en][?:t ?] (uc=) (u:)[?x r ?B]])

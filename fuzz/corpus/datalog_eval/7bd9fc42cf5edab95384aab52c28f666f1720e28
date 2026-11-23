@@ -1,1 +1,0 @@
-(query [:findsuO :where [?nile l omZaa?rsuc] (not-join [?ee] [?e ?2eEery ?n] [(= ?n "Alice")] :weX)])

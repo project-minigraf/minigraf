@@ -1,1 +1,0 @@
-(query [: :where [?e ?FFFFFFF ?c] (not-join [?__fe ?_ct?6EEEE?c] (////////////////1)  [?TTTTTTTTTTTTTTe ?Ae?lynqEqfn ?c] (////////////////0)  [?TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTe ?Ae?lyn66FEEUEEEEEEEEqfn ?nnnnnnnnnnnnnnnc]  [?e ?l?_ynnueFnnyneFFFFqfn ?k]  [?e ?lyndEEEEEEcfn ?g]  [? ?lynnufn ?C]  [?e ?lynfn ?ke])])

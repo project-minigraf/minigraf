@@ -1,0 +1,1 @@
+(query [:where [?c : Fr] (nojt[] $5ru[])])

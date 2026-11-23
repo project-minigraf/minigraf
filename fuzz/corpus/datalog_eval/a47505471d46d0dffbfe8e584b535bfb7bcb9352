@@ -1,1 +1,0 @@
-(query[:?e :where [?e :co ?c] (t)(or-join ?:uP?)])

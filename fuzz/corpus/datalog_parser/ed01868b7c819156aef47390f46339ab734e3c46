@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e : ?n] (not(q) [ae :ba:])(not(ws)
+[?e wname ?n](ne8[ ]) [a :anned tue92449])(not(qu[ (not)]) [ae :bee tru])])

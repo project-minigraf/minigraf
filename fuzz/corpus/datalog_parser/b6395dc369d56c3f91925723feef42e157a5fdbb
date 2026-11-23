@@ -1,0 +1,2 @@
+(query [:f :where [?: ?n](y [:])[?e :n?-me ?n] (not(que))(not(q)
+[?e ? ?e])])

@@ -1,0 +1,1 @@
+(query [ :where [<= l uc] (nI= ?I/-t)(ot-ge:𝐽:__macgr)])

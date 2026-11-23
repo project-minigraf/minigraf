@@ -1,0 +1,6 @@
+(query [:where [rnot:name qee?ne] (ss:fInd )(?yc=n)(?ye[[?x 
+]])[?x :db/valid-at ?BBBBn](sssucccccc=n)(?ye[[?x 
+]])[?x :db/valat ?BBBBBBBee?n] (s=n)(ccccp[[?x 
+]])[?x :pr ?7B] (sss[[?x 
+]])[?x:p ?ee?n] (sssu[])[?x : ?B] (s=n)(?ye[[
+]])[?x :ulrst B23]])

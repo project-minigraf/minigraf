@@ -1,0 +1,3 @@
+(query [:?:where (or(Lc ?e 
+[])
+[?e wname n?] (no +?e:) )(t(ry[?er])e)])

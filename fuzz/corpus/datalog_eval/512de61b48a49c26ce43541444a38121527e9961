@@ -1,0 +1,1 @@
+(query [: :where [?e :coAlo ?cr] (nee :朸)(?p e)])

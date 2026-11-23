@@ -1,1 +1,0 @@
-(query[:where (not-join[?zzz ? ?g](u1))])

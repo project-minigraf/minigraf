@@ -1,0 +1,1 @@
+(query [:find ?:where [?eA :color ?] (not-join[?_z_fMb9eA] [: ?:where])])

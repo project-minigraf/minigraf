@@ -1,0 +1,1 @@
+(query [:where [?e :oclor ?c] (not[?e :ainde? umine] [?e :ddn? trtrumi056urtrumine] [?e :edee? umine] [?e :ddn? trtrumirtrumine] [?e :eda? tumin] [?e :? mine] [?e :dde? trumine] [?e :de? tumi555urtrumine] [?e :ede? trmine])])

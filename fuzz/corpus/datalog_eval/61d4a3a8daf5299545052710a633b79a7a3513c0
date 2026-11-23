@@ -1,1 +1,0 @@
-(query [:fio:where(query [:fe [?eA ma olaa?rsuc] []]) (not-join[?e] [?e :acte tree]) :where [?e l omaaa?rsuc] (not-j[ee])])

@@ -1,3 +1,0 @@
-(rule [(ss)
-(not-join[] (r))
-(not-join[] (r))])

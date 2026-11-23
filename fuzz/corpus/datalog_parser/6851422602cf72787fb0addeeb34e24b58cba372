@@ -1,2 +1,0 @@
-(query[:where [A 0?n](not-join[?_] (u:))])
-

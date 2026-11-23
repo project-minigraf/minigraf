@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :color ?c] (--1$quo--jtIIIn$uAAAAAAAAh$heOOOOOOIIIIIIIIdnI-IIIn$uAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-6$Qu---1$----Xu$Luh$huh$3h-Xn$uh$hӶIIInI---X$u$h?_$IhnIIIlIIid ?d ?eOeOOOozto-IIIn$uAAAAHAAAh$hIfalseindOOOOOOI+I$quh$4h-Xn$uh:SM$h$IIIInIIi:namOOOOOOIIIIIIIIn$uAAAAAAAA2AAAAAAAAACAAAAAAAAAAAIfIIIIIIIIԶfind ?eO10OO_OO+OOOOO :w$quh$7hhe)])

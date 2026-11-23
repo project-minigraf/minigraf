@@ -1,0 +1,1 @@
+(query[:nd:where [?:X ?c] (F:FFFFFF )])

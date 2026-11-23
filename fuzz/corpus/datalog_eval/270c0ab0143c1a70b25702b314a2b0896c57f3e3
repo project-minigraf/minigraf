@@ -1,1 +1,0 @@
-(query [ :where   :mre :where [?e ?nameGGGGGGGGGme ?n] [ (+?n "Alice") ?n]  :where [?e ?naGGG ?n]   [?_ ?name ?n] [ (+?n "Alice") ?n]  :where [?e ?name  ?n] [ (+?n "lice")]])

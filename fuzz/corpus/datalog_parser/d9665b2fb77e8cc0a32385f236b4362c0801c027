@@ -1,0 +1,1 @@
+(rule [(F) (or (and(asp) (or(and(qu:_:s)x? =)[(a:1)])=)[?() ])[?-nt ?2]])

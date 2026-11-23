@@ -1,0 +1,5 @@
+(query[:?e :where [?l ?doLor ?c] [?l ?dos ?c] (*r(q:wheu:?=fr [ink?w])
+ )(or(q:whe=?u:dr [in0Fht_a?w])
+ ):?e :where [?l ?odLor ?c] [?l ?doLkr ?c] (or(q:wheu:?=fr [ink_a?w]) (or(q:wheu:?=?O [inkFht_a?w])
+)
+ )])

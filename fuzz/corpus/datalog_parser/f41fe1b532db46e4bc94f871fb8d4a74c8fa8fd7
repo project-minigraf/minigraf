@@ -1,1 +1,0 @@
-(query  [:where [? e q?] (or(u:$Ls?ntre081))(e)])

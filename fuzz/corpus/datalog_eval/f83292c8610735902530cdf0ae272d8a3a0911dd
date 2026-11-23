@@ -1,0 +1,2 @@
+(query[: :where [?l ?dLor ?_?c] (or(q:wh*eney=r ?[fin]wk)
+ )])

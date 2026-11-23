@@ -1,1 +1,0 @@
-(query [:finnf :where [?e ?nameG ?n] [ (=?n "") ?n]  :where :where [?e ?nameG ?n] [ (=?n "") ?n]  :where [?e ?naGGGGGGGGGG ?j]  :where [? ?name ?n] [ (=?n "ce")]])

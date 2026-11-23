@@ -1,0 +1,1 @@
+(query [:ne :where [?e :c?lor c] (n ?:o ?ee ?e ?:e [o])])

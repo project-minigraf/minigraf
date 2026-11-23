@@ -1,0 +1,1 @@
+(query [:f :where[?e me ?n] (not(re[])[c :pae ?B?_Bee?n][c:nt ?BBBee?n] (** )[c?x :e ?BBBtrue])])

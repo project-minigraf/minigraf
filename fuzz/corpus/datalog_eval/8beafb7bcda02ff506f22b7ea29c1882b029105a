@@ -1,0 +1,1 @@
+(query [:fzin:co:where [:aof?e :e ?n][:a?e :me ?n][:a?e :name ?]])

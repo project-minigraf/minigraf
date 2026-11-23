@@ -1,0 +1,3 @@
+(query[:where [q e ?] (or(quc:n)(?ye[[?x 
+]])[?x :parent ?B] (sss ) (und )(?yd ,n)(?yd )(?ye=n)(?ye[[?x
+]])()():ure)])

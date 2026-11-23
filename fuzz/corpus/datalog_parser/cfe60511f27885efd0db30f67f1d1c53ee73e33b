@@ -1,1 +1,0 @@
-(query [:where (or(pay) (uy) (Q) (u_:) [ea24 :nz tr])(Anot(qe(sn)):u)])

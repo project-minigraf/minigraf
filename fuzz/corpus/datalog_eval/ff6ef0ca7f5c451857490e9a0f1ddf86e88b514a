@@ -1,1 +1,0 @@
-(query [:fzin:co:where [:aTof?E:nae ?n][:Fa :n0m ?n][:a:db/valid-to(= ?: "")]])

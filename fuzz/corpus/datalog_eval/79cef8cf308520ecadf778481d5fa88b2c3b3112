@@ -1,2 +1,0 @@
-(query[:fnde?  :where [ne vcolow ?c] (noin [?e :a(query [:/find ?e (nojoIn [ ])])e]
-)])

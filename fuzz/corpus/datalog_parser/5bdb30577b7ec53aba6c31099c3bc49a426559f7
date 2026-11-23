@@ -1,0 +1,3 @@
+(query [:fi :where [?:ne n](qry [:])
+  [?e :n?e ?n] (not(q:[: ])
+[?e ?_e ?n][? ?_ame ?])])

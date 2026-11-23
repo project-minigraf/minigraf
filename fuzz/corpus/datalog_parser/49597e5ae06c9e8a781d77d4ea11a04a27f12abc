@@ -1,0 +1,1 @@
+(query[:where (not-join[] (n ?xee ?yh ?ehh ?hh ?eh) )])

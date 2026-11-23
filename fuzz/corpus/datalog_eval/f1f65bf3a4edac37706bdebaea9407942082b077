@@ -1,1 +1,0 @@
-(query [:with ?n:fd:find ?n:find ?Y:where [?e ??ae ?n]])

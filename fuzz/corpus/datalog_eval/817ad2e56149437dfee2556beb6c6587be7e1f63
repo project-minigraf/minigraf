@@ -1,1 +1,0 @@
-(query [:fin?e :where [?e :o ?s] (not(query [:r []]) (or-join[?n e] [G?e]) :where [? w]oto[-itree])])

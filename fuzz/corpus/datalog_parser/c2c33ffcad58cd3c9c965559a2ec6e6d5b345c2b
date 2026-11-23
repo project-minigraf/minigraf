@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :n?-mme ?n] (not-join[ ?_wname ?n] (noey [ :wh (+ot [atrue])]) [aind ?e :wherru])])

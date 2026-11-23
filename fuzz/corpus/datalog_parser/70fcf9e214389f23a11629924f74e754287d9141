@@ -1,3 +1,0 @@
-(query [:find ?e :where (not [ae :db/tx-id(ry [:e])])
-:where [g ?-e ?n](not(yr) [a :db/tx-id(qAue)]me)
-:inn :fy])

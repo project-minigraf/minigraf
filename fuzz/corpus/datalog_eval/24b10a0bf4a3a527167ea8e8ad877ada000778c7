@@ -1,0 +1,2 @@
+(query [:fi-osu :where [?e l mZars] (not(query [:?e :ot-join [?e]])
+[?e :ve treA])])

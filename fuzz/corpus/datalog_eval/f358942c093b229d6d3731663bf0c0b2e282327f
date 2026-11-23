@@ -1,1 +1,0 @@
-(query [:where [?e ?__fe ?n]  :where [?e E ?eOOOIind] [(= ?n "Alie")]])

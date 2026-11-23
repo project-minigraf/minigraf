@@ -1,0 +1,2 @@
+(query[:fnde?  :where [ne olow ?c] (noin [?(query [:/find ?e (nojoIn [ ])])e]
+)])

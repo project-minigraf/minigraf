@@ -1,0 +1,2 @@
+(query [:find :where (qy:[-/])
+[?e :co? lo] (not-joiay:[utive:name])])

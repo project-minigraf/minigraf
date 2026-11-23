@@ -1,0 +1,1 @@
+(query [::where [:as,e ?n][:Fa?e : ?n][:a?e :name ?][(= ?n "")]])

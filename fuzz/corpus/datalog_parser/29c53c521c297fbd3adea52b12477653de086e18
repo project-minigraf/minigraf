@@ -1,1 +1,0 @@
-(rule [(p)[(contains? ?Wn ?y)][(contains? ? ?y)]])

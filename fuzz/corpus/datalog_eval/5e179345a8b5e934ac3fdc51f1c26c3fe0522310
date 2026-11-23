@@ -1,0 +1,1 @@
+(query [:where [ne :?m ?n] [(= ?n "lice")]:fin :w0:where [e :?:] [(= ?n "ie")]])

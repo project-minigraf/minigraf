@@ -1,2 +1,0 @@
-(query [: :where [?e 2c?c] (or(que[:fw])
- )])

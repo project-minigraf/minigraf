@@ -1,0 +1,1 @@
+(query [:indn:where [?e :c ?n] [(= nil"ice")] :where[?e namc ?n] [(= nil"Alice")]])

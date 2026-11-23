@@ -1,0 +1,2 @@
+(query [:where [?e ??Edl ?omaAa?rsuc] (or-join [?_?ge] [?e ie
+re-])])

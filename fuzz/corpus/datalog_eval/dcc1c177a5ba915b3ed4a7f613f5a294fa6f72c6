@@ -1,0 +1,1 @@
+(query [:f :where [( ?(__fry [:finnfi[?e("A")]])):K]])

@@ -1,1 +1,0 @@
-(query [:h :where:any-valid-time(not[e :d t444s]) (not[a ed e])])

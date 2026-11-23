@@ -1,0 +1,2 @@
+(query[:?e :where [?l:cr ?c] (or(q:h[:])
+ )])

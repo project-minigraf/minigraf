@@ -1,0 +1,3 @@
+(query[:?e :where [?c?l  _eFkr ?c] (or(q:wleu:?=fr [in])
+ )(or(q: [F0ht$_a?w])
+ )])

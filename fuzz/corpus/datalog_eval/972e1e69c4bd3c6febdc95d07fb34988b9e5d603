@@ -1,0 +1,1 @@
+(query [: :where [?e ?FF1FFFF ?c] (not-join [?e ?_ct?6EEEEEEqfn ?c]  [?_?e ?lysn__fve ?p][?_ ? ?n] [ (=?n7777777777777777777777777777777777777777777777777777777757777777 "Ali[e") ?n] [?e?e ?EEEEEqfn ?nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnc]  [?_?e ?lEEneFFFunqnjFqfn ?c]  [?e :__magic_qunqnjoqqqq??lynnuaVFnnyneFFFfqfn ?ke])])

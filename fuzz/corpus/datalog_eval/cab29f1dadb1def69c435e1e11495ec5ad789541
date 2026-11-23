@@ -1,0 +1,1 @@
+(transact[:find = [?e :cs  ?](ont[on-eje] [?e:,raue])])

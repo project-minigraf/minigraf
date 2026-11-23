@@ -1,1 +1,0 @@
-(rule [(yot(q) [])(not(y)(?y))[?x :y t2]])

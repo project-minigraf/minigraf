@@ -1,0 +1,1 @@
+(query[:colo:where [? :name ?n] [(=:name ?)]])

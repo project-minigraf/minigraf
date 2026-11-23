@@ -1,0 +1,1 @@
+(query [::where[q e e?n] (or[(a5:)][(i :_g)] [ae*:n])(ot(pc)e)])

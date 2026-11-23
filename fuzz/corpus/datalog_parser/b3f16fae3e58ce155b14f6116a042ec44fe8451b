@@ -1,1 +1,0 @@
-(query [:where (not-join[][fef0A:n ?n][a:- ?n])])

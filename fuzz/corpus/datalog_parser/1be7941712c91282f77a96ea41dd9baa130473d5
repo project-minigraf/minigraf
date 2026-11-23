@@ -1,0 +1,1 @@
+(query [:f:where [gff1: ?n][1:1 ?n][ff:nae1 ?n][Oot:1 ?n][fu:g ?s][m:1 ?n][A: ?n][fta:nam ?n]])

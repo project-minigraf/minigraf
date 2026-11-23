@@ -1,0 +1,5 @@
+(query [:where(q
+
+y [:3]) [qw :nae ?-] (=?y) (r sss:)[(+:th ?y)] (en?=t) (u ss:)[(+:th ?y)]:where(q
+
+u [:3]) [qw :nae ?-] (et:31711254ss:)[(+:th ?y)] (eo2=t?y) (u s:)[(+:th ?y)]:where(sss:)[(+:th ?y)]  ])

@@ -1,1 +1,0 @@
-(query [ :where [?e ?namexfalse ?p]  :mre :where [?e ?nameGGGGGGGGGGGGGGGG ?IIIn]   [?_ ?namm ?n] [ (+?n "Ali34-5d3b-8c38e")]])

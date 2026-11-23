@@ -1,0 +1,2 @@
+(query[:?e :where [?_l ?_fdz ?_c?] (or(qey=r0?[:fincraw])
+ )])

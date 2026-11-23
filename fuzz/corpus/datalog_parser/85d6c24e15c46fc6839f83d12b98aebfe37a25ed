@@ -1,0 +1,1 @@
+(query [:where(q=?y)[?x :pret BBB] (s:)[(+?x  ?y)?s] ])

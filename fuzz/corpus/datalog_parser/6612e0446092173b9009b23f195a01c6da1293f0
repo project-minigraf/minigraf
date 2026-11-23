@@ -1,1 +1,0 @@
-(query [:fid  :where :any-valid-time (not(aAe7) [ae: r])(not(r[ ])[ae un u])])

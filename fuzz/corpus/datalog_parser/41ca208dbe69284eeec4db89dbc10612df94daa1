@@ -1,0 +1,1 @@
+(query[:where(py)(r:=y)])

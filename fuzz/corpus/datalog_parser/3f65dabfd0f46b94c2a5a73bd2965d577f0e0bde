@@ -1,0 +1,2 @@
+(query[:with ?e:where [?e e ?n] (no)
+:i:find ?ei ?4d ?einf ?d ])

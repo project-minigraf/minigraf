@@ -1,0 +1,1 @@
+(query [:h :where (not [e nd t4444443]) [?e: n](not[e d vreutrue])])

@@ -1,0 +1,4 @@
+(rule [(as)
+(not-join[] (r))(not-join[] (r))
+(not-join[] (r))
+(not-join[] (r)) (d::)])

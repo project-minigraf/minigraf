@@ -1,0 +1,1 @@
+(query [:finde?  :where [?not?tec :aivw ?c] (not-join [?e] [?tec :aive tru])])

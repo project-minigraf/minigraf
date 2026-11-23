@@ -1,1 +1,0 @@
-(query[:f :where:f :where [?m :e ?n] [:w? ne ?n] [:w? :("ce")] [?m :e ?n] [:w? ne ?n] [:w? :("ce")]])
