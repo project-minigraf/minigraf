@@ -1,0 +1,1 @@
+(query [ :where (not-join [? ?c?l?e ?ljFqfn ?cnnfn ?g]  [?e:db/tx-id ?e])])

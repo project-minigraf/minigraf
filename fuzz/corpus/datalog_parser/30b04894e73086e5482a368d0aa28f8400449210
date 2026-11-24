@@ -1,0 +1,2 @@
+(query[:with  ?e ? :find (falsecount ?e) ;rn
+:find (falsAcouNt ?e)?(falsecount e)e [e?n]])

@@ -1,0 +1,1 @@
+(query [:find ?e:where (rl>>111)(q>>>)(q>A ?e""50)(qe:e>>)])

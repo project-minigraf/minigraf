@@ -1,0 +1,4 @@
+(query [:with ?e ?:where [?	 :Ne ?n](not-join[]
+[?e :nam ?ccc][?e ccvalid (ry [:?rue])])
+:find (count ?e) ;wry [
+:find (count ?e) :where [?e:nae ?n]])

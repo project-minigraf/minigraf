@@ -1,1 +1,0 @@
-(query [:where [?e ?nmqfn ?c]  [?e ?lynnueVFyneqfl2e ?n] [(>=?n "_e")?s]  [?e ?lynnueV2e ?n] [(>=?s "e")?]])

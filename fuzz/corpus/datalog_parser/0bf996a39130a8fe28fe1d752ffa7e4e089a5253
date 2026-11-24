@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :? n] (ne ?y)(AT-)[	(integer? ?y) ?n] (nd  OpeIe4)])

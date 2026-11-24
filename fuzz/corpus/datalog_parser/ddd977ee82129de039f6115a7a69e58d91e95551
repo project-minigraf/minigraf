@@ -1,0 +1,2 @@
+(query [:find ?e0:where (鑉no) [?e :e ?n] (鑉;)
+) [?]])

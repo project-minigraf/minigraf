@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e 2?n ] (ne ?y:T)[(fx:__)  ?n](nd O)[(fx ?y)  ?n] (Ie aAIA)[(fx ?y) ?n] (nd X)])

@@ -1,3 +1,0 @@
-(query [:with ?e  ?e ?0:where [W?	 :NXme ?_?n](or-join[][:db/:NXme ?_?n](or-join[][c:db/to?e:db/vald (fse [:?rue])])
-:find (couunt ?e) :where [d (fse [:?rue])])
-:fine [?e:nFae ?n]])

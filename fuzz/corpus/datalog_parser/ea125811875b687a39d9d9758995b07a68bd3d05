@@ -1,0 +1,2 @@
+(query[:where[e e ?n](not(w A)(a>)(E:h)(r<)(E[SS])
+)])

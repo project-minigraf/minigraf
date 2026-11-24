@@ -1,0 +1,1 @@
+(query [:find ?e:where [?e :nale "Ae"][:/1 :na/vodml-rfam ?e?_][?:dalid- ?e?_][?:ea ?_][?:dvjjjjjjjjjjt ?y]])

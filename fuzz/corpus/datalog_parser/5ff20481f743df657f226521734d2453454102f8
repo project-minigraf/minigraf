@@ -1,5 +1,0 @@
-(query [:with  ?e ?:where [?	 :NXme ?n](transac[?e:db/valid (q [:?rue])])
-[?	 :Name ?n](not-join[?e][?-:db/tx-id (query [:?rue])])
-:find (count ?e)
-:find (count ?e) :where [?e:nae ?n],,])
-,,

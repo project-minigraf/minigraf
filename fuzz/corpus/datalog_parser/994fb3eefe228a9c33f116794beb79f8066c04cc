@@ -1,1 +1,0 @@
-(query [:find ?e :find ?e :where [?e :e?? n] (ne ?y)(nAAAAT-)[	(integer? ?y) ?n] (nd  OpeIe2)])

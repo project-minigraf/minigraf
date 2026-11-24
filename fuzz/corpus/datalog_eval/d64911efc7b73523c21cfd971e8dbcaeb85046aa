@@ -1,0 +1,1 @@
+(query [:find ?c:where [?e cr ?c] (not[?e r ?c] (ieqqqwa)(or-join :wfi ?-))(qu [? _c[rchie]>])])

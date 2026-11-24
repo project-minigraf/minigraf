@@ -1,0 +1,4 @@
+(query [:with ?e:where [?	?kNa ?_](transact[][?e:d (que [:?rue])])
+:find (count ?e);wry [:w]:
+ (count ?e) ;wr
+:find (count ?e) :where [?e:ean ?n]])

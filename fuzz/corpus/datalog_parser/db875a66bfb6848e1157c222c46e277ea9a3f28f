@@ -1,0 +1,1 @@
+(query [:where[? :ebo ?olean?][(-:w:wi)]:where[? :ebo ?n?][(-:w:wi)]])

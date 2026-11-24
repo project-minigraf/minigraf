@@ -1,1 +1,0 @@
-(query [ :where [?e 4e?] (ne ?y)[(x ?y)  ?n] (d w)(Ie 0)])

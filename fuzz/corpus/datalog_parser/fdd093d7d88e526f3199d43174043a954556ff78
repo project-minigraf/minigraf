@@ -1,0 +1,1 @@
+(query [:find ?e :where (rulA0 ?e ?_t)(A---i#uuid "00000000000000000000000563485483"eS)])

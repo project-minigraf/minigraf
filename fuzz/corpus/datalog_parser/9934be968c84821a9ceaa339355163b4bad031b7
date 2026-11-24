@@ -1,0 +1,2 @@
+(query[:where [? :e "Ae"][:e1:db/valid-at""][e/3 :o""][:an
+t ?y]])

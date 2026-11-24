@@ -1,0 +1,2 @@
+(query [:find ?n :where [?E ?nmjFqffn ?c](qu:e[[(> nil"e")?]])
+ [?n ?ly  ?uquenm?n] [(>=?n "e")]])

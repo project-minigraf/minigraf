@@ -1,0 +1,1 @@
+(query [ :where [?GGGGGGGe ?e ?n] [(nil? ?e)?]])

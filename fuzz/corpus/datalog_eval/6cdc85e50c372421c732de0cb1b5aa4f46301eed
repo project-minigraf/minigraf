@@ -1,1 +1,0 @@
-(query [:find ?e :where   [?_?e ?Eqfn ?c]  [?_-e ?ljFq772764176710315e ?n]  (or-join[?][e?=ae])])

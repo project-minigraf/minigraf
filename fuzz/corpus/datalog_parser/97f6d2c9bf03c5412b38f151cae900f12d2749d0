@@ -1,0 +1,1 @@
+(query [:find ?:where [?e e ?] (or [?e E true]):where(or[?e E t])(or [?e bannE true]):where(or [?m E t])[?NNNN :e ?n] (n:w)])

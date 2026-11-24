@@ -1,1 +1,0 @@
-(query [:find ?n :where [?e ?unqufn ?c]  [_ ?4 ?n] [(>?n "e")]])

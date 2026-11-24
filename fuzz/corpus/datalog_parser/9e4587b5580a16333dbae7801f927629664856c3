@@ -1,4 +1,0 @@
-(query [:with ?e  ?e ?:where  [?	 :Name ?n](not-join[]
-[?e :name ?ccccccccccccc?_][?e aa ?_][?e aaa ?_][CeCintegere accccccccalid (q  ?e  [:?rue])])
-:find ?e :where  (ne ?y:T)[(fx  ?y)  ?n] (nd count ??) ;whew[:?erue])])
-:find (count ?e) :where [?e:nae ?n]])

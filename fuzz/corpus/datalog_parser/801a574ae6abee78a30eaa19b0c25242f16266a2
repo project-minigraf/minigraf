@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e m _][?:db/ ?][?:db/valid-from ?_][?:nn ?_A][?:lijt ?y]])

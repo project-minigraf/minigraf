@@ -1,0 +1,1 @@
+(query [:where [?:n"eee"][?e1 ?e"A][e"][?1/0 ?e "e"][:eu:nale "eee"][? ?5"Ae"][:e/d ?e"eee"][6 ?e"A"][:ed ?e:iiii]])

@@ -1,0 +1,1 @@
+(query [:where (or(ee:E3  0)(IA:e  0)(e:3 0)(A:l0 :frn))])

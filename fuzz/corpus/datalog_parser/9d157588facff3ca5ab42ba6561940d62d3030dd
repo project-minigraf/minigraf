@@ -1,0 +1,2 @@
+(query [:where [?	?yNa ?n](or-join[][?e:d (m9)])
+ :where [?e:na ?n]])

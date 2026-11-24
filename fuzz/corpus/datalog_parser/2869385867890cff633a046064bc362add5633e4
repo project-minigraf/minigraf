@@ -1,1 +1,0 @@
-(query [:where [?e0:n ?] [:e e n] (not(qu0)) [6neme ?n] (or(a[p(e,)]??y) )])

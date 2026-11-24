@@ -1,0 +1,1 @@
+(query [:where (n ?y)[(fx ?y)  ?m] (nd tOhew)[?(y) n] (n:T)(n:T)[(fx 35)  ?n]])

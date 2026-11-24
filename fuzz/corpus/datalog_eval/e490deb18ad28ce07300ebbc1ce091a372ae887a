@@ -1,0 +1,1 @@
+(query [:where[e:l ?][Te :?o or](j EE)])

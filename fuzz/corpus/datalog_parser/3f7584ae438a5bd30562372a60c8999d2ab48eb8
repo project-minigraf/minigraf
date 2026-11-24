@@ -1,1 +1,0 @@
-(query [:find ?e :where [?/2 ?""][:e/1 ?inele ?n] (sot [?e]):where[?e ame ?n] (nmt ?[ul0Ane])])

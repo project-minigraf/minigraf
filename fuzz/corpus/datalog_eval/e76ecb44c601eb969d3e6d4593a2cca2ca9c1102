@@ -1,2 +1,0 @@
-(query [:find ?e :where (not-join [?eerm2](or-join:Fid))]
-)

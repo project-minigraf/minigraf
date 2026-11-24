@@ -1,0 +1,1 @@
+(query [:where [?e 4? ] [(x nil )?] (nA)[(f? nil )?y] ])

@@ -1,1 +1,0 @@
-(query [:find ?e :where(or-join[][oooe2TT?e :c?ol c][TT?ooe1TT?e :c?ol orc][TTTToz?ee :c?ol  orc][?e o:withor][oooooe2TT?ol]retract)])

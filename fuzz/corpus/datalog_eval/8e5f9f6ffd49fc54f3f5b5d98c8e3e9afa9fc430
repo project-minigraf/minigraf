@@ -1,0 +1,1 @@
+(query [ :where [:e :Oo c] (not [-?*e])(qq:wn?H_e[ebooAe])[?e :col?_r ?c] (not-join [?e] [?e ?c:Fatui])])

@@ -1,0 +1,3 @@
+(query [:with ?e ?:where [?	 :me ?n](not-join[?e][?e:d ?] (T)[(fx 36)  ?n]  (n:Tn:T)[(fx 70)  ] (n:T)[(fx ?jSjjjjj)   ??n] (nehe74 ?y)[(fx ?ye)])
+:find (count ?e) :where [?e:na ?n],,])
+,,

@@ -1,1 +1,0 @@
-(query[:find ?e:where (p ?e w0)(A5 :Si Eerw)])

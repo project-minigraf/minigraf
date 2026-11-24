@@ -1,3 +1,0 @@
-(query [:with ?e  ?:where [?	 :Xme ?n?n](not-join[?e][?:al(AAA_nA[?rue])])
-:find (count ?e):find (count ?e) :where [?e:nae ?n],,])
-,,

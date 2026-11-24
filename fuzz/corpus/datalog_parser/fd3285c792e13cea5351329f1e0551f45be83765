@@ -1,0 +1,3 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](transae ?e) ;wry:wiu])
+:find  ?e ?:where [?	 :Name ?n](not-join[][?e:db/valid (query [:2ue])])
+:find (count ?e)  ?e ?:where [?	 :Nme ?n](not-join[][?e:id (query [:ue])]):find (count ?e) :where [?e:nae ?n]])

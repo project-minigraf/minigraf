@@ -1,0 +1,3 @@
+(query [:with ??:where [? :ame ?n](not-join[?jjj ,??e/d] (n:T)[(fx 36)  ?n]  (n:T)[(fx 16)  ] (n:T)[(fx 35)] (n:T)1[(fx) ??e/ ][?jj])
+,,])
+,,

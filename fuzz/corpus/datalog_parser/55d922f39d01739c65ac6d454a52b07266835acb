@@ -1,2 +1,0 @@
-(query [:with  ?nn:where [?	 :mX Ne?n](or-join[n][?e:d( [:wrue])])
-[?n]])

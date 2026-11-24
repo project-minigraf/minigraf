@@ -1,0 +1,2 @@
+(query [:find ?n :where (query [n ?n] [fn ?c]    )[?Ne ?ly3e ?n
+] [(>=9."")?]])

@@ -1,1 +1,0 @@
-(query [:where (p:w)(E:f#{"("5""true")(E"true}"")])

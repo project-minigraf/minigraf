@@ -1,0 +1,1 @@
+(query [:find ?u :where   [?_?e ?lysnufnFn ?c]  [?e ?lynnuey30785ee ?n]  (or-join[][e?=ae])])

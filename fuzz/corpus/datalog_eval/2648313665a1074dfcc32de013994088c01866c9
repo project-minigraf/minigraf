@@ -1,0 +1,2 @@
+(query [:find ??c:where [?e :col ?c] (not[?e :coluffn ?g]  [?e ?l?lynnfn ?g]  [:limit?e:db/tx-id ?c]  [?e uFFnnyneFFynEEEEEEEEqf ?nk]  [?(z2uqs2un) ?c] (i- e [e]) (q?qqQq?e :K[?e]-))]
+)

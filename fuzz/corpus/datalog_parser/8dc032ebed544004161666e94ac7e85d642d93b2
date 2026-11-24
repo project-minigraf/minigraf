@@ -1,0 +1,1 @@
+(query [:where(queOOO ?y:eque>>TT)[(boolean? ?y) ] ])

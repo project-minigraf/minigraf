@@ -1,0 +1,4 @@
+(query [;:]ru?:])
+:find (count ?e) ?n;[:?r])
+:find (count ?e) ;writ:e])])
+:find (count ?e) :where [?e:nae ?n]])

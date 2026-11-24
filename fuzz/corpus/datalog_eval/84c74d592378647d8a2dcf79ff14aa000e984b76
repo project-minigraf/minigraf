@@ -1,1 +1,0 @@
-(query [, :where [?e FFFFFFF ?c] (not-join [?ec]  [(<=?n "")]  [3:db/tx-id ?c]  [?e ?lynnuluqfn2 ?ke])])

@@ -1,6 +1,0 @@
-(query [:with ?:where [?	 :Name ?n](not-join[?][e:db/valid (q5e  [:??erue])])
-:find  ?e ?:where [?	 :Name ?n](not-join[][AAA2?e:db/valid (query [:?rue])])
-:find (count ?e) ;w])
-:find  ?e ?:where [?	 :Name ?n](not-join[][?e:db/valid (query [:?rue])])
-:find (count ?e) ;ind (count
-:find (count ?e) :where [?e:lae ?n]])

@@ -1,0 +1,4 @@
+(query [:with ?e  ?:where [?	 :Name ?n](not-join[?][e:db/valid (ry [:?re mi3344e])])
+:find  ?e ?:where [?	 :Fame ?n](not-join[?][e:db/valid (qupa1 [:?rue])])
+:find (count ?e) ;whe7e]))
+:find ?e ?:where [?	 :Name ?n] [?e:nae ?n]])

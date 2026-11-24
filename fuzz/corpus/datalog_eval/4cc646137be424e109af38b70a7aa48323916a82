@@ -1,0 +1,2 @@
+(query [:find ?eith ?c:where [?e r ?] (not[?e :o ?f](qqq[ebooAe])(qqqq?whe [?e ])(qK[?e]-))]
+)

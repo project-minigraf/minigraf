@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e ?GFFFF?nFFFF ?c] (not-join [?e] [?__ ?ivteez ?_xerm1e](qn)(rul25e :wnnynmnFFqffFFfu?_BBq)(qKqq8?e :wnnyneFFBqqqqyq)(qqq2:o :wnnyneFFFFqfenfulYB?neFFBqqqqqq)(qqnynqffnfulYBBqqqqqq)(qqq1?e :wnn)(qqnynmnFFqffFFf?_ulYt/BBq)(qqq4?e :lYBBq)(qqq2?e :wnne :wnnynmnFFqffFFfu?_BBq)(qKqq8?e :wnnyneFFBqqqqyq)(qqq2:o :wnnyneFFFFqffnfulYB?c)(YBBq)(qqq2nmBBq)(qqq4?e :wnnyneFFBqqqqqq)(qqnynqffnfulYBBqqqqqq)(qqq1?e :wnn)(qqnynmnFFqfYBBq)(qqq2?e :wnnwq)(qqq0?e :wnn)(qqq2?e :wnnynmnFcccccccccccccccccccFGFF-id))]
+)

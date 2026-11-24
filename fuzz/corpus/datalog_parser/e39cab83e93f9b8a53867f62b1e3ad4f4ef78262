@@ -1,3 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :Na ?n](not-join[?efind  ?e ?:w (cu,,,,)][d (qr [:?ue])])
- [?en],,])
-,,

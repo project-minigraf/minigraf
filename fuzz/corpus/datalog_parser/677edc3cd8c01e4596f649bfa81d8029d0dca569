@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where [?e e ?q]:where  [$e0? ?nvkkvgvvv ](not [_?j :baa ?_][$e:db/valid-to ?_an])])

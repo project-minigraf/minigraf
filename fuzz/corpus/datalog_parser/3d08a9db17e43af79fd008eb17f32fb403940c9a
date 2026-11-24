@@ -1,0 +1,3 @@
+(query [:with ?:where [?:Name ?n](not-join[]
+[?e :name ?nccccc_][?e aa ?_][a?a a e?_][Ce a ?_][?e  ])
+:fid e])

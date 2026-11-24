@@ -1,0 +1,1 @@
+(query [:where [?e/ ?Fjq ?c]:find ?n :where [?e ?Fqn64e ?n] [(!=?e "e")]])

@@ -1,0 +1,3 @@
+(query [:with   ?e ?:where [?	 :Name ?n](not-join[?ejj160jjyqjjjjjjyqjjjjjjjjjjjjjj?e ][?jjjjj ??e/d ?e])
+:find  ?e ?:where [?	 :Namee ?n],,])
+,,

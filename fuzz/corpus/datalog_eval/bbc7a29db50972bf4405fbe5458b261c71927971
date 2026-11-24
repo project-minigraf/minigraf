@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?nm ?c]  [nil ?n6fn ?c]  [nil ?njn ?c]  [?e ?_ynnue666694 ?n] [(<,?n "d")]])

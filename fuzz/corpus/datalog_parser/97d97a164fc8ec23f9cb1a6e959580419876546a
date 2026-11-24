@@ -1,0 +1,1 @@
+(query [:find ?e  ?e  ?e :where [?e :Nae n] (or-join [?ejd ? ][?jjjjjjj be :n]) :where [?e :Nae n] (or-join [?ejd ? ][jjjjj be :n]) :where [?e :Nae n] (or-join [?ejd ? ][?jjjhjjjj be :n])])

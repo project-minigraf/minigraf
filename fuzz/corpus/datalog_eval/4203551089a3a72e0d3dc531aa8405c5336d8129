@@ -1,0 +1,1 @@
+(query [:any-valid-time:find ?n :where[?e:db/valid-at ?s]  [?e ?nEfe ?n] [(>=?n "e")]])

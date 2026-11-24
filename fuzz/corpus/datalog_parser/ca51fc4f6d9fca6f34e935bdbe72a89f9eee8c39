@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e ze  ?_][?e:db/valid-to"be"](query [:where[?eey]])
+(n ?y:T)[(fx ?y)](n X)])

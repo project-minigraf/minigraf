@@ -1,0 +1,1 @@
+(query [:find ?e :where  [?e :e ?] (h ?y)[(fx ?y)  ] (or (and(q06Ar 86)(ddd) ) )(or (and(q06Ar 86)(ddd) ) ) [?xf (y?) n] (n:T)[(f ?y)  ?n] (nd X)])

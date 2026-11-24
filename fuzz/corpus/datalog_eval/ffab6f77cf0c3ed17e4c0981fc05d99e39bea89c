@@ -1,0 +1,6 @@
+(query [ :where(e  [ :where [?e :color ?c] (not-join [?e] [?e atuh])])
+ [?e :color ?c] (not-join [?e] [?ere [?e :color ?c] (t-join [?e] [?uh])])
+ [?e :color ?c] (not-join [?e] [?ere [?e :color ?c] (not-join [?e] [?etuh])])
+ [?e :color ?c] (nojoie [?e ])(qqqQq?e :wheqqqqqfind?e qq?query [ :where [?e :color ?c] (not-join [?e] [?e atuh])])
+ [?e :color ?c] (not-join [?e] [?ere [?e :color ?c] (not-join [?e] [?e atuh])])
+ [?e :color ?c] (not-join [?e] [?e ?ccid:Fatue])])

@@ -1,3 +1,0 @@
-(query [:with ?e   :where [?	 :Xme ?n](trcount)
-:where [?	 :Name ?n](not-join[]
-[jjjjjjjjjjhjjjj ??e/ ?nw] (or(en ?Hn) )[? :valcean] (not [?eulee?e]):w) :where [?e:nae ?n]])

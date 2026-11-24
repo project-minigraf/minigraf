@@ -1,1 +1,0 @@
-(query [:find ?n0:where [?e ?ue2 ?c] :order-by [?e ?XX10qc] :order-by [?e ?XX10ql()]])

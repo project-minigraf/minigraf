@@ -1,0 +1,1 @@
+(query [ :where [?e :e "&"][:e/0 :db/valid-at"i"][2:db/valid-at"e"][:1 ?i ?y]])

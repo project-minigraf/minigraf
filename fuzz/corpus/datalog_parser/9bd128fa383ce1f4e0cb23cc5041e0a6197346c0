@@ -1,1 +1,0 @@
-(query [:find  ?e :any-valid-time:where [?e :Nam ?] (not12i [?e true]):where  [?e :nam ?n] (mt [?:d true]):where (g[?e :nnzd true])])

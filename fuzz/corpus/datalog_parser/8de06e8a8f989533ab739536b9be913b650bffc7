@@ -1,0 +1,2 @@
+(query [:where [:b :e ?n](not(wre A2)(r>)(Er[eS]:h)(r>)(E[]eS)
+)])

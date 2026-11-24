@@ -1,1 +1,0 @@
-(query [:where [? :valseaoUe ?n] (or(en,?y ?n) )(or(eno,?y ?n) )])

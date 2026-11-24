@@ -1,0 +1,1 @@
+(query [:find  ?e:any-valid-time:where[?e e ?n] ( n [ e])])

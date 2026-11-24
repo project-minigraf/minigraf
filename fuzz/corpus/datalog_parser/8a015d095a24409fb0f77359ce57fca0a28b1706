@@ -1,0 +1,1 @@
+(query [:where(not(u0>t ?aid ?i) ) [3t ?y]])

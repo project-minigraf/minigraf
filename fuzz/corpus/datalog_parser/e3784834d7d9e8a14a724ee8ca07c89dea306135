@@ -1,1 +1,0 @@
-(query [:find ?/:where [?x :a :b] :query-memory-limit $m:where [?x a :b] :query-memory-limit $meiv-factd])

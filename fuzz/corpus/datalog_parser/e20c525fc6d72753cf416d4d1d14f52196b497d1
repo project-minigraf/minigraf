@@ -1,0 +1,4 @@
+(query [:find (count ?e)
+:find (falsecoult ?e) ;)])
+:find (falsecoult ?e)n
+[?e:na]])

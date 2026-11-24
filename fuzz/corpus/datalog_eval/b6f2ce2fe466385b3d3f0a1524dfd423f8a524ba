@@ -1,0 +1,2 @@
+(query [:where( not(aqm?:_))(not(q:cccccccbob))]
+)

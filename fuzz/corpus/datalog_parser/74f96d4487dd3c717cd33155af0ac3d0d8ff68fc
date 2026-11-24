@@ -1,0 +1,1 @@
+(query[:where(or(e) [n? m ?n] ) [6a ?y]])

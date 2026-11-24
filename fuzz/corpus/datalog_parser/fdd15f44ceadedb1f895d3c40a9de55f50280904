@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e ae n] (or-join [?e ??e/d ? ][?jjj ]uot)])

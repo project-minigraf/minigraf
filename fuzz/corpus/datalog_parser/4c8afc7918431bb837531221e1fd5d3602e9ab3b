@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	?iName ?n](urasact[][al ])
+:find (count ?) :where [?e:oa ?n]])

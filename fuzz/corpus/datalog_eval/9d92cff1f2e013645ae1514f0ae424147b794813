@@ -1,0 +1,1 @@
+(query [:find ?l :where [?e ?nek ?n] [(>=?n "")]  [?e ?l ?n]])

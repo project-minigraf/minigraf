@@ -1,0 +1,1 @@
+(query[:find ?:where (ru[({==}:as-of{==}<6)])])

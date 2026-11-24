@@ -1,0 +1,1 @@
+(query [:distinct:where [?e ?nFqf ?n] [(>,?n "e")?NNNNNNNNn] [(>,?n "e")?N]])

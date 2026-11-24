@@ -1,0 +1,1 @@
+(query [:where [? :va ?] (or(eo,?n) )[? :vale ?n] (or(enO,y) )]);

@@ -1,2 +1,0 @@
-(query [:where[?:nae ?] (not [? :b ?_A3](rul[(pa,
-)[?y]])[ ?:b ?])[?:nd ?,] (t [? :061b ?_])])

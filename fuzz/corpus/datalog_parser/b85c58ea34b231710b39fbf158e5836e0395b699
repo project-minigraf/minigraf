@@ -1,3 +1,0 @@
-(query [:where(ACA1d ?e) ; [:?rue])])
-:find (count ?e)
-:find  ?e ?:where [?	 :Name ?n](n:nil0)(O ?y:e)[(fx ?y) ?n] ])

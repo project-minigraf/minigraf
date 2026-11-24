@@ -1,0 +1,1 @@
+(query [:find ?q(d ?s)(r ?s)])

@@ -1,0 +1,1 @@
+(query [:with ?e ?e ?m ? ?c:where [?e c?o:al] (t )] )

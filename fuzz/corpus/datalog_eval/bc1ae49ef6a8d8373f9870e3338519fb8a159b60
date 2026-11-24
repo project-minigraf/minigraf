@@ -1,0 +1,2 @@
+(query [:where [?e :color ?c] (not[?e :color ?c] (i- e44)(qe  n?[ebooA]e)(qe _e[ebooAe])(qq K[?e :active] i ?K[?e]-))]
+)

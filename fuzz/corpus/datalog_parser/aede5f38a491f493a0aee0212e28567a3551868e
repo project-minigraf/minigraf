@@ -1,2 +1,0 @@
-(query [:with  ?:where  [?	 :Name ?n](not-join[]
-[?e :n"][:e"][:1 lid n] [(fx ?y)  ?n] (A?nAnnd n)[(f i[:?erue])])[?aen:e ?n]])

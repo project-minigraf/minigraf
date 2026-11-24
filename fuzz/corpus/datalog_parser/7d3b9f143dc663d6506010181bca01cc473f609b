@@ -1,0 +1,1 @@
+(query [:where [? :na le?] (i$T)[(in?fxx ?y)  ] (n0$-3l)[(in?fxx ?y)  ?n] (n:T)[(in?fxx  )8x ?]])

@@ -1,0 +1,1 @@
+(query [:where[?Ce a ?_][?:l _][?:l _][?:b c]])

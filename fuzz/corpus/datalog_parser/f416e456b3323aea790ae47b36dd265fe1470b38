@@ -1,0 +1,1 @@
+(query [:where [?Ujjhjjjjjjj:db/valid-at _][?jhjjjjj ??d ?e ][?jjjjjjjjj:db/valid-at _]:where [?jjjjjjj ??e/d ?e ][?jjjjjjjj:db/valid-at _]:where [?:db/valid-at _]])

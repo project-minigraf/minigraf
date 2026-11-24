@@ -1,0 +1,1 @@
+(query [:where  [(string?$ee)][(string?$e)][(string?$e)]])

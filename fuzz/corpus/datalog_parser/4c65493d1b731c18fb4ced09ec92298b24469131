@@ -1,2 +1,0 @@
-(query [;[:?r
-:find (count ?e), (count ?e) ?f:where [?e:nae ?f]])

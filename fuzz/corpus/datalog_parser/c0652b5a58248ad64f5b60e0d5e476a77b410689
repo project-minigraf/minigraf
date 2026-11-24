@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :Na ?n] (not [20d teeG][Ce a ?_][?e a:l][?e ?e ue])])

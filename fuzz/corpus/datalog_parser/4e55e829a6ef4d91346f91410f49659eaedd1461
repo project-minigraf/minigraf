@@ -1,0 +1,1 @@
+(query [:where [?e 3_][?e:nn39e "e"][?e/5 ?e"Afce"][:e 144en] (not [:e?:db/tx-id ?e?e]):where [e Ce ?nu]])

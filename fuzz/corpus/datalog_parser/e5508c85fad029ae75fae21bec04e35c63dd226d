@@ -1,0 +1,1 @@
+(query [:with ?  ?e ?e ?:where [?:N e?n]:find(c5 ?e) :where[?e:nae ?n]])

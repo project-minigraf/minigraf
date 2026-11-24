@@ -1,0 +1,2 @@
+(query [:where [?or /C]( n3333_:Finot(q2q)) (not(q) (nueFtrueEEfuer))]
+)

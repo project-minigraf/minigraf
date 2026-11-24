@@ -1,0 +1,3 @@
+(query [:where [?:nae ?,] :where [?:nad :z,] (jot [? :_db/valid-to ?_8_8][? :b ?? +:b_])[?:naed ?,] (not(query [:where [] :where [?:nad :z,] (t [? 63001824451?])])
+ [? :db/valid-to ?_8_8])(qot [? 63001824b ?_db/valid-to ?_8_8])(qot [? :b ?? +:b_])[?:naed ?,] (not(query [:where [] :where [?:nad :z,] (t [? :db8])(qot [? 63001824451?])])
+ [? :db/valid-to ?_8_8])(qot [? 63001824451?])])

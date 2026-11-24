@@ -1,0 +1,1 @@
+(query [:where [?e 0A?nEe] (ne:T)[(fx:V) ?](n T)[(x:__) ?n](ne X)])

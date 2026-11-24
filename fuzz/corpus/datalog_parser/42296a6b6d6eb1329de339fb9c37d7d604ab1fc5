@@ -1,2 +1,0 @@
-(query [:where(or(pp ?_);[n? :zA
-)(not(qe []:limit??) ) ])

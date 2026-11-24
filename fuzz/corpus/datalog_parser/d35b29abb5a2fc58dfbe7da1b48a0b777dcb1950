@@ -1,0 +1,6 @@
+(query [:with ?e  ?e ?:where [?	 :NXme ?n](tra[?elid (query [:?rwe])])
+:find (count  ?e) ;w)
+:find  ?e ?:where [?	 :Name ?n](not-join[?_?e][?:e/dbnalid (query [:?r])])
+:find ?:where [?	 :Name ?n](not-join[?_?e][?:e/dlid (query [:?rue])])
+ (count ount ?e) :where [?e:nae ?n],,])
+,,

@@ -1,0 +1,2 @@
+(query [, :where [?e ?FFFFFFYYYYYYF ?c] (not-join [?e ?_ct?c]  [?e (qu3ery [:findere [? ?n] [(>=?n "e")]]) ?ake])])
+

@@ -1,2 +1,0 @@
-(query [:with ?e  ??e:where [?	d ?n](or-join[][?e:dbd ( [:?rue])])
-:find ?])

@@ -1,0 +1,2 @@
+(query [:find ?h ?c:where [?e :color ?c] (not[?e :colu?lye ?n] [(?n<=n"?")?c] (i-))]
+)

@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :nale "Alee"][:u/4 :jjjea ?_][?:db/vqlid-from ?e?_][?:b/nnnn ?_][?:db/valid-from ?e2_][?:db/vnnnm ?e?_][?:db/nra ?_][?:db/vqlid-from ?e?_][?:db/nnnjjjjali-frot ?y]])

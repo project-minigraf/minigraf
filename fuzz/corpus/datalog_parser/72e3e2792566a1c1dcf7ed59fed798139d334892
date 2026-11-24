@@ -1,0 +1,1 @@
+(query[:where(not[?_ b:?](e)(q)(e)[1-()])])

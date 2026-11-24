@@ -1,0 +1,3 @@
+(query [:where [?	 :m e?n](or-join[][?e:d ?](query f:i nd[where [? :nane] (alA[an])])
+[?_ +(q?yw[:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

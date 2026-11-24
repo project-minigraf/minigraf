@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e ?lunulunufn ?n]  [?33Fnqfn:age ?k]  [?:age ?k]  [?:FF ?e] (not-join [?e] [?e ?ly4nnDa ?hec])])

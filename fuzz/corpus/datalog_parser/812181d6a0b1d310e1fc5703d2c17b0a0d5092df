@@ -1,5 +1,0 @@
-(query [:with ?  ?e ?:where  [m?	:Nae n](not-join[?e][?e:dalid (queby [:?rue])])
-:find (cnt ?e) ;wr{ [nt ruue])])
-:find  ?e ?:where(not-join[?e][?:e/dbnalid (qy [:?rue])] ()c
-ouount ?e) :where [?e:nae ?n],,])
-,,

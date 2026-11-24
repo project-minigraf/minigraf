@@ -1,1 +1,0 @@
-(query [:where [? pe n] (or (and(qn)(in?4)(Bfn0)(AAd) ) ) [0nt ?y]])

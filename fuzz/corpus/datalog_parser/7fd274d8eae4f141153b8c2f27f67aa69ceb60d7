@@ -1,0 +1,1 @@
+(query [:where [?e :name ?n] (nmt ?[/:bfsa]):where[$e ?Name ?nvv ](not [?j :bnne t][CeCZ cid-ta ?_][$e:db/valid-to ?_][ 0tracid-to?a ?_][$e:db/valid-to CCCCan])])

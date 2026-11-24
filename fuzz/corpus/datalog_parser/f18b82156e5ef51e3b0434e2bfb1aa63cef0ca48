@@ -1,0 +1,1 @@
+(query [:where(not [? :de- e]) [?:na ?n] (not [??2:de ue]):where [?:name ?n] (n [])])

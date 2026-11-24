@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e :Nme ?_?n] (no[c?cccc?_][?e:db/v4824451b ?_6])(not [ ?:b ?_?])[?:nae ?,] :where  (not [? :00nalid (query [:?rue])])
+:find (count ?e) ;wry ?n]ct[][?yr ?n](t:find (count  ?e) ;w?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbalid-from s?_H_][?e:db/valid-from s?_HA13ez][Ce aa a_rue])])

@@ -1,0 +1,1 @@
+(query [:find ?e :where[(in?fqxx :y)] (nT)[(in?f0x?)]=[]])

@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :e ?] (neh0 ?y)[(x ?y)?n](n:T)[(fx 73 ) ][(fx 25) ]])

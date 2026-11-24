@@ -1,0 +1,3 @@
+(query [:where [?	 :Namen ?](not-join[?e][?:ed ?] (nT)[(fx ?jSjjjye)])
+:find (count ?e) :where [?e:nae ?n],,])
+,,

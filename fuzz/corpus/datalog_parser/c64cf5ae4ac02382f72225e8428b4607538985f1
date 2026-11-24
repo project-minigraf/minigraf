@@ -1,0 +1,5 @@
+(quer  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])
+ (kount ?(#{:m,#uuid "00000000000000000000000267346484"[?e:d(cd ot-join[?e][?:e/dbnalid (query [:?rue],,,) ;wry:*u,,ee) )
+ (count ?(#{:ma#uuid "00000000000008289434033740962194"[?e:d(count ?e) ;whe?erue])])
+:fboin[?e][43942bnalid (query [:?rue])])
+:(qufine

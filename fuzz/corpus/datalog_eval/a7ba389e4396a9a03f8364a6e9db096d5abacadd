@@ -1,2 +1,0 @@
-(query [:where [?e :or ?c] (not[?e :clor ?c] (i ?e ?nme0?acthe-[?m]-))]
-)

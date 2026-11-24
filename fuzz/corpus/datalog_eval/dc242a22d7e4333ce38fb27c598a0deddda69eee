@@ -1,0 +1,2 @@
+(query [:where [?or /C]:where [? /C] (n33_:FinAot(q<<<<er)) (n""""""t(q<<<<quer))]
+)

@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e 0:0??en ] (ne ?y:T)[(nil? ?y) ] (ne ?qqX)])

@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :Name ?n] (nD[?e :d true]):where [?e :cm n] (or [?e :ne True]):where [eN:OOOOe ?n] (n:e [?e true])])

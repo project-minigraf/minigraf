@@ -1,0 +1,1 @@
+(query [ :max-iterations 1n])

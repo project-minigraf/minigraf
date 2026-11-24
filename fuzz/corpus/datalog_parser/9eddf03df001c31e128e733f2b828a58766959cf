@@ -1,3 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :Name ?n](or-join[?_][?e:d/valid (mi3342e [:ue])])
-:find (toult ?e) :where [?e:nae n](or-join[?_][?e:d/valid (mi33 [:?rue])])
-:find (toult ?e) :where [?e:nae n]])
