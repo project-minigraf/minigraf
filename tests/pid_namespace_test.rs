@@ -11,6 +11,9 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+mod pid_ns_helper;
+use pid_ns_helper::{helper_binary, require_helper_built};
+
 /// The `unshare` invocation that puts a command at PID 1 in a fresh namespace,
 /// or `None` if this environment cannot create one.
 ///
@@ -88,48 +91,6 @@ fn spawn_in_namespace(
     }
 
     cmd.spawn().expect("spawn in namespace")
-}
-
-/// Path to the compiled helper binary (see `examples/pid_ns_helper.rs`).
-///
-/// `MINIGRAF_PID_NS_HELPER`, if set, is used as-is -- needed under
-/// `cargo-llvm-cov`, whose instrumented build places test binaries under a
-/// build-script-shaped path instead of `target/debug/deps/`, breaking the
-/// relative lookup below. See `tests/docker_lock_test.rs::helper_binary` for
-/// the same pattern.
-fn helper_binary() -> std::path::PathBuf {
-    if let Ok(path) = std::env::var("MINIGRAF_PID_NS_HELPER") {
-        return std::path::PathBuf::from(path);
-    }
-    // target/debug/examples/pid_ns_helper, resolved relative to the test binary
-    // at target/debug/deps/pid_namespace_test-<hash>.
-    let mut dir = std::env::current_exe().expect("test binary path");
-    dir.pop(); // deps/
-    dir.pop(); // debug/
-    dir.join("examples").join("pid_ns_helper")
-}
-
-/// Fails loudly if the helper binary this environment could have run is
-/// missing, instead of silently skipping.
-///
-/// Call this only after `unshare_prefix()` has already returned `Some`: at
-/// that point this environment has proven it can create PID namespaces, so
-/// the one remaining reason `helper_binary()` could be absent is that
-/// `cargo build --examples` was not run -- a build problem the developer
-/// should see immediately, not a reason to assert nothing and report green.
-/// A skip is reserved for `unshare_prefix()` returning `None`, i.e. this
-/// environment genuinely cannot create PID namespaces at all.
-///
-/// This also guards against the assumption (verified by hand, not encoded
-/// anywhere else) that plain `cargo test` builds `examples/` before running
-/// integration tests: if a future cargo stops doing that, this test turns
-/// red and visible in CI instead of green and vacuous.
-fn require_helper_built(helper: &Path) {
-    assert!(
-        helper.exists(),
-        "helper binary not found at {}; run `cargo build --examples` first",
-        helper.display()
-    );
 }
 
 #[test]
