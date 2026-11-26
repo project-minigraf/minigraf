@@ -1,0 +1,4 @@
+(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/nalid (query [:?rue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?ejj161jjyqjjjjjj35AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ?Be ][?jjjjjjjjjjjjjhjjjjjj ?ejjjjjjjjjjjh ??d ])
+:find (coun ?e) :where [?e:nae ?n],,])
+,,

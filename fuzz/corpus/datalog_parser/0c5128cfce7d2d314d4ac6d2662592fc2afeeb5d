@@ -1,0 +1,1 @@
+(query [:where (pd ?efrend ?)(or(que[e[?]]))(or(qu[]))(or(q[e]))])

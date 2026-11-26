@@ -1,1 +1,0 @@
-(query [:where  [$e ?e vgvv ](not [?j  ,0_][$e:db/valid-to ?_][ 1t:0nan])])

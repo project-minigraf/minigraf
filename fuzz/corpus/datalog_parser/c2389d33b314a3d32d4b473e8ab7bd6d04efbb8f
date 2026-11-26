@@ -1,0 +1,1 @@
+(query [:where[?e :Name ?] (not[?e ne eu][?e aa ?_][?e aaa e1?_wee])])

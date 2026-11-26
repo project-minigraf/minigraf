@@ -1,5 +1,0 @@
-(query [:with ?e  ?:where [?	 :Name ?n](not-join[?e][?:dbnalid (query [:?rue])])
- (cou ?e) ;wcr:(dou:or1que;whe?erue])])
-:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])])
-:find (count ?e) :where [?e:nae ?n],,])
-,,

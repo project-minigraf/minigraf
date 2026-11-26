@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e 3e] (ne ?y:T) (ne/T)[(float? ?y)?n]])

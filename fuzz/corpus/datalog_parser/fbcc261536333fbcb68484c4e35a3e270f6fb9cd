@@ -1,0 +1,1 @@
+(query [:where[?u :Name ?n] (n [t :b ue]):where[?e N vv] (not [e d cc?_][?g:db/valid-from meerue])])

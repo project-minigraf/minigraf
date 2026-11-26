@@ -1,1 +1,0 @@
-(query [:where [Ne= ?] (not [?e e r][?e:db/valid-from ?W][?n aaaa _][?e a ee])])

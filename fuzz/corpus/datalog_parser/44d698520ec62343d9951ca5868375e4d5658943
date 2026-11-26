@@ -1,0 +1,1 @@
+(query [:where [?e :name ?n] (nmt ?[/:bafsact eeeeeeerue]):where  [$e ?Name ?nv ](not [?j :bna ?_][$e:db/valid-to ?_][ 0tracid-to ?_][$2?a ?_][$e:db/valid-to KCCCn])(not [?j :bafa ?_][$e:db/valid-to ?_][ 0tracid-to ?_][$2?a ?_][$e:db/valid-to CCCCan])])

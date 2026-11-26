@@ -1,0 +1,1 @@
+(query [:where(OO ?y:e):where(y:eT)[(integer? ?y)  ?n] (ndDTTTTT)[(integer? ?y)  ?n]])

@@ -1,2 +1,0 @@
-(query [:where(or(o()
-) [?e :e ?n] (not(qt>>>u)[(fx ?y) ] ) ) ])

@@ -1,0 +1,1 @@
+(query[:with ?x:where [?d :ne ?n](or(e*?-4OOcnt ?OOAAACy))])

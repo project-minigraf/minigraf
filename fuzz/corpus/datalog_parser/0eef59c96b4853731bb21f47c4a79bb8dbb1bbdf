@@ -1,1 +1,0 @@
-(query [:where [?:nad :z,] (not [? :b ?_A3])(qot [8nil])(qot [? :b ?? ? ?_6])(n [?8240b00-0408 ?_8_8])(qot [_6])(noveot [ ? 8b ?_8_8][?])])

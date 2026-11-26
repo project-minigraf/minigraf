@@ -1,0 +1,10 @@
+(query [:with ?e  ?
+:find  ?e ?:where [?	 :Name ?n](trsact[][?e:db/valid (query [:?rue])])
+:find (count ?e) ;wr])
+:find (count ?e) ;ay[[:?rue])])
+:find (count ?e) ;wry [:w])])
+:find (count ?e) ;wry [:w])
+:find (count ?e) ;wr
+:find (count ?e) ;whewry rue])])
+:find (count ?e) ;where (query [:?erue])])
+:find (count ?e) :where [?e:nae ?n]])

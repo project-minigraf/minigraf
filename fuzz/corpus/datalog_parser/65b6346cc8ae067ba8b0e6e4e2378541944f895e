@@ -1,0 +1,1 @@
+(query [:find ??:where [?eW:e ?n]  [?e :Name ?nv](not [?e a n])(not [?e e tru])])

@@ -1,0 +1,1 @@
+(query [:where (or(eee:E)(A?:e 0)(IA?:e 0)(A :ren))])

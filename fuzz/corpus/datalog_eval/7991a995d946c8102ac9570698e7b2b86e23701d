@@ -1,0 +1,1 @@
+(query [:find ?,:distinct :where [?e ?n1e? ?n] [(>=?n "e")?]])

@@ -1,2 +1,0 @@
-(query [:where [?	 :Name ?n](not-join[]
-[ ?nc>_][?e ccccccvad n] [(fx ?y)  ?n] (nndO):where [any-in?] () AAA):wre [?e:nae ?n]])

@@ -1,0 +1,2 @@
+(query [:with  ?nn:where [?	 :X n](or-join[n][])
+[?n]])

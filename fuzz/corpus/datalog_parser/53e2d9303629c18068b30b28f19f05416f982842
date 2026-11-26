@@ -1,0 +1,1 @@
+(query [:where [? me ?n] (or(ef) [n?:eaea ?_][?:db/valid-from ?e?_n] ) [3xen ?y]])

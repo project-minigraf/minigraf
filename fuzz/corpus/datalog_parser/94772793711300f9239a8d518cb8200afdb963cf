@@ -1,0 +1,5 @@
+(query [:with ?e  ?;w)
+?:where [?	 :Name ?n](not-join[]
+[?e :pame ?n] (nd>>>>6964)(q?>>>)(q>>>>>>>>>[?e:db/ ([?rue])])
+:?_nd )
+])

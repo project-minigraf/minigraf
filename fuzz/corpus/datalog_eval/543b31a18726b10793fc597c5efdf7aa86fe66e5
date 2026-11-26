@@ -1,0 +1,2 @@
+(query [ :where [z? ne ?n,][(!=?n "Al")?n](q[:b])
+])

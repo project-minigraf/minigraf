@@ -1,0 +1,2 @@
+(query [;[:Hr
+:find (co?0000/00000000nt ?e),:find(couno ?e) :where [?e:e ?n]])

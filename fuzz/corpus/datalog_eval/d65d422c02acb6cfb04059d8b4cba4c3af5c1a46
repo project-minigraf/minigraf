@@ -1,0 +1,2 @@
+(query [ :where [?ehO:oln?lr ?_?c] (or[_:wh[?$e :m()]])
+])

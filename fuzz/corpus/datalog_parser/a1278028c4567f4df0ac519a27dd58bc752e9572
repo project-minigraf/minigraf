@@ -1,0 +1,1 @@
+(query [:where [?e :Name ?n] (not [?e :b?Dne$true]):where [?e :Nacme$n] (nm[? e])])

@@ -1,0 +1,11 @@
+(query [:with ?
+:find  ?e ?:where [?	 :Name ?n](not-join[][?e:db/valid (query [:?rue])])
+:find (count ?e) ;inddb/valid (query [:?rue])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+:find (count ?e) ;wrd (query [:e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:dbovalid (query [:?rue])])
+:find (count ?e) ;m[ ;w?e) ;a?e :?߉;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+:find (count ?e) ;wry)
+:find (couot ?e) :where(query [:find ?e  ?e :where [?e :Nae ?n] (not[?_?e :ne- ?_?ctueea [?e:nae ?n]])
+ct e])])

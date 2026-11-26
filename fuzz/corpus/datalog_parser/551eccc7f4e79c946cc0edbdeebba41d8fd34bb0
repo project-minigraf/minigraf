@@ -1,1 +1,0 @@
-(query [:where [?e0:a-en ?] (v(e)) [3x ?n](or(ppp)[(x ?y) ?n] ) [5t ?]])

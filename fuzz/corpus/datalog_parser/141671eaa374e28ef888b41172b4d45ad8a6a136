@@ -1,3 +1,0 @@
-(query [:with ?e  ?e ?:where [?	?iName ?n](tranct[][?e:db/([:w])])
-:find (count ?e) ;wryw?e  )
- ?:where [?	?iNam ?n](trsabtt ?e) :where [?e:no2n ?n]])

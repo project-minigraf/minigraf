@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where  [?	 e ?n](not-join[]
+[?e :e ?nccccccccc_0][?e aa ?_][e aaa ?_][CeCe a ?e][?e cvalid (y )])
+
+:find (count ?e) :where [?e:a?ne n]])

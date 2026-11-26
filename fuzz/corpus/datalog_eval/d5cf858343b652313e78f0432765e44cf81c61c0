@@ -1,0 +1,2 @@
+(query [:where [(=:re"") ?n ][(!= ?n:ve)](que!=ry [:fin:wh])
+[(>=?n"e")]])

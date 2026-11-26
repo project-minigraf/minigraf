@@ -1,2 +1,0 @@
-(query [:where [?e0:namen ?] (ovA(eA)
-) [?e :e ?n] (not(q0rTT)[(fx ?)?n] (nd tru)[(fx ?y)  ?n] (tru5 Qy) ) [2t ?y]])

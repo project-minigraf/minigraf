@@ -1,1 +1,0 @@
-(query [:where [$e :Na ?n] (not[?:ba true])(not [?_e d true]):where [?e e ?n]])

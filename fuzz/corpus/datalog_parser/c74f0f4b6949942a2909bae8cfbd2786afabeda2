@@ -1,4 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :NXme ?n](transact[][?e:db/valid (query [A8A1:?rue])])
-:find (count ?e) ;wrywjere :w)
-:find  ?e ?:where [?	 :Name ?n](not-join[][?e:db/vAlid-n??a?nnqlid-from ?e?_][?:db/nnnnn???6i3 ?_][?:db/valid-from ?e?_][?:nnnnnnjjjj (query [0 000002e])])
-:find (count ?e) :where [?e:nae ?n]])

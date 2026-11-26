@@ -1,0 +1,1 @@
+(query [:where   [?_?e ?c20 ?n]  (or-join[][e?=ae])])

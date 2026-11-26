@@ -1,0 +1,2 @@
+(query [:with ?:find ?:where [?	 :Name ?n](not-join[](qufry [])[?e:db/val (query [:uer?])])
+:find (count ?e) :where [?e:nae ?n]])

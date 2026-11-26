@@ -1,0 +1,1 @@
+(query [:where[?/ :I en](not-join[][/va()]) :where [?e:ae ?n]])

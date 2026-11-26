@@ -1,0 +1,1 @@
+(query [:find ? :where(or[e?l?=?e][e=ae])])

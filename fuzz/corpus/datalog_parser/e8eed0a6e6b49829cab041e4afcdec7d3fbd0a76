@@ -1,0 +1,1 @@
+(query [:where [? :eaoe ?n] (or(en,?y ?n) )(or(AA0yo,q) )])

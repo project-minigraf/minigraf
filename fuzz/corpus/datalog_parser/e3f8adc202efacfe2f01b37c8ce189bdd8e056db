@@ -1,2 +1,0 @@
-(query [:find ?e :where[?e :Nae ?n] (not [?e :aid-to"Yic_OA"][:e/1 :daliot"e/0-a?a"][:e :ddto"]aee"][:e/4 :db/val()])])
-

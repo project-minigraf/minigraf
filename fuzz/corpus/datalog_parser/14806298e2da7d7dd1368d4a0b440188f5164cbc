@@ -1,2 +1,0 @@
-(query [:where [?e m +](or(d 
-i) ) [2n ?y]])

@@ -1,2 +1,0 @@
-(query [:find ?e :where[?e :nam ?n] (o3A7t ?e)
-:find  ?e ?:where [?	 :Name ?y]])

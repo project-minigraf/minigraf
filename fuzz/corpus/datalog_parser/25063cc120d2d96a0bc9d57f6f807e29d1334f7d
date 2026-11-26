@@ -1,0 +1,2 @@
+(query [:where [?	 :Name ?n](not-join[]
+[?e :na ?n] (3?e)t ?) :where ])

@@ -1,0 +1,2 @@
+(query [:with ?d  :where(not-join[][?e:db/tx-id ()])
+:find(ount ?e):where [?e:na ?n]])

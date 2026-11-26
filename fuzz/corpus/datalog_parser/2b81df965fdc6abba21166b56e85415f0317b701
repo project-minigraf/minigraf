@@ -1,0 +1,1 @@
+(query [:where [?e :fae "Alllaee"][:e/0 ?1n ""][:e/1 ?el ""][:e/1 :db/tx-id "2O"][:e/1:db/tx-id "0Oc+!ee"][:e/1 :nal y]])

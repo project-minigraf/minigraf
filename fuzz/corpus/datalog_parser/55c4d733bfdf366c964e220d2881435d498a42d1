@@ -1,1 +1,0 @@
-(query[:find ?e:where(d ?e )(E:f2"\:"4)(E:f2":"4 r)])

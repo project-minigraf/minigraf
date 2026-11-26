@@ -1,0 +1,8 @@
+(query [:with ?e   ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+:find (count ?e) ;wr])])
+:find (count ?e) ;in
+:find (count ?e)   ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+(count ?e) ;act[][?e ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?][e:db/valid (query [:?rue])])
+:find (count ?e) ;wry [[:?r
+:find (count ?e) :where [?e:nae ?n]])

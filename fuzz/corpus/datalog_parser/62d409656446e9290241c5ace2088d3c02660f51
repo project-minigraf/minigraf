@@ -1,1 +1,0 @@
-(query[:where [?e 8:?n ] (ne ?y:Ty:T)[(nil? ?y) ] (X )])

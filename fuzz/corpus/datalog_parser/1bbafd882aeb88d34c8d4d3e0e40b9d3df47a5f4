@@ -1,1 +1,0 @@
-(query [:where (p ?)(AAE :0)(A:?:f)(AA:we 8)])

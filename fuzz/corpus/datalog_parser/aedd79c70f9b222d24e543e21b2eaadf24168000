@@ -1,1 +1,0 @@
-(query [:where[?:0me ?] (no)[?e:le ""][:/2 :db/valid-to"]ib"]])

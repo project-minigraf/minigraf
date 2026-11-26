@@ -1,0 +1,7 @@
+(query [:find (count  ?e)
+:find  ?e ?:where [?	 :Name ?n](not-join[?_?e][?:e/dbnalid (query [:?rue])])
+ (count ?e) ;wry[s:wire [?	)
+:find  ?e ?:where [?	 :Name ?n](not-join[?_?e][?:e/dbnalid (quer [:?rue])])
+ (count ?e) ;rycoe ?n](trans)
+:find  ?e ?:where [?	 :Name ?n](not-join[?_?e][?:e/dbnalid (query [:?rue])])])
+,,

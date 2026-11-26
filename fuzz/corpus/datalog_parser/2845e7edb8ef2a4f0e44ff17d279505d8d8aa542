@@ -1,1 +1,0 @@
-(query [:with  ?o:where  (n ):with ?e:with ?eo:e])

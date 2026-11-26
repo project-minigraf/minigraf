@@ -1,0 +1,1 @@
+(query [:where(or(or(Cd:e 5)(A,d1=)) )])

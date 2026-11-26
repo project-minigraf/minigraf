@@ -1,0 +1,1 @@
+(query [:where(A ?ee:2)(A ?e )(AAMd ?8)(AA ?e :re )])

@@ -1,1 +1,0 @@
-(query [:find ?e:where (d ?e :h)(AA :urnSAA34e :urnShSSiw)])

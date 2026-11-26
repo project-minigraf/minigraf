@@ -1,6 +1,0 @@
-(query [:with  ?e ?:where [?	 :NXme ?n](transact[][/valid (query [:?rue])])
-:find (count  ?)
- (count ?e) ;wr ?nrh}heerue])])
- ?:where(not-join[?e][?e:db/tx-id (query [:?rue])])
-(count ?e) :where [?e:n ?n],,])
-,,

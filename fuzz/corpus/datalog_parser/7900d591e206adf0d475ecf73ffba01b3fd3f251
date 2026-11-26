@@ -1,0 +1,3 @@
+(query [:where [?	ame ?n](not-join[?jqjjj ?n] (ow(E64440) )[? :db/tx-id ?e ][?j ??e/d ?])
+])
+,,

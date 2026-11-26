@@ -1,0 +1,3 @@
+(rule [(par) [?ez :e ?n] (not(qtE)
+) [e:e ?n](not(q)
+) (not(q) ) [x ?_t y]])

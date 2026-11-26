@@ -1,0 +1,1 @@
+(query [:where(or(or(A e 5)(A,0=))) ])

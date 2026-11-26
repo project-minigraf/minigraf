@@ -1,2 +1,0 @@
-(query [:with ?e  ?e ?:where [?	 :Name ?n](or-join[][?e:bb/valid (mequ)])
-:find(count ?e) :where [?e:nae ?n]])

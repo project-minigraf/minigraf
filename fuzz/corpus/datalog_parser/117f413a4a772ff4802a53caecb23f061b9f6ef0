@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?:Name ?n](or-join[][?e:bb/alid (m-qu)])
+:find(count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,2 @@
+(query [:with ?n  ?e ?:where[?:N ?n](tr[])
+:find(p ?e) :where [?e:nae n]])

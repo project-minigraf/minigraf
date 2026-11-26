@@ -1,1 +1,0 @@
-(query [:find ?e:where [e :Nae ?n] (not [eg ? "eee"][?d ? "@ee"][ggggg ? "ule"][?0 ?e ue])])

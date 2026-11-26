@@ -1,0 +1,4 @@
+(query [:with ?e ?e ?:where [?	 :me ?n](or-join[][?e:dbova ()])
+:find ?:where [?	 :Ne ?n](not-k:o-aonsif[]
+[?eccid (q?yw[:erue])])
+:find (count ?e) :where [?e:nae ?n]])

@@ -1,0 +1,5 @@
+(query [;w [?	e ?n](tra ?e) ;whe?erue)])
+:find  ?e ?:where [?	 :Name ?n]
+:find (count ?e) ;wr])
+:find (count ?e) ;wuery [:erue])])
+:find (count ?e) :where [?e:nae ?n]])

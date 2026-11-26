@@ -1,0 +1,1 @@
+(query[:find ?:where[:c ?u o][?e ?l o](j )])

@@ -1,0 +1,2 @@
+(query [:with ?e  ? ?:where [?	 :NXme ?n](ACd ?re 3e):find  ?e ?:where [?	 :Name ?n](not-join[](quer)[?e:db/valid (query [:?rue])])
+:find (count  ?e) :where [?e:oae ?n]])

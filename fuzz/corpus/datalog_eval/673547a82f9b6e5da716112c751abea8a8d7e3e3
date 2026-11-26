@@ -1,0 +1,1 @@
+(query [ :where [?e F ?c] (not-join [?e ?f  :whec] [?e_])])

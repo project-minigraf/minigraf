@@ -1,1 +1,0 @@
-(query [:where [? :ename ?n] (or(edD:f0i5D4DD) [n?:eaea ?_][?:db/valid-from ?e?_n] ) [3xa5een ?y]])

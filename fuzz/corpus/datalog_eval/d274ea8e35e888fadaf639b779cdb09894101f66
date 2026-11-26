@@ -1,1 +1,0 @@
-(query [ :where [?Cmmmme ?lEEEEEEzcolor ?c] (not-join [?lysnufn ?c?l?e ?ljFqfn ?cnnfn ?g]  [?e:db/tx-id ?e])])

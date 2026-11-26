@@ -1,1 +1,0 @@
-(query[ :where [?:Nale ?n]:where [?e :njme ?] (not[:e :zd true])])

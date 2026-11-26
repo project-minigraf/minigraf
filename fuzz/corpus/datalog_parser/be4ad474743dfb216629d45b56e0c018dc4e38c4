@@ -1,0 +1,3 @@
+(query[:with ?e ?:where [?	 :Nime ?n](not-join[]
+[?e :na n] [(fx ?y)  ?n] (ew2hgO)[(Ofx ?y)  ?n] [(fx ?-ry i[:rue])])
+:f])

@@ -1,0 +1,1 @@
+(query [:find ?e :find ?e :where [?e :e ?] (nene ?y:TT)[(integer? ?y) ?n] (n)])

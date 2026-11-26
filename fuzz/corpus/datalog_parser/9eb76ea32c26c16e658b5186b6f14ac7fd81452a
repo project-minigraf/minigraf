@@ -1,1 +1,0 @@
-(query[:find ? :where (r[(>{i==c})])])

@@ -1,0 +1,2 @@
+(query [:with ?e  ?e ?:where [?	 :me ?n](or-join[?_][	eCe a ?_][?_ +(q?i[:?epue])])
+:find (count ?e) :where [?e:nae ?n]])

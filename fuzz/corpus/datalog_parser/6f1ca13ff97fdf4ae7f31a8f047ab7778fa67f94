@@ -1,0 +1,1 @@
+(query [:where [? aie ?n] (not [?e t e]):where  [?e :Name ?n] :where [?e :e ?vv] (not [?e :ba ?__][$e:db/valid-to ?_][ 4iamt e])])

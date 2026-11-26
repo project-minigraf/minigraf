@@ -1,2 +1,0 @@
-(query [:where [?o /C]:where[? /C] (not(q<4<uerA))]
-)

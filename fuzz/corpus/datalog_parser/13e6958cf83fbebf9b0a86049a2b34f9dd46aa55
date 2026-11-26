@@ -1,0 +1,1 @@
+(query [:find ?e :where  [$e ?Name ?nvgvvv](not [?j bane tc][$u:db/valid-to ?_][ 5tu:ba])])

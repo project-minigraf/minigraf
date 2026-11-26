@@ -1,0 +1,1 @@
+(query [:any-valid-time :find ?e :where [?e :lr? ??e] [d?:iveva trw] (not-join [?e] [Cie?:activfn ?g]  [?e:db/tx-id ?c]  [?e veteqfn ?g]  [?e ?lynnfndb/tveta ?e_e])])

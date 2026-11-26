@@ -1,0 +1,4 @@
+(query [:with ?   ?:where  [m?	:Nae n](not-join[?e][?e:dalid (queby [:?rue])])
+:find (c ?) ?e ?:where(not-join[?e][?:e/d (qy [:?rue])] ()c
+ouount ?e) :where [?e:nae ?n],,])
+,,

@@ -1,0 +1,1 @@
+(query [:where(u:BB#{nil:a2})])

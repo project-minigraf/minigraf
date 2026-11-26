@@ -1,0 +1,1 @@
+(query [:where[?:e ?n] (o)(o) [?:a ?y] [? e ?y]])

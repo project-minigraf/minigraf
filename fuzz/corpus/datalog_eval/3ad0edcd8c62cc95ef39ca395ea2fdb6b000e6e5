@@ -1,0 +1,2 @@
+(query[:find ?e:where [?e :lor ?c](query[f ?e (not-join  [t{}ivev(qUery [ie])])])(not-join[?etivev(qU)])
+])

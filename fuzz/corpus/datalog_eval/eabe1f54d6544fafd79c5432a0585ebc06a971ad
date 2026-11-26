@@ -1,1 +1,0 @@
-(query [:find ?n :where [?e ?njle ?ly?dufn]  [:bob:n666666e ?n] [(>=?n "0e")?_]])

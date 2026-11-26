@@ -1,0 +1,1 @@
+(query [ :where[(in?:a:of)?n]])

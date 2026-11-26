@@ -1,5 +1,0 @@
-(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?][?e:db/nalid (6uery [:?rue])])
-:find (count ?e) ;w
-:find  ?e ?:where [?	 :Name ?n](not-join[?e][jjqjj:valceaod ?e ][?jjjjjjjjhjjyqjjjjjjhjjjjjjjkjhjjjjjjjjjyqjjjjjjjjjjjjjj ??d ?e ][?jjjjjjhjjqjjj ??e/ w]( n?ow(enm,?q8127 ?Hn) )[?jllllljjjj ??e/d ?e])
-:find  ?e :where [?e:nae ?n],,])
-,,

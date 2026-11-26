@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e ?FFFFFFFF ?e] [u ? _rv?] (not-join [?_ctivese] [que?e ? e])])

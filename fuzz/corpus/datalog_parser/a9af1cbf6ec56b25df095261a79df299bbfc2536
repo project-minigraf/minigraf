@@ -1,0 +1,2 @@
+(query [:find ?e  ?e :where(t[])
+:find (count ?e) :where [?e:nae ?n]])

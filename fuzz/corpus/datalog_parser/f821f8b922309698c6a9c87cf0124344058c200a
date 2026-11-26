@@ -1,0 +1,3 @@
+(query [:with ?e ?e ??:where [?	 me ?n](not-join[]
+[:e/1 :db/valid-to"][:e/0"])
+:find (count ?e) :where [?e:nae ?n]])

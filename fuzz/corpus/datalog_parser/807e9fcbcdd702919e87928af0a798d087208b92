@@ -1,0 +1,1 @@
+(query[:where [? aie ?n] (not [?:n ?][?e a cZ_][?e a ?_][?e aat _][$0:db/valid-to ?][? tne zA])])

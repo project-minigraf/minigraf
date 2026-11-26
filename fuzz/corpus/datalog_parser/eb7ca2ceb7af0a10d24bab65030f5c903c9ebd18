@@ -1,0 +1,2 @@
+(query[:find ?e:where [?e :a ""][:u/?ife/en
+t ?]])

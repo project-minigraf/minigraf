@@ -1,0 +1,1 @@
+(query [:where (qq2:o nil)(q:o nil)])

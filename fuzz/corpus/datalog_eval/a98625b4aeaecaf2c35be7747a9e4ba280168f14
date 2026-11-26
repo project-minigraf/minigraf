@@ -1,0 +1,1 @@
+(query [ :where [? o?_zrlc ?c]  [?e z ?_] [z?e Dor ?c] (noT[ t]PPPP)])

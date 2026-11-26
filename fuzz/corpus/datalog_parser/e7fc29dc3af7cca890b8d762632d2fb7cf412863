@@ -1,0 +1,1 @@
+(query [:where(p ?e 8)(A:_)(E:n,0)(A35:w )])

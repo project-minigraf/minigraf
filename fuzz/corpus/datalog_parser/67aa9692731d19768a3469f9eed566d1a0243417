@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e e ?n] (o000$6$nfx$i$63444$true3$m$mi$3e$rti$21$3$mi$2$9$mi$33$0) [?x :p ?y]])

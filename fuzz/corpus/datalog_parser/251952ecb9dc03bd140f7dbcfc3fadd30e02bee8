@@ -1,1 +1,0 @@
-(query [:with ?e0:where(or(en)[(boolean? ?y)  ?n] )(or(eoOO:t)[(boolean? y)  ?n] )a?[2xaY]])

@@ -1,1 +1,0 @@
-(query[:find ?e  ?e :where [?eW:Name ?n] (not [?_?e:bp "A"][:e/0 :2nale "e"][:e/1 aZa ?_][?e t eeerue]):where  [?e :Name ?nvv] (not [?e :b tre])])

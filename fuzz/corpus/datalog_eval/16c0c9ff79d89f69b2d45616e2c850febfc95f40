@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?E0qEE true]  [e ?le1 true]  [n] [(>=?"n")]])

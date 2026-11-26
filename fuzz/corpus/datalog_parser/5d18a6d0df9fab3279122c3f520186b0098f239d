@@ -1,0 +1,1 @@
+(query [:where (p n0)(A-- :fe)(A e 1)])

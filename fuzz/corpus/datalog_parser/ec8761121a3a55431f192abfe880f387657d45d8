@@ -1,1 +1,0 @@
-(query [:where [?,?falseu ?nfalse] (or(q,?u))])

@@ -1,0 +1,4 @@
+(,query [:with ?:where [?	 :me ?n](or-join[][?e:db/d (query[:?rue])])
+:find (count ?e) ;wr])])
+:find  ?e ?:where [?	 :Name ?n](nkoin[]
+[true]):where [?e:ae ?]])

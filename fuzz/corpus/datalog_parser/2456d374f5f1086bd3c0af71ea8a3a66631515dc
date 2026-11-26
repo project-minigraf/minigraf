@@ -1,1 +1,0 @@
-(query [:find ?e ?e:where [?e :e"A"]:order-by[?3]])

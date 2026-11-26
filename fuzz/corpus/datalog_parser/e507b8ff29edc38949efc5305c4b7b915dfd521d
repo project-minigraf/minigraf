@@ -1,1 +1,0 @@
-(query [:find ?e :valid-at"7"[4 ?e/?y]])

@@ -1,0 +1,3 @@
+(query [:with ?e ?:where [?	 :Name ?n](not-join[?e][?e:db/ (qu) ] (y:T)[(fx ?y) ] (ne ?y8)[(fx ?y)] (nd qqq6w)[(fx ?y)  ?n] (nO:????)[( [:?rue])])
+ ,])
+,,

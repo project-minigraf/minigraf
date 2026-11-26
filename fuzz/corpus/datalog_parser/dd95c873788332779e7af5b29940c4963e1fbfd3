@@ -1,3 +1,0 @@
-(query [:with ?  ?e ?:where [?	 :Name ?n](not-join[?e ?,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,?d ?e ][?jjjjjjjjjjjjjj ??e/d ?e])
-:find  ?e ?:where [?	 :Name ?n](not- ?e) :where [?e:nae ?n],,])
-,,

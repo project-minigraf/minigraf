@@ -1,0 +1,1 @@
+(query [:where( O10Oe:e):where(OO ?y:e)[(fx:?y) ?n][(fx ?y) ?n](AAA0A?A:?߉)(EO ?y:e)[(fx:y) ?n][(fx ?y) ?n](AAA1 08134):where(OO ?y:e)[(fx:?y) ?n][(fx ?y) ?n] ])

@@ -1,2 +1,0 @@
-(query [:with ?e  ?e ?:where [W?	 :NXme ?f?n](or-join[][ed?b:/(query [:?])])
-:find (count ?e) :where [?e?h:nFa ?n]])

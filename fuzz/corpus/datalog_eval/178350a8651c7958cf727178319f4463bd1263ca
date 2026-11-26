@@ -1,0 +1,2 @@
+(query [:with ?c:where [?e r ?c] (not[?ee:db/tx-id ?c] (m- ?))]
+)

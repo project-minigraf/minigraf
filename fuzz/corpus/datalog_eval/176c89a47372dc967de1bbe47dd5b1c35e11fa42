@@ -1,2 +1,0 @@
-(query [ :where [(=:rue"ide") ?n/ ]:where[(=:re"A$ide") ?u ][( = ?n:actie)?_0][(!= ?n:ac)]])
-

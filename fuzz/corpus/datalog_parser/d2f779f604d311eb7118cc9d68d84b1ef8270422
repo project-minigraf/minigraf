@@ -1,1 +1,0 @@
-(query [:with ?e0:where [phe:name ?_] (or(q:db/vTT)[(integer? ?y)  ?n] (ctTb/vTV)[(integer? ?y)  ?n] (nd tr9T)[(integer? ?y)  ?n] (AATT)[(integer? ?y)  ?n] (nd mey) ) [5x]])

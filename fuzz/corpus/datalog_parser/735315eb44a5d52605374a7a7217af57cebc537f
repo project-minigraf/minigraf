@@ -1,1 +1,0 @@
-(query[:where [?e :Nme ?n] (not [c?e:d ccc][?e:db/valid-from _H_][?e:c?cccc? _][?e:db/valid-from s?_][Ce a ?n][?e aaaaa ue])])

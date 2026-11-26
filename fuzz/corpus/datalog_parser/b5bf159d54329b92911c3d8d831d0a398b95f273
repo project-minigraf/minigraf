@@ -1,0 +1,4 @@
+(query [:with  ?e ?:where [?	 me ?n](not-join[?e][?-:db/tx-id (query [:?rue])])
+:find (count ?e)
+:find (count ?e) :where [?e:nae ?n],,])
+,,

@@ -1,1 +1,0 @@
-(query [ :where [:whe lyfn ?g]  [$e:db/t?nnlyfn ?g]  [$e:db/txfn ?g?c]  [?m ? ?c] (not-join [?lynfmfn ?c]  [?equqqq?e ?ljf?d e])])

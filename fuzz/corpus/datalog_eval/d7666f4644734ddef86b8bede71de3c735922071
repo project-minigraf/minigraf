@@ -1,1 +1,0 @@
-(query[:where[?ee _ ?n] [(= ?n "?ce")]])

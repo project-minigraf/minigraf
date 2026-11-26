@@ -1,2 +1,0 @@
-(query [:where[?/ :e In](not-join[][/va()])
-:find (ct ?e) :where [?e:nae ?n]])

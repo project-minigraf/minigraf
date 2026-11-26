@@ -1,0 +1,2 @@
+(query [:find ?e :where (e [X(y) [X(t?[[e0 :e[]"m e("Aice[]":e/0 " ice[]"m "e[]":"]])
+-----5]]?)(AA ?e :wre )])

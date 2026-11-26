@@ -1,1 +1,0 @@
-(query [:with  ?e ?:where [?	 :me ?n](or-join[][?e:d ?_][?aa  a ?_][?_d (qy wry i[:?])]unte) [?2e:n]])

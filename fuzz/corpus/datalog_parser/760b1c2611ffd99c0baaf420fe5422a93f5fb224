@@ -1,0 +1,1 @@
+(query [:where[?e a ?][E a _][?+a](t[]e)])

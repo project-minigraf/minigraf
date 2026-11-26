@@ -1,0 +1,1 @@
+(query [:where(pd ?e :SS)(E:f4)(H:wr)(A?"\e:"4)(E:o)(AI:u)])

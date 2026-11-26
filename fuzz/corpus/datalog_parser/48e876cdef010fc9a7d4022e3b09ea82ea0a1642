@@ -1,0 +1,4 @@
+(query [:where(A?eencount ?e) ;whe?erue)])
+:find (count ?e) ;whe?e:in[][?e:db/ve])])
+:find (count ?e) ;whe?ee])])
+:find  ?e ?:where [?	 :Name ?n](n:nil5)(A70153inO ?y:e)[(fx ?y) ?n] ])

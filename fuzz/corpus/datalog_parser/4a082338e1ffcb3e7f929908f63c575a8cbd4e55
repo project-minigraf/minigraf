@@ -1,0 +1,10 @@
+(query [:with ?e  ?e ?:where [??	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])])
+ (count ?e) ;wry [sact[])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (false [:?rue])])
+:find (count ?e) ;wry ?n](not-join[wry [nt  ?e) ;whe?erue])])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])])
+ (count ?e) ;])
+:find  ?e ?:where [?	 :Name ?n](not-join[?e][?:e/dbnalid (query [:?rue])])
+:find (count ?e) ;wry ?n](t,,,,,) ;wry [:wi[::erue])])
+:find (count ?e) :where [?e:nae ?n],,])
+,,

@@ -1,0 +1,1 @@
+(query [:where[e :e ?n](or[n?:ame ?n] [n? e ?n] (A) ) [1e ?y]])

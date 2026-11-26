@@ -1,1 +1,0 @@
-(query[:where (d :w#{:du})(p h#{0})])

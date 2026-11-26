@@ -1,0 +1,1 @@
+(query [:where [$e:c Fc][$e :l oFc][$e :l c][$e :l o](n)])

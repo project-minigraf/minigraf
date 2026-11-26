@@ -1,1 +1,0 @@
-(query [ :where [?eh :colnr ?uoc] (or[eaz ?l2e e])])

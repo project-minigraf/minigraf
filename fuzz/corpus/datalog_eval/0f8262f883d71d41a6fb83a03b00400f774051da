@@ -1,0 +1,2 @@
+(query [ :where  (or-join[][?ne?=e](q=ery [ :where  (o)])
+)])
