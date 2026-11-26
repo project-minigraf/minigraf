@@ -20,32 +20,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// Path to `examples/pid_ns_helper`.
-///
-/// `MINIGRAF_PID_NS_HELPER`, if set, is used as-is. Needed under `cargo
-/// llvm-cov`, whose instrumented build puts test binaries where the
-/// `examples/`-relative lookup below fails, so the helper has to live in
-/// a target dir it never touches; `.github/workflows/coverage-gates.yml`
-/// builds it there and sets this variable. Otherwise resolved relative to the
-/// test binary at `target/debug/deps/nfs_lock_test-<hash>`, the same shape as
-/// `tests/pid_namespace_test.rs::helper_binary`.
-fn helper_binary() -> PathBuf {
-    if let Ok(path) = std::env::var("MINIGRAF_PID_NS_HELPER") {
-        return PathBuf::from(path);
-    }
-    let mut dir = std::env::current_exe().expect("test binary path");
-    dir.pop(); // deps/
-    dir.pop(); // debug/
-    dir.join("examples").join("pid_ns_helper")
-}
-
-fn require_helper_built(helper: &Path) {
-    assert!(
-        helper.exists(),
-        "helper binary not found at {}; run `cargo build --examples` first",
-        helper.display()
-    );
-}
+mod pid_ns_helper;
+use pid_ns_helper::{helper_binary, require_helper_built};
 
 fn run_helper(helper: &Path, db: &Path, mode: &str) -> Output {
     Command::new(helper)
