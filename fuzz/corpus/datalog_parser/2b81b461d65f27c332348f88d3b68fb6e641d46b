@@ -1,0 +1,1 @@
+(query [:where (not-join[][A:n1 n][futa:- n][fuen:e -?n])])

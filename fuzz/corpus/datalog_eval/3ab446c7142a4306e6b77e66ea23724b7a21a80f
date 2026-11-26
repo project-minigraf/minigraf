@@ -1,0 +1,2 @@
+(query[:where [?l?c ?doL ?roc] (or(q:heuey=r ?[:inkFhteraw])
+ )])

@@ -1,0 +1,4 @@
+(query [:fin:where(not(qu)
+[?e ?_wname ?n] (ry :[:])
+[?e ?_wname ?n]
+[?e ?_me ue])])

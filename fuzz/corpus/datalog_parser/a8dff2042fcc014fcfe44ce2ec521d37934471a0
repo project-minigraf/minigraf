@@ -1,1 +1,0 @@
-(query [:f?:where [?e /n] (not(q::::( [(i)])) (t r=9) (nt= =y)(u1) [ae bnn true])])

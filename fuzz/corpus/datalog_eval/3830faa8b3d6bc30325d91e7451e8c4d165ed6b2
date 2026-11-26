@@ -1,0 +1,1 @@
+(query [:where [of?e :e ?n][:a?e :name  ?n][:bob :amn? e][(= ?n "")?n][:bob :nc? me][(= ?n "")?n][:bob :?an me][(= ?n "")?n][:bob :na? me][(= ?n "")]])

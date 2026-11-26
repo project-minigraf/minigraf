@@ -1,0 +1,2 @@
+(query[:where [? :c?oo lc] (or(and[:<w])
+ )])

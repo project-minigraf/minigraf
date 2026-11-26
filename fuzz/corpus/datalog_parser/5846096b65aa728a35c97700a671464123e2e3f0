@@ -1,1 +1,0 @@
-(query[:where [A e ?n] (not-join[] (que?) (u?) (u:p) (u [ ])[Q=hu])])

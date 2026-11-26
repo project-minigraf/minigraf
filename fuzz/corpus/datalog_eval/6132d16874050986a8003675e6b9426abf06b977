@@ -1,0 +1,1 @@
+(query [:find :where[?e lo ?c] (not-join [?e ?] [e:are true])])

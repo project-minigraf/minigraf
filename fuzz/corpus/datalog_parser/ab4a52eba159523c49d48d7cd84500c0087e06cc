@@ -1,0 +1,2 @@
+(query [ :where [?e :n ?n] (not(u) [ae be true])(not(s)
+[?e e ?n] (r)[e b t])])

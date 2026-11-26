@@ -1,1 +1,0 @@
-(query [:find:where [?e :ne ??n]  [? m ?n?-e] (not(q) )(not(-) [ae : te])(not(L)[?e na t0p])])

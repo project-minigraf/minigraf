@@ -1,0 +1,2 @@
+(query [:where (not-join[][truf0A:n11 ?n][f:n ?n][gf:nae ?n][f:e1 n][f
+[ ]?]x6)])

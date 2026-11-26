@@ -1,0 +1,2 @@
+(query [:?:where  (or(y :)
+[?e w ?n](Q) [ak an r])(not(d ? i) )])

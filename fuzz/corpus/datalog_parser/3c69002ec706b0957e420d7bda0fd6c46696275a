@@ -1,0 +1,1 @@
+(query [:i:where [?-?: n] (not(qmatches?ssssssrr)[:+e])])

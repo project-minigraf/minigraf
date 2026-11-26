@@ -1,0 +1,1 @@
+(query[:where [?ezanqN e q] (or(y) (u) (uy) (ul ) (r:ry) (ul=y) (l) [asL true])(-)])

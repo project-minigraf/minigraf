@@ -1,0 +1,1 @@
+(query [:findsu :where [?e l omZaa?rsuc] (not-join [?e] [?e activJJJ2JJ:db/valid-at]) (not-joinv?e [ :e tree])])

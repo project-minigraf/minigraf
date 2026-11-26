@@ -1,0 +1,3 @@
+(query[:where [A e e] (not-join[] (qy[h [:ana n]])[?e wame ?n] (naQ=[: [?enaman ?]])
+[?e :db/valid-to ?n] (no [: [a n ?]])
+[?e wname ?n] (n [ ]) [i3QQ=:whru])])

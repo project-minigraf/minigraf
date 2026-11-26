@@ -1,0 +1,1 @@
+(query [:f:w :where [?e ?nam0 ?zeryn]  [?e ?name ?n] [(= :__man "e")?Z]])

@@ -1,0 +1,4 @@
+(query [::where [?e e ?n] (not(r)
+[?e :db/valid-to ?n] (n
+)
+[?e we ?n](n) [a ?e :wru])])

@@ -1,0 +1,1 @@
+(query [:fin:where [?e : ?n](not(c)[(a :)](RRR)[(a :)](L)[(a :ad)])])

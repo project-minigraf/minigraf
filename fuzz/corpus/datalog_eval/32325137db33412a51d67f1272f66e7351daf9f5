@@ -1,0 +1,1 @@
+(query [:?:where [e :lr ?c] (notn)(or-join)])

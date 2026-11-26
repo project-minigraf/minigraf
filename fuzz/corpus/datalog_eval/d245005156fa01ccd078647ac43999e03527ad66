@@ -1,2 +1,0 @@
-(query [:fi:where [?e Ɯor c](qtery 1 ?:)
- (not-join [] [?e 1:attrue])])

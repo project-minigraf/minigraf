@@ -1,0 +1,1 @@
+(query[:find(t ?e) (z ?e):where [?e f ?]])

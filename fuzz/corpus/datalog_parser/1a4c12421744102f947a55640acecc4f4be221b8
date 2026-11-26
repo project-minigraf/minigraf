@@ -1,3 +1,0 @@
-(query[:where (not-join[] (quer ()-y)
-[?e :db/valid-to ?n] (no  [[::a n ?]])
-[?e wname ?n] (n) [i0QQ=:wru])])

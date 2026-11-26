@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :n?-e ?n] (not-join[ ?_ ?n] (ey [ wh ([atrue])]) [aind ?e:rehu])])

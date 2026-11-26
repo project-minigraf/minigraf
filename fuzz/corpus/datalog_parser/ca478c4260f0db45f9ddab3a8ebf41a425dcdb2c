@@ -1,2 +1,0 @@
-(query[:where(s[[ 
-]])[?x :t ?BBBBeen] (I:sd )(?[f])[?x t? 1]])

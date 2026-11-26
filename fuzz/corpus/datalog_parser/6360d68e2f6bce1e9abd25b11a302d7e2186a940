@@ -1,0 +1,1 @@
+(query  [:where(or(L ?xnnnh)):?1:where (or(L ?n))(or(LL ?xrsw)):?1:where (or(LL ?ous))])

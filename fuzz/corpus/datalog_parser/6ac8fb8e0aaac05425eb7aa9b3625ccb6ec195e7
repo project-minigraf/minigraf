@@ -1,1 +1,0 @@
-(query[:where  (not-join[](r[:w::]?n?1U:)[(+:th ?y)?ye?])])

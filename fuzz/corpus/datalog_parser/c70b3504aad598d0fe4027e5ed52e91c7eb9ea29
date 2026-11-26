@@ -1,0 +1,1 @@
+(query[:?:where [q 1_](or(LLLLx) (ustrp= s<))])

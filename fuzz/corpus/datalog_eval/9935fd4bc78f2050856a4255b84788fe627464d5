@@ -1,0 +1,1 @@
+(query [:[?e ?__e ?n]  :where [?e E ?eOOnd] [(, @n ]])

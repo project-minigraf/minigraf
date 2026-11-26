@@ -1,0 +1,1 @@
+(query [:where(a=a=)[(+true:A)?][(+true:A)?] :])

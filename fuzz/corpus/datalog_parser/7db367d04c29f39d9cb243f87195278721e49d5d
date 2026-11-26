@@ -1,0 +1,2 @@
+(query[:where [ A =n](not-join[][c:me ?n][f:f:3] (qr
+:))])

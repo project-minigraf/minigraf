@@ -1,0 +1,1 @@
+(query [:with ?e :where [? em ?c] (_ot[?ni e] [?:a])])

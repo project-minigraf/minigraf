@@ -1,1 +1,0 @@
-(query [ :where(not(q=y) (l=) (u=) (u y)(lry))(uy) (u:y)])

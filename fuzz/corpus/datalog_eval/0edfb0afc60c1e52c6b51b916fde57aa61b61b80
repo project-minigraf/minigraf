@@ -1,2 +1,0 @@
-(query [:nnd :where [?m :color ?a] (not[(qu[:fi(n [u?tue])])
-ue])])

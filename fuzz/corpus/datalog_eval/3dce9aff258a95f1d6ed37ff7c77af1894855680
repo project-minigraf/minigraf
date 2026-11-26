@@ -1,2 +1,0 @@
-(query [: :where  (or [(: :whe[e  (or [?r])])
-?r])])

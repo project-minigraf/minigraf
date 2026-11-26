@@ -1,0 +1,2 @@
+(query [:where[rnot:name qee?n] (ccce=n )[?x:db/valid-at ?BBB] (sse[[ 
+]])[x:db/valid-at BBBBBnee?n] (scAt?e=n )[?x :db/valid-at nee?] (sssce=n)(?ye[[?x ]])[?:db/valid-at BBBBB5]])

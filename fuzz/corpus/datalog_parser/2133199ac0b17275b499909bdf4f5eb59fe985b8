@@ -1,0 +1,1 @@
+(rule [(*t)[c?x:paren ?BB?n] (*-0y) (alr) (<[(?y) [?x]])[c? :aa:n] (**A?= =y/) ( =y) (ulre)[?x :t ?]3])

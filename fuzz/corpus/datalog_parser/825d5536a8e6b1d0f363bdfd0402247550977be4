@@ -1,0 +1,1 @@
+(query [:where[?eB me ?][?e n ?n] (not[(a ?y)](L))])

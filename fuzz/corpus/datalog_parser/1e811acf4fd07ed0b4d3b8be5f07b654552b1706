@@ -1,0 +1,1 @@
+(query[:where [A e e] (not-join[] (u))(not(q)[i1QQ=hu]):it])

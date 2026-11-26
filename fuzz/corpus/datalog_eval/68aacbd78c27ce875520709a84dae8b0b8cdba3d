@@ -1,1 +1,0 @@
-(query[:find ?e :where [?:color ?c] (not-join [?ppnd ?e:h0:::]:dfni,)])

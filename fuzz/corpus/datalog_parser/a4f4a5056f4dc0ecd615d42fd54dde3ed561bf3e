@@ -1,0 +1,1 @@
+(query  [::where (or(e ?eu ?2Bi ?=y) (e ?e))])

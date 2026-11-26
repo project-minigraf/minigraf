@@ -1,1 +1,0 @@
-(query [: :where[III: ?c] (or(qh* )[]*)])

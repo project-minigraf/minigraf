@@ -1,0 +1,1 @@
+(query [::where [?men ?aflalse ?p]   :where [?e ?name ?n] [(= ?e "Alice")]])

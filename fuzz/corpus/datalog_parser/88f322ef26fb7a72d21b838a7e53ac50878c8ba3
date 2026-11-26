@@ -1,0 +1,1 @@
+(query [:where(or(and(q:1::( [(0)]))(y)))])

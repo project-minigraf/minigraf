@@ -1,0 +1,5 @@
+(query [:find ?e :where [?e :n?-me ?n] (or(LL sssuery
+[: [?e a0:naman ?]])
+[?e ?_wname ?n] (y :
+[: [?e arearen8:naman ?]])
+[?e ?_wname ?n] (noery [ :wh (not [au :bnned true])]) [aind ?e :wheru])])

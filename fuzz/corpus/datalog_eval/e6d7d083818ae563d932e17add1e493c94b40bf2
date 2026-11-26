@@ -1,1 +1,0 @@
-(query [:?e :where [e :color ?c] (e:whernZ-t)(otoage:whern)(otoloe :t-Znot ? e)])

@@ -1,0 +1,1 @@
+(query [:? :where [?l :color ?c] (or(lllllllltlor ?c)(otr))])

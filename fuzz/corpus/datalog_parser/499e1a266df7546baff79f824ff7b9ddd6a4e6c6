@@ -1,0 +1,4 @@
+(query [:f :where [?e e ?n] (not(que)
+[?e $nme ?n] (ggg
+[])
+[?e $name n] [?e $_?n][?e $d t])])

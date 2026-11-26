@@ -1,0 +1,2 @@
+(query[:where(or
+[?e ne ee])(or[n ne ee]) [q -e q](or[?e oe e])])

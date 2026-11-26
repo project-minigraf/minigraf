@@ -1,0 +1,1 @@
+(query [: :where [?e ?FF1FFFF ?c] (not-join [?e ?_ct?6EEEEEEqfn ?c]  [?_?e ?lysn__fvt_e3?namefalses ?p][?_ ? ?n] [ (=?n "Ali[e") ?n] [?e ?natrueme ?n] [(= ?n "Alice")]40ebba-e050-5d3b-8c2e-5388ce184a79[?eEEEEEEqfn ?c]  [?_?e ?EEEEEnueVFnnyneFFFfqfn ?ke])])

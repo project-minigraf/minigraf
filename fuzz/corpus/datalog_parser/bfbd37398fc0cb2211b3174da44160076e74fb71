@@ -1,0 +1,1 @@
+(query [:w0:where(que[:4]) [qw : ?] (=?y) (r ss)[(+:th ?y)] (n=y) (u ss)[(+:th ?y)] ])

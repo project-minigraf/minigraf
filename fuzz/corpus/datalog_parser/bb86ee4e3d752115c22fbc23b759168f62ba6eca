@@ -1,0 +1,4 @@
+(query [:fe :where [?e :n ?n] (not(e)
+[?e wname ?n] 
+[?e ?_we ?n] (sssss[ :wh ( [a:v])]) [ee : e])(not(qu)
+[?e ame ?n])])

@@ -1,0 +1,1 @@
+(query [:findsumm :where [?enmaaco?EEin l omaaa?rsu] (no4-join [?e] [?e :active tree]) :where [?e l omaaa?suc] (nmt-jin [?e] [?e :e])])

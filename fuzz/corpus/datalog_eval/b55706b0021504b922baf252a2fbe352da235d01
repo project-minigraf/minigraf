@@ -1,1 +1,0 @@
-(query [:where [zasof?e :e ?n][:a?e :name  ?n][:bob :?an me][(= ?n "")?n][:bob :na? me][(= ?n "")]])

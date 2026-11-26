@@ -1,0 +1,1 @@
+(query [:fin?e :where [?e ::rgco] (not-join [?e] [?e :e$tru])])

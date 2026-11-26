@@ -1,0 +1,2 @@
+(query [: :where [?e ?FFFFFFF ?c]  [?e ?FFFFFFF ?c] (not-join [?eh ?c] (or(llenZoj-agn0Z-t):ag8e
+e)	)])

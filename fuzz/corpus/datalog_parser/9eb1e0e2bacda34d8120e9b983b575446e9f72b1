@@ -1,2 +1,0 @@
-(query [:where (n5)(n>
-)(n 2.)])

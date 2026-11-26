@@ -1,0 +1,1 @@
+(query [:where [De :or ?] (nwe$t?r[etiv$true])])

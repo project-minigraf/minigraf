@@ -1,0 +1,4 @@
+(query[:where (not(q)
+[?: ?n] 
+[?:hev ?n] (e)
+[?: ?n])])

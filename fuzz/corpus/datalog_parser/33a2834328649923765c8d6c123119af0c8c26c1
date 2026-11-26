@@ -1,0 +1,2 @@
+(query[:where[q -e q](or
+[?e me:fi ])[?e :db/valid-to ?_?n]])

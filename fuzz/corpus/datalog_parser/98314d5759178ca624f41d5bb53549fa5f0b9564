@@ -1,0 +1,2 @@
+(query [:where [ot: qe7] (s[])[?r:B B] (s=N ) (ye=n)[?x : H](ce[[?x 
+]])[?x sS BB]])

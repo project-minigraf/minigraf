@@ -1,0 +1,6 @@
+(query [:?:where(or(Lq ?[:[ ?e ?]])
+[notot ame ?n] (noe ?[: [?e ?]])
+[?e wnam/e ?n] (noe ?e :whe)
+[?e e ?n] (noe=?exo-r:
+[: ])
+[?:anned true])])

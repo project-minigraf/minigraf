@@ -1,7 +1,0 @@
-(query [:fie :where [?e :n?-m ?n] (not(q
-[: [n]])
-[h?e wname ?n] (n=
-[: [?0:naman ?]])
-[?e :db/valid-to ?n] (no :
-[: [a n =?]])
-[?e wne ?n] (n [ ]) [i9QQ=r])])

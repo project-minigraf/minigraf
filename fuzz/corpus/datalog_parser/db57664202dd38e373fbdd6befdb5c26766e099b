@@ -1,4 +1,0 @@
-(query [,:where [q ueq e?n] (or(L ?e :w?
-[: [?e ?]])
-[?e wame n] (foee= ?e)
-[?e w n?] (nd ?e :) )(nm)])

@@ -1,0 +1,1 @@
+(query [:find(ho ?e):find (cz ?e):w:find(t ?e)(ut ?e) (cuzt ?e):where [?e nffgf ?n]])

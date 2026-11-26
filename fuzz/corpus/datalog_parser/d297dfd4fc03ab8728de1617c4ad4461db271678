@@ -1,0 +1,3 @@
+(query[:f?e :where[?e e ?n] (not(y)
+[?e $n ?n] (ng[])
+[?e $name?n] [?e $e tru])])

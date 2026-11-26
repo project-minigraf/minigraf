@@ -1,0 +1,1 @@
+(query [::where(qur=?y) (u ss:)[(+:th ,?y)?8] (u ss:)[(+:t ,?y)?88] (e1t=n)[(+:t ?y)] ])

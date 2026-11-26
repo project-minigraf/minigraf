@@ -1,0 +1,2 @@
+(query[:where (not-join[?_] (x) (usa=) (uy) ( yx) (y)(nd(q[:a])))])
+

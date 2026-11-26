@@ -1,0 +1,4 @@
+(query [:?1:where (or(L ?e :w?
+[])
+[?e we n?] (e ?e)
+[?e wname n?] (d ?e :))(nm(qerye[])e)])

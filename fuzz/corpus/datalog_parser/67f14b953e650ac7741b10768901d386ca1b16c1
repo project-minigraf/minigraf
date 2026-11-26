@@ -1,0 +1,1 @@
+(query [::where (not [: ndn:]):any-valid-time[: 7rr] (not [:ae Ʈan:n])[:ee 8r] (not [e2 Ʀan:n])])

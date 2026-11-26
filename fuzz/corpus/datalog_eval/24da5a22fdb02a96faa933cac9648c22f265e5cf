@@ -1,0 +1,1 @@
+(query [:fi :where [?e l omc] (not[?e :active ree][?e :tivte r])])

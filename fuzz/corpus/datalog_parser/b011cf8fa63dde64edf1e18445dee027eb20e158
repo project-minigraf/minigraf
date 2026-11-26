@@ -1,0 +1,1 @@
+(query[:where  ( a:) (lr:a)(u: a) (py0[[?]])[?x q ?]])
