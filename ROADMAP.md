@@ -112,9 +112,8 @@ Scope — query API:
 
 Scope — features:
 
-- OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441; implemented on the feature branch, browser evidence pending)
+- OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441; done on `v3`; its benchmark is an explicit exclusion carried to v3.next by #844)
 
-- Query profiler (#185)
 - Set values `#{...}`, the set predicates `in?`/`not-in?`/`any-in?`/`all-in?`/`none-in?` and `collect-set` (#316; done on `v3`: core, `BrowserDb` set binds, and set values in Python, Java, Android, Swift, Node.js, C and the browser/WASI packages on their `v3` branches)
 - Prepared queries in every binding (#181; done on `v3`: core, `BrowserDb.prepare`, and Python, Java, Android, Swift, Node.js and C on their `v3` branches)
 - UDF registration in every binding: the UniFFI ones, C, Node and the browser `BrowserDb` (#180; core done on `v3`: fallible UDFs, `QRY-014`, registry snapshot and re-entry; the bindings follow)
@@ -137,6 +136,7 @@ Scope — release-gate testing and documentation:
 - Manual migration evidence (#838): native v7-to-v8 through 200k facts; Chromium/Firefox/WebKit through 20k facts, with separate read-only/reopen controls and bounded post-migration cursor churn. [Results, frozen fixtures and exclusions](docs/benchmarks/838-migration/README.md); no new nightly route or sustained-pin bound.
 - Semantic permutations (#842): [correctness-target map and control limits](docs/benchmarks/842-semantic-permutations/README.md) for X07. The exclusion stands; no nightly route or acceptance gate is added.
 - Failure paths (#843): [correctness-target map](docs/benchmarks/843-failure-correctness/README.md) for X08. The exclusion stands; the heavy WAL replay test gap is #865.
+- Release-cut feature re-audit (#844): [every production change since the measured revision, with its benchmark disposition](docs/bench-coverage-v3.md#release-cut-feature-re-audit-844), at v3 head `33b4b165c`. OPFS (#441) is excluded and carried to v3.next with the profiler (#185) and rule persistence (#241); no nightly route or gate changes.
 - Manual shape evidence (#841): [native shape sweeps, recursive controls and sustained-reader experiments](docs/benchmarks/841-shape-sweeps/README.md), with explicit input, timeout and attribution limits. The small-nightly recommendation is separate from execution; this audit adds no nightly route or release-acceptance gate.
 - Expression keyword/ref equality (#774; on `v3`): resolve literal keywords once per operator, with memory bounded by the expression. [Measurements and regression coverage](docs/benchmarks/774-expression-keywords.md); performance-only, with no v2.x backport.
 - Higher storage/WAL coverage gates and branch-coverage gates (#396; on `v3`: line and branch floors per file in `coverage-thresholds.toml`, checked on every PR)
@@ -148,6 +148,7 @@ Scope — release-gate testing and documentation:
 
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
+- Query profiler (#185)
 - Rule persistence — design first (#241)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
@@ -160,7 +161,7 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 ### Developer Tools
 
 - 🎯 Database inspector/debugger (separate repository: [minigraf-inspector](https://github.com/project-minigraf/minigraf-inspector))
-- 🎯 Query profiler (#185, v3.0.0)
+- 🎯 Query profiler (#185, v3.next)
 - 🎯 Time-travel visualizer (separate repository: [minigraf-visualizer](https://github.com/project-minigraf/minigraf-visualizer))
 
 ### Integration Examples
