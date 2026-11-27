@@ -39,11 +39,7 @@ The [manual v7-to-v8 migration sweep](docs/benchmarks/838-migration/README.md) (
 The [regression-history follow-up](docs/benchmarks/840-regression/completion.md) (#840)
 verifies numeric comparisons for all 427 native and 26 binding IDs, independent v3
 history, scheduled main/v3 routes and isolated live notification delivery with
-cleanup. Raw evidence and offline verifiers are retained in Git. Core workflow support for 14 JVM and 3 WASI nightly IDs is implemented for #858
-([contract](docs/BINDING_BENCHMARKS.md)); the Java adapter exists in `minigraf-java` at `daf7b9c`
-(`feat/858-nightly-adapter`). Default-branch rollout
-and live baseline/notification evidence remain pending. Mobile lanes remain
-excluded pending qualification; Rust test counts are unchanged.
+cleanup. Raw evidence and offline verifiers are retained in Git. The JVM (14 IDs) and WASI (3 IDs) nightly lanes are live for #858: core v3 #911 (`b0d2d014d`), the identical `main` workflow #912 and the `minigraf-java` v3 adapter (#28, `0a2d4d657`). The first scheduled v3 run (run 44623689870, 2026-11-19) reported to Bencher. The mobile qualification study (physical Device Farm against the iOS simulator and the Android emulator) ran on both platforms and rejected all 14 cases on each, so no mobile lane is enabled; see [the report](docs/benchmarks/858-mobile-qualification/REPORT.md). ([contract](docs/BINDING_BENCHMARKS.md)); Rust test counts are unchanged.
 
 The [semantic permutation map](docs/benchmarks/842-semantic-permutations/README.md)
 (#842) ties excluded numeric, bind, join and forced-plan permutations to

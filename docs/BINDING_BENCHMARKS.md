@@ -3,11 +3,13 @@
 The accepted [#839 manual evidence](benchmarks/839-bindings/README.md) remains
 historical evidence. #858 adds core workflow support for JVM (14 IDs) and WASI
 (3 IDs), alongside the existing 26 Python/browser/Node/C IDs. The Java nightly
-adapter exists in `minigraf-java` at `daf7b9c` on `feat/858-nightly-adapter`;
-it and the identical default-branch CI companion must land before rollout.
-Three independent v3 runs (including a scheduled run), live notification checks,
-durable evidence and measured lane costs are still pending. This change does
-not complete #858 or activate a mobile simulator/emulator lane.
+adapter is merged in `minigraf-java` v3 (`0a2d4d657`) and the identical default-branch
+CI companion is merged (main `b2ad8c24f`). The first scheduled v3 run (2026-11-19) reported
+both lanes; live notification checks and the evidence archive are in
+[the evidence directory](benchmarks/858-binding-nightlies/). The mobile
+simulator/emulator study rejected every case on both platforms and activates no mobile lane
+([report](benchmarks/858-mobile-qualification/REPORT.md)). Measured lane limits are at the end of
+this file.
 
 The `bindings` matrix in `.github/workflows/bench.yml` measures the once-resolved
 core SHA. JVM checks out `minigraf-java`; WASI has no binding repository. The
@@ -282,9 +284,40 @@ testbed version.
 
 #839's maintainer acceptance applies to its recorded physical/dedicated-bench
 evidence, not new nightly baselines. Android and Swift/iOS simulator/emulator
-lanes remain excluded pending #858's matched physical B1/B2/V qualification.
+lanes stay excluded: #858's matched physical B1/B2/V qualification rejected all 14 cases on
+each platform.
 Desktop macOS Swift remains excluded. JVM now has representative lifecycle,
 options and log conversion routes; other bindings' unmeasured permutations,
 wide values, scaling, RSS bounds and deliberate callback failures remain outside
 this shortlist. WASI exposes no matching prepared-object or host-callback API.
 Browser migration and pinned-reader churn remain manual.
+
+## Operational limits (#858, measured)
+
+Measured from the GitHub Actions and Device Farm records of the study. Anything not
+measured is labelled an estimate.
+
+| Lane or step | Runner | Queue | Duration |
+| --- | --- | --- | --- |
+| `binding_jvm` (scheduled v3 run 44623689870) | `ubuntu-24.04` | none | 4 min 28 s |
+| `binding_wasi` (same run) | `ubuntu-24.04` | none | 1 min 23 s |
+| iOS simulator qualification (14 cases x 18 runs) | `macos-15` | 10 min 25 s | 1 h 13 min |
+| Android emulator qualification (same design) | `ubuntu-24.04` | about 2 s | 27 min |
+| Device Farm physical Android series (23 attempts) | Pixel 7 / Android 14 | n/a | 53.6 device minutes |
+| Device Farm physical iOS series (25 attempts) | iPhone 15 (iPhone15,4) / iOS 18.5 | n/a | 210.27 device minutes |
+
+- The scheduled v3 run started about 8 hours after its 14:00 UTC slot, so a late
+  scheduled start is a normal observed behaviour and the lane does not assume punctuality.
+- The first scheduled JVM run raised one alert (`binding/jvm/prepare/point`, 42,824 ns against an upper
+  limit of 38,991 ns) against a baseline of only three prior v3 points; it is a young-history signal, not a regression finding.
+- Physical Android units differ: Device Farm may assign another Pixel 7 build; the collector
+  rejected four attempts that landed on a different build and retried them.
+- Repeatability limits: the qualification gate requires a sample CV of at most 15% and at most twice the
+  physical CV, and both candidates failed it or the closeness bound for every case.
+- Estimate: one clean physical series is about 40 device minutes on Android and about 150 on iOS (the
+  measured totals include retries and the wasted first iOS batch).
+- Observed availability: the 2026-11-26 scheduled `binding_jvm` job failed in the Gradle configuration phase because
+  the plugin portal could not resolve the publishing plugin `com.gradleup.nmcp` 0.0.8 (the benchmark does not
+  need it). The lane failed closed (`executed 0/14; uploaded 0/14`, nothing reached Bencher) and the portal
+  resolved the plugin again afterwards. Reducing that exposure (a retry, or not resolving publishing plugins
+  for the benchmark build) is a possible follow-up, not part of #858.
