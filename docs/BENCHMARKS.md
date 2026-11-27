@@ -2,15 +2,16 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
-## JVM/WASI nightly workflow support (#858, unreleased)
+## JVM/WASI nightly lanes (#858, unreleased)
 
 The core workflow defines 14 JVM and 3 WASI routes with separate Ubuntu 24.04
 histories, pinned runtimes, exact-result checks, raw sample medians and artifact
 provenance. See [binding benchmarks](BINDING_BENCHMARKS.md) for timing boundaries
-and the Java adapter contract. The adapter exists in `minigraf-java` at
-`daf7b9c` (`feat/858-nightly-adapter`). Default-branch rollout and live
-baselines/notifications remain pending. No mobile lane is enabled before
-qualification, and no new runtime timings are claimed by this implementation.
+and the Java adapter contract. The adapter is merged in `minigraf-java` (`0a2d4d657`).
+Both lanes are live and reported on their first scheduled v3 run. The mobile
+qualification rejected every case on the iOS simulator and the Android emulator, so no
+mobile lane is enabled ([report](benchmarks/858-mobile-qualification/REPORT.md)). Absolute nightly
+timings stay in Bencher; this file claims none.
 
 ## Failure paths (#843, unreleased)
 
