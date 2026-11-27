@@ -309,10 +309,15 @@ measured is labelled an estimate.
 - The scheduled v3 run started about 8 hours after its 14:00 UTC slot, so a late
   scheduled start is a normal observed behaviour and the lane does not assume punctuality.
 - The first scheduled JVM run raised one alert (`binding/jvm/prepare/point`, 42,824 ns against an upper
-  limit of 38,991 ns) against a ten-point baseline; it is a young-history signal, not a regression finding.
+  limit of 38,991 ns) against a baseline of only three prior v3 points; it is a young-history signal, not a regression finding.
 - Physical Android units differ: Device Farm may assign another Pixel 7 build; the collector
   rejected four attempts that landed on a different build and retried them.
 - Repeatability limits: the qualification gate requires a sample CV of at most 15% and at most twice the
   physical CV, and both candidates failed it or the closeness bound for every case.
 - Estimate: one clean physical series is about 40 device minutes on Android and about 150 on iOS (the
   measured totals include retries and the wasted first iOS batch).
+- Observed availability: the 2026-11-26 scheduled `binding_jvm` job failed in the Gradle configuration phase because
+  the plugin portal could not resolve the publishing plugin `com.gradleup.nmcp` 0.0.8 (the benchmark does not
+  need it). The lane failed closed (`executed 0/14; uploaded 0/14`, nothing reached Bencher) and the portal
+  resolved the plugin again afterwards. Reducing that exposure (a retry, or not resolving publishing plugins
+  for the benchmark build) is a possible follow-up, not part of #858.
