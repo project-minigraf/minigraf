@@ -42,6 +42,13 @@ held-cursor churn has no timed case. Spread was judged after normalizing each
 runner's overall speed; raw runner-to-runner shifts reach 1.46× within one CPU
 model. The selected native ID count grows from 427 to 433 once the routes run.
 
+**#844 re-audit (2026-11-27):** [the release-cut feature re-audit](#release-cut-feature-re-audit-844)
+diffs the audited revision against v3 head `33b4b165c35775a258e1fa01391da807e72a3f4f`
+and gives each production change since then a disposition. OPFS (#441) shipped
+at Tier 2 and is an explicit exclusion carried to v3.next; the profiler (#185)
+and rule persistence (#241) are still unshipped and carried forward. No nightly
+ID, route or gate changes.
+
 ## Revisions and method
 
 | Input | Revision |
@@ -51,6 +58,7 @@ model. The selected native ID count grows from 427 to 433 once the routes run.
 | Default-branch workflow/reporting revision, and inspected `origin/main` | `4d65022ac963a10b582ac762c4ab2e73935c9115` |
 | `merge-base v2.0.11 origin/v3` | `75ffc9b11f58cee3494430677465d553e582847b` |
 | Original feature inventory revision | `4685ca9cb7638353087410c31ad07e3f6261ddb0` |
+| Release-cut re-audit head (#844) | `33b4b165c35775a258e1fa01391da807e72a3f4f` (v3, 2026-11-27); v2 comparison tag `v2.0.12`, peeled `8ef9d46c6b3d0023cea7a9a4613f20032d484866` |
 
 The feature inventory below retains the original v2 endpoint comparison of
 [CHANGELOG.md](../CHANGELOG.md), [ROADMAP.md](../ROADMAP.md), public APIs,
@@ -59,7 +67,7 @@ to the audited v3 revision is empty for `src/`, `Cargo.toml`, `ROADMAP.md` and
 `CHANGELOG.md`: the follow-ups add benchmark/workflow coverage, not production
 features. Cherry-picked v2 backports are compared by endpoint behavior rather
 than commit identity. The v3 Cargo package's old version is not the baseline.
-Refresh this inventory again for production changes before the v3.0.0 cut.
+The [#844 re-audit](#release-cut-feature-re-audit-844) refreshes it through the v3.0.0 cut.
 
 The inspected main/v3 copies of `bench.yml`, `smoke.yml` and `.github/bench/`
 are byte-identical. Main owns schedules; the measured checkout is separately
@@ -196,6 +204,108 @@ option/error latency or foreign FactLog/LogWriter conversion. See
 manual release checks. Python's larger cursor envelope remains separate from
 its new 1k nightly shortlist.
 
+## Release-cut feature re-audit (#844)
+
+Audit date: 2026-11-27. **Audited release-cut v3 head:**
+`33b4b165c35775a258e1fa01391da807e72a3f4f` (merge of #922). This refreshes the
+feature inventory above for every production change after the audited and
+measured revision `0394c90ad90e9b95d416f4a0ec4a4c78b16e5b57`. The audit is
+source-only: no build, enumeration or timed workload was run for it, and it
+adds no benchmark ID, route or acceptance gate. It follows PHILOSOPHY.md's
+reliability and simplicity principles: nothing unshipped gets a placeholder
+timing series.
+
+Method:
+
+- `git diff 4685ca9cb7638353087410c31ad07e3f6261ddb0 0394c90ad90e9b95d416f4a0ec4a4c78b16e5b57 -- src Cargo.toml ROADMAP.md CHANGELOG.md`
+  is still empty, as the original audit recorded.
+- `git diff --stat 0394c90ad90e9b95d416f4a0ec4a4c78b16e5b57 33b4b165c35775a258e1fa01391da807e72a3f4f -- src Cargo.toml ROADMAP.md CHANGELOG.md`
+  touches 41 files (+9,152/−840). Each changed `src/` file was attributed to its
+  commits with `git log 0394c90ad..33b4b165c -- <file>`, and the public surface
+  was compared through `src/lib.rs` exports, `OpenOptions`, `src/browser/mod.rs`
+  `#[wasm_bindgen]` items and the `CHANGELOG.md` Unreleased diff.
+- v2 backports were separated with `git log v2.0.11..origin/main`; `v2.0.12`
+  peels to `8ef9d46c6b3d0023cea7a9a4613f20032d484866`.
+- Existing coverage was checked against the benchmark sources at the head
+  (`benches/`), the binding harnesses on each binding repository's `v3` branch,
+  and the latest v3 nightly,
+  [45906646598](https://github.com/project-minigraf/minigraf/actions/runs/45906646598)
+  (2026-11-26), which measured core `9a01bd50c27d18298830673eb8be185d20359c7a`.
+  That core contains every change below except #900. All 26 native suites and
+  the browser, Python, Node, C and WASI binding jobs succeeded. Its JVM job
+  failed before measuring because Gradle could not resolve the
+  `com.gradleup.nmcp` 0.0.8 plugin; the next scheduled run (main,
+  [45983042396](https://github.com/project-minigraf/minigraf/actions/runs/45983042396))
+  passed that lane. The audit does not re-verify Bencher sets for these runs;
+  "measured" below means only that a successful job ran the named IDs at that core.
+
+### Production changes after the measured revision
+
+| Row | Change | Source evidence at the audited head | v3-only or v2 backport | Benchmark disposition |
+| --- | --- | --- | --- | --- |
+| R01 | `BrowserDb` OPFS mode and `close()` (#441) | `src/browser/opfs.rs`, `BrowserDb.openOpfs`/`close` in `src/browser/mod.rs`, `src/storage/persistent_facts/browser_access.rs`, web-sys `FileSystem*` features in `Cargo.toml`; merge `df7e8170d` (#899) | v3-only; Tier 2 inside the Tier 1 browser binding | **EXCLUDED, carried to v3.next** (X09). The browser nightly times only in-memory and IndexedDB cases (`binding/browser/indexeddb_{write,reopen}/1k`, [minigraf-wasm `bench/browser.mjs` at v3 `b7262f93`](https://github.com/project-minigraf/minigraf-wasm/blob/b7262f9337b49f9e1ee9e29f3b5f3d14d349837a/bench/browser.mjs)); OPFS needs a dedicated-worker, secure-origin harness. [#441's bounded-memory evidence](benchmarks/441-opfs/README.md) records single-run open times and wasm high-water marks in Chromium and Firefox; it is manual evidence, not latency coverage. `close()` is lifecycle, not a hot path |
+| R02 | IndexedDB in workers (#441) and atomic, ordered IndexedDB flushes with a failed handle (#894) | `src/browser/indexeddb.rs` (global-scope `indexedDB` lookup, atomic puts and deletes), `src/browser/backend.rs` and `src/browser/mod.rs` (ordered flushes, failed handle); v3 merge `d908ab64a` (#903) | #894 backported: main `cbdd0d006` (#904), released in v2.0.12. The worker lookup is v3-only | **COVERED** by `binding/browser/indexeddb_write/1k` and `indexeddb_reopen/1k`, which flush and reopen through the changed path; measured at `9a01bd50c` in run 45906646598. Worker-scope IndexedDB differs only in the factory lookup and has no separate case. STG-046/STG-048 failure paths stay EXCLUDED (X08) |
+| R03 | Configurable recursion round limit (#861) | `OpenOptions::max_iterations` (`src/db.rs`), `:max-iterations N`/`$slot` (`parser.rs`, `prepared.rs`), `PreparedQuery::with_max_iterations`, `BrowserPreparedQuery.withMaxIterations`; the per-round check is `src/query/engine/recursive.rs:81`; merge `921b3935e` (#875) | v3-only (default 1,000 → 1,000,000) | **COVERED** by C19's recursion IDs: the round comparison existed before; only its limit is now configurable, and the deepest benchmark recursion (`recursion/chain/depth_100`) stays far below both defaults. Exhaustion is EXCLUDED as a failure path (X08) and is now tested in `tests/limit_keywords_test.rs`, closing X08's "fixed recursion round bound is untested" gap |
+| R04 | Override gate `OpenOptions::allow_overrides`, `Overridable`, API-025 (#869) | `src/overrides.rs` (`check_overrides`), called from `src/db.rs` for every executed and prepared query; merge `b79ff1d66` (#873) | v3-only | **COVERED** implicitly for unprepared queries: every timed `execute`/`query` call pays the four-flag check. `Minigraf::prepare` checks once at preparation (`prepare_inner`), which the `prepared/` IDs time only in their preparation cases; `PreparedQuery::execute`/`query` do not repeat it. No dedicated case; the API-025 refusal is EXCLUDED (X08) |
+| R05 | `:query-memory-limit`, limit bind slots and `PreparedQuery` limit setters (#870) | `parser.rs`, `prepared.rs`, `executor.rs`, `src/query/engine/plan.rs`; merge `83fbaa8df` (#874) | v3-only | **COVERED** in part: enforcement is C24's meter (`memory_meter/{count,hash_groups}/{unlimited,limited}/10k`); the keyword replaces the limit before the query runs. The keyword itself has no timed case: EXCLUDED as parsing one integer. Its `$slot` form resolves through the new `resolve_limit_slot` (`prepared.rs`), which no benchmark binds (`prepared/count_slots/10k` binds only `:limit`/`:offset` through `resolve_count_slot`): EXCLUDED as one integer conversion per execution, before the query runs |
+| R06 | `TxOptions` and `begin_write_with`; per-append WAL sync mode (#871) | `TxOptions` and `begin_write_with` in `src/db.rs`; `WalWriter::append_entry(…, sync)` in `src/wal.rs`; `src/storage/persistent_facts/large_tx.rs`; merge `a60435c9f` (#882) | v3-only | **COVERED** at the defaults: `begin_write()` is `begin_write_with(TxOptions::default())` and every WAL append now takes its sync mode per call, so `insert_file/{single_fact,batch_100,explicit_tx}/…` (C05) and `insert_file/chunked/{execute,retract,write_tx}/…` (C30) run the changed code; measured at `9a01bd50c`. A non-default per-transaction `SyncMode::Normal` or `chunk_facts` has no timed case: EXCLUDED, as for the database-level options, which V does not time either; chunk bounds keep their acceptance tests (X02) |
+| R07 | Owned write transactions and browser/binding transactions (#824) | `begin_write_owned{,_with}` and `OwnedWriteTransaction` in `src/db.rs` (same `TxState` staging and commit as `WriteTransaction`); write lock now `Mutex<WriteSlot>` + condvar; `BrowserDb.beginWrite`/`BrowserWriteTransaction` in `src/browser/mod.rs`; merge `32d71ce01` (#885); binding PRs python#21, java#26, android#19, swift#20, node#25, c#18, wasm#25 | v3-only | Rust: **COVERED** for statement and commit work by C05/C30, and the changed write lock by `concurrent{,_file}/serialized_writers/…`; the ownership handoff is a per-transaction constant with no dedicated case (EXCLUDED). Foreign and browser transaction wrappers: **MANUAL** under X04; no binding harness at its `v3` head calls a transaction API |
+| R08 | `PreparedQuery: Clone`, limit setters and binding option APIs (#872) | `src/query/datalog/prepared.rs`, `withMaxDerivedFacts`/`withQueryMemoryLimit`/`withMaxIterations` in `src/browser/mod.rs`; merge `d9755c02d` (#883); binding PRs python#18, java#22, android#18, swift#17, node#22, c#15, wasm#22, which also expose the override list and its default, and the `transaction_chunk_facts` and `max_iterations` open options ([CONFIGURATION.md, language bindings](CONFIGURATION.md#language-bindings)) | v3-only | **EXCLUDED**: setters copy a prepared query and options convert once at open; neither is per-row work. Prepared execution stays C34 and the foreign prepared cases C36; the options' effects are R03, R04 and C30 in core. |
+| R09 | `chrono` removed; strict built-in UTC timestamps (#900) | `src/temporal.rs` (`parse_timestamp`, `millis_to_timestamp_string`; `chrono_vectors.rs` is `#[cfg(test)]`); `chrono` dropped from `Cargo.toml`; merge `33b4b165c` (#922) | v3-only (main only ignores the advisory, #902) | **No new latency path.** Timestamp literals are parsed once per statement or query option, as before; existing IDs parse them (`time_travel/operator_paths/timestamp_{monotone,irregular}/10k` with `:as-of "…Z"`, and the `history`, `set_storage`, `fact_log`, `prepared` and `chunked_transactions` fixtures with `:valid-from`), all in accepted forms. Merged after `9a01bd50c`, so no nightly has measured it yet. Size effect: binary-size gate below |
+| R10 | Test hooks for the #863 acceptance suite | Exported `__path_events` (`src/lib.rs`) and `Cursor::__memory_peak` (`src/cursor.rs`) are `#[cfg(feature = "test-hooks")]`; the internal path-event map and meter peaks are `#[cfg(any(test, feature = "test-hooks"))]`, and production `path_event` is a no-op | v3-only | **EXCLUDED** infrastructure (C39). The six #863 nightly IDs are recorded in the follow-up above |
+| R11 | JVM and WASI nightly lanes (#858) | `.github/workflows/bench.yml`, `.github/bench/`; v3 `b0d2d014d` (#911), main `b2ad8c24f` (#912); [contract](BINDING_BENCHMARKS.md) | Workflow on both branches; no production code | Adds 14 JVM and 3 WASI foreign IDs to X04's evidence; not a feature obligation |
+| R12 | Lint, test and CI changes | clippy fixes `f50807ee5`, `691298864`, `ec7dc39f9` (`optimizer::reorder` returns the same value; `sort_by_key`; dropped casts); test-only `fault_matrix.rs`, `tx_options_tests.rs`, `browser/{flush,opfs,tx}_tests.rs`, `persistent_facts.rs` test module (#837); `tests/` #865 and #917; fuzz corpora | Both branches where applicable | **EXCLUDED**: no runtime behaviour change |
+
+New error codes (API-025, API-026, API-027, STG-048), STG-046's extension to
+failed browser flushes and changed texts (INT-001, INT-015, INT-020) stay in C37/X08: failure paths keep correctness
+tests, not latency routes. The #865 nightly test that replays one
+1,000,000-fact WAL entry through `Minigraf::open` (`472e3f254`) closes X08's
+other recorded gap; X08's exclusion itself stands.
+
+**v2.0.12** (released 2026-11-18) adds one backport to the table of fixes also
+on v2: #894's IndexedDB flush recovery (main #904). Like the earlier rows, it
+is not a new v3 feature; its browser IndexedDB cost is R02/C36. Main's #905
+(wasm32 clippy) and #906 (browser CI) are lint and CI only.
+
+### Planned features and the #797 study at the audited head
+
+| Item | Status at `33b4b165c` | Source evidence | Disposition |
+| --- | --- | --- | --- |
+| Public query profiler [#185](https://github.com/project-minigraf/minigraf/issues/185) | Unshipped; issue open, milestone v3.next | No profiler type or method among the `src/lib.rs` exports or `Minigraf`'s public API. R10's hidden test hooks are not the profiler | Carried to v3.next |
+| OPFS `BrowserDb` mode [#441](https://github.com/project-minigraf/minigraf/issues/441) | **Shipped** in v3.0.0 at Tier 2; issue closed 2026-11-17 | R01 | EXCLUDED from v3.0.0 nightly latency, carried to v3.next |
+| Rule persistence [#241](https://github.com/project-minigraf/minigraf/issues/241) | Unshipped; issue open, milestone v3.next | Rules live only in the in-memory `RuleRegistry` (`src/query/datalog/rules.rs`); no rule pages in format v8 and no persistence API | Carried to v3.next |
+| Shared-reader study [#797](https://github.com/project-minigraf/minigraf/issues/797) | Closed as a study; no production code | No shared-reader implementation in `src/` | Stays EXCLUDED (C39) |
+
+Proof, test and documentation infrastructure (Kani, Shuttle, fault, property,
+model and grammar tests, fuzz corpora, soak/envelope harnesses, evidence
+documents) remains EXCLUDED as in C39: no production build contains it.
+
+### Binary-size evidence (not latency coverage)
+
+Size has its own gate. [`.github/workflows/binary-size.yml`](../.github/workflows/binary-size.yml)
+builds `cargo build --profile dist`, the profile cargo-dist ships, with full LTO
+since [#796](https://github.com/project-minigraf/minigraf/issues/796), and fails
+above `SIZE_LIMIT_BYTES: 1280000` (1,250 KiB; raised from 1,240 KiB in #891,
+`75b83266f`, after the Rust 1.100 CI update). The production `uuid` dependency
+keeps only `v5` and `serde` ([#439](https://github.com/project-minigraf/minigraf/issues/439)).
+This gate measures the native `target/dist/minigraf` binary only, so it
+measures #900's `chrono` removal but not #441's web-sys features, which exist
+only in the optional wasm32 browser build; [#441's build-size comparison](benchmarks/441-opfs/build-sizes.md)
+records that wasm size separately. None of this is feature latency coverage,
+and benchmark builds use their own profile.
+
+### Benchmark obligations carried forward
+
+Each obligation lands with its feature's release; the implementing issue owns
+the feature's scope.
+
+| Feature | Release | Obligation when it ships |
+| --- | --- | --- |
+| Public query profiler [#185](https://github.com/project-minigraf/minigraf/issues/185) | v3.next | Disposition for profiling overhead, enabled and disabled, on an existing query route |
+| Rule persistence [#241](https://github.com/project-minigraf/minigraf/issues/241) | v3.next | Disposition for saving and loading persisted rules, including open time |
+| OPFS `BrowserDb` mode [#441](https://github.com/project-minigraf/minigraf/issues/441) | v3.next | Browser OPFS write, checkpoint and reopen timing in a dedicated-worker harness, or a renewed explicit exclusion, before OPFS leaves Tier 2 |
+| Foreign transaction wrappers [#824](https://github.com/project-minigraf/minigraf/issues/824) | Release sign-off (X04) | Manual binding check; no nightly obligation |
+
 ## Coverage matrix
 
 `COVERED` means the named representative IDs are selected by the nightly route,
@@ -255,7 +365,7 @@ selected IDs in Appendix A, not every registered case in a family.
 | C37 | Changed error/validation contracts | PRS/API/QRY codes, failed checkpoint retry refusal, corrupt-tree checks; correctness suites | Successful queries pay validation; rollback cost represented in C30 | No separate error-code latency route; no dedicated timed V case | EXCLUDED individual invalid-input timing; correctness tests retain the contracts (X08) |
 | C38 | Synthetic SIMD candidates | `simd_{temporal,as_of,aggregate}/{scalar,simd}/…` (30 unselected) | Vec slices, not the database/streaming engine | No selecting nightly filter; no dedicated timed V case | EXCLUDED pre-existing experimental helper kernels; no production-feature claim |
 | C39 | Proof/test/docs/release changes and shared-reader study | Kani/Shuttle/fault/property/fuzz/soak, uuid features, binary-size workflow, #796/#797 | Proof cfgs absent from normal builds; bench already full LTO; #797 is a study, not shipped shared-reader implementation | Separate correctness/size gates, no feature latency route; no dedicated timed V case | EXCLUDED from Criterion obligations; manual dist-size measurements and runtime verification stay separate |
-| C40 | Planned profiler/OPFS/rule persistence | Public profiler #185, OPFS #441, rule persistence #241 remain open; no shipped API at audited revision | Not implemented/in the audited release code | No route; no dedicated timed V case | EXCLUDED until shipped; refresh inventory before release cut (X09) |
+| C40 | Planned profiler/rule persistence; OPFS | Public profiler #185 and rule persistence #241 unshipped at re-audit head `33b4b165c`; OPFS #441 shipped at Tier 2 (#844 R01) | Profiler/rule persistence not implemented; OPFS outside the browser shortlist | No route; no dedicated timed V case | EXCLUDED; obligations carried to v3.next (X09) |
 | C41 | Older btree_lookup groups | `btree_lookup/{entity_point,attribute_scan}/{1k,10k,100k}` (six unselected) | Pending memory fixture despite name; duplicates C01 scalar lookups | No selecting nightly filter; no dedicated timed V case | EXCLUDED redundant pending coverage; not committed B+tree evidence |
 
 ## Workflow, reporting and run evidence
@@ -407,12 +517,12 @@ shortlist. No manual timing or release sign-off is implied by this close-out.
 | X01 | MANUAL / EXCLUDED registered cases | Of 583 registered native IDs, 156 are unselected: 110 `window_rows/` cases are MANUAL wider width/function/partition sweeps; four history depth-500 IDs and six retract 1k/100k/1m IDs are EXCLUDED redundant intermediate/scaling points; six pending `btree_lookup/` IDs are EXCLUDED duplicates of C01; 30 synthetic SIMD IDs are EXCLUDED experimental non-engine kernels. Exact expansions are in Appendix C. The [#836 pinned reconciliation and per-shape dispositions](benchmarks/836-exclusions/README.md) retain all exclusions. Full-prefix one-partition UDF execution stays manual but uses a linear running accumulator, not quadratic replay; the unregistered 100k UDF half-frames remain excluded for replay cost |
 | X02 | ENVELOPE / acceptance, partial execution verified | [#837 evidence](benchmarks/837-acceptance/README.md): all five scheduled jobs/seven tests passed; linear recursion/INT-020, QRY-012, limit/top-k caps, default-chunk million-fact transaction and storage bounds observed. Still open: nonlinear/multistratum scaling, custom chunk bounds, explicit RSS assertion execution and future zero-test protection. These are not Bencher memory metrics; accounting has no disabled-engine control, and unlimited only disables the finite cap |
 | X03 | MANUAL migration | V retains its small native fixture. [#838 manual evidence](benchmarks/838-migration/README.md) separately measures native v7-to-v8 through 200k facts and Chromium/Firefox/WebKit through 20k facts, plus bounded post-migration cursor churn. Read-only v7 open is nonmigrating; same-context reopen is not cold startup. The 200k browser rung and sustained pin scaling remain excluded. These manual samples are not V or new nightly coverage |
-| X04 | MANUAL binding checks | [#839's runtime evidence](benchmarks/839-bindings/README.md) records three series each for JVM, Android, Swift/iOS and WASI (1,350 samples); binding/release acceptance remains pending. New #839 timings use only Device Farm/the dedicated bench; macOS is excluded, existing GitHub nightlies unchanged. [The remaining API/lifecycle dispositions](benchmarks/839-bindings/dispositions.md) identify measured representatives, absent APIs and proposed exclusions, including reader churn beyond [#838's bounded persistence case](benchmarks/838-migration/README.md). Python shared UniFFI coverage does not measure other host runtimes; no binding RSS bound is asserted |
+| X04 | MANUAL binding checks | [#839's runtime evidence](benchmarks/839-bindings/README.md) records three series each for JVM, Android, Swift/iOS and WASI (1,350 samples); binding/release acceptance remains pending. New #839 timings use only Device Farm/the dedicated bench; macOS is excluded, existing GitHub nightlies unchanged. [The remaining API/lifecycle dispositions](benchmarks/839-bindings/dispositions.md) identify measured representatives, absent APIs and proposed exclusions, including reader churn beyond [#838's bounded persistence case](benchmarks/838-migration/README.md). Python shared UniFFI coverage does not measure other host runtimes; no binding RSS bound is asserted. At the [#844 re-audit](#release-cut-feature-re-audit-844), #858's 14 JVM and 3 WASI nightly IDs are added evidence, #824's foreign/browser transaction wrappers are MANUAL (no binding harness calls them), and #872's binding setters and open options are setup-time conversions, EXCLUDED from nightly timing (R08) |
 | X05 | Unverified operational follow-ups | Accumulate numeric regression baselines for 244 native and 26 foreign IDs (all have stored v3 observations/model settings, but baseline null in V). Verify live failed-upload and repeated-alert notification delivery; successful uploads and parser/audit unit tests do not exercise it. Cron execution of the final routes is unverified here: V was a dispatch. Preserve/refresh evidence beyond the 30-day artifact retention |
 | X06 | MANUAL / ENVELOPE scaling and isolation | Large 10m sorting/window/envelope sweeps, wider set cardinalities, sustained pin/quarantine/log-reader churn and sparse/repeated-ref UUID projection are outside V's fixed shortlists. [#841's report](benchmarks/841-shape-sweeps/README.md) records the finite public shape matrix, a capped-window retry, matched recursive controls with baseline path counters, 544-generation pin/FactLog churn and charged query memory, with every rejected, capped, limit-error and deferred slot; it establishes no universal latency or memory bound. The [protocol](benchmarks/841-shape-sweeps/PROTOCOL.md) distinguishes the finite selection from broader extensions. [#838](benchmarks/838-migration/README.md) measures only eight commits with one old cursor plus a short-lived cursor per commit. Recursive controls are end-to-end comparisons: counters show which baseline paths each case uses, not each path's share of time, and the ancestor alternative's 128-row cutoff remains unmeasured |
 | X07 | EXCLUDED exhaustive semantics | All numeric, bind, cross-kind join and forced-planner permutations remain correctness tests. Nightly controls select representative natural plans; broader hash controls include broader scans and keyword dynamic controls include binding/clone work. [#842's map](benchmarks/842-semantic-permutations/README.md) pins 128 correctness tests (130 targets in 29 cells) (v3 5d85c36f, all run in CI's plain or `test-hooks` job), finds no missing answer contract, and records three attribution limits: no join-kind switch, probes indistinguishable by counter, and answer-only preflight outside the six join controls. The exclusion stands; no nightly ID changes |
-| X08 | EXCLUDED individual failure latency | Invalid bounds/windows/binds, deliberate callback errors, corrupt-page rejection, v1–v6 refusal, heavy single-entry WAL replay and individual PRS/API/QRY codes belong to correctness testing. C08 measures a successful repair of known damage and C30 measures cross-chunk rollback; neither claims exhaustive failure timing. [#843's map](benchmarks/843-failure-correctness/README.md) pins 138 correctness tests in 35 cells (v3 a95e51ffe, all run in CI's plain or `test-hooks` job, two ignored ones nightly) with their error and data invariants. Gaps: no test replays one heavy WAL entry through `Minigraf::open` (#865); the fixed recursion round bound is untested (planned in #861). The exclusion stands; no nightly ID changes |
-| X09 | EXCLUDED unshipped/non-runtime scope | Public profiler #185, OPFS #441 and rule persistence #241 are open/unshipped at the audited revision. Proof/test/docs infrastructure and #797's study add no shipped latency path; production uuid/dist size uses separate size gates. Re-audit new production features through the release cut |
+| X08 | EXCLUDED individual failure latency | Invalid bounds/windows/binds, deliberate callback errors, corrupt-page rejection, v1–v6 refusal, heavy single-entry WAL replay and individual PRS/API/QRY codes belong to correctness testing. C08 measures a successful repair of known damage and C30 measures cross-chunk rollback; neither claims exhaustive failure timing. [#843's map](benchmarks/843-failure-correctness/README.md) pins 138 correctness tests in 35 cells (v3 a95e51ffe, all run in CI's plain or `test-hooks` job, two ignored ones nightly) with their error and data invariants. Gaps: no test replays one heavy WAL entry through `Minigraf::open` (#865); the fixed recursion round bound is untested (planned in #861). Both gaps are closed at the [#844 re-audit head](#release-cut-feature-re-audit-844): #865's nightly replay test and #861's `tests/limit_keywords_test.rs`. The exclusion stands; no nightly ID changes |
+| X09 | EXCLUDED unshipped/non-runtime scope; OPFS carried | [#844's release-cut re-audit](#release-cut-feature-re-audit-844) at v3 head `33b4b165c` gives every later production change (R01–R12) a disposition. Public profiler #185 and rule persistence #241 are still unshipped; OPFS #441 shipped at Tier 2 and is excluded from v3.0.0 nightly latency. All three benchmark obligations are carried to v3.next. Proof/test/docs infrastructure and #797's study add no shipped latency path; production uuid/dist size uses the separate size gate. Later releases repeat the same inventory discipline |
 
 Issue #776 remains open. Its final release decision still needs the explicit
 manual sign-offs and verification above; this PR neither closes it nor checks
@@ -1082,6 +1192,12 @@ gh run view 41642356471 --json headSha,conclusion,jobs
 gh api repos/project-minigraf/minigraf/actions/jobs/125939774955
 gh api repos/project-minigraf/minigraf/check-runs/125939774955
 gh run download 41642356471 -D /tmp/776-evidence
+# #844 release-cut re-audit
+git diff --stat 0394c90ad90e9b95d416f4a0ec4a4c78b16e5b57 33b4b165c35775a258e1fa01391da807e72a3f4f -- src Cargo.toml ROADMAP.md CHANGELOG.md
+git log --no-merges --format='%h %s' 0394c90ad..33b4b165c -- src Cargo.toml
+git log --oneline v2.0.11..v2.0.12
+gh run view 45906646598 --json jobs
+gh issue view 185 --json state,milestone; gh issue view 241 --json state,milestone; gh issue view 441 --json state,closedAt
 ```
 
 For each native report, compare its `selected`, `executed` and `uploaded`
