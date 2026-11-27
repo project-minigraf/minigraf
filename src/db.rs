@@ -2983,7 +2983,6 @@ mod tests {
 
     #[test]
     fn test_write_transaction_pending_metadata_is_stable_across_reads() {
-        use chrono::{SecondsFormat, Utc};
         use std::time::Duration;
 
         let db = Minigraf::in_memory().unwrap();
@@ -3044,9 +3043,9 @@ mod tests {
         );
         db.inner.fact_storage.load_fact(future_fact).unwrap();
 
-        let as_of_timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(tx_id)
-            .unwrap()
-            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        let mut as_of_timestamp = crate::temporal::millis_to_timestamp_string(tx_id).unwrap();
+        as_of_timestamp.pop(); // Replace the trailing Z with millisecond precision.
+        as_of_timestamp.push_str(&format!(".{:03}Z", tx_id.rem_euclid(1000)));
         let as_of_query = format!(
             r#"(query [:find ?age :as-of "{}" :where [:alice :person/age ?age]])"#,
             as_of_timestamp

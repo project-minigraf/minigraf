@@ -771,9 +771,55 @@ fn tx_time(fixture: &Path, tx_count: u64) -> anyhow::Result<String> {
         .next_batch(1)?
         .and_then(|b| b.into_iter().next())
         .ok_or_else(|| anyhow::anyhow!("no transaction {tx_count}"))?;
-    let t = chrono::DateTime::from_timestamp_millis(i64::try_from(rec.tx_id)?)
-        .ok_or_else(|| anyhow::anyhow!("tx_id {} out of range", rec.tx_id))?;
-    Ok(t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+    format_tx_time(rec.tx_id)
+}
+
+/// The harness only formats unsigned transaction times (1970–9999). Keep this
+/// small helper local: the library's timestamp utilities are not a public API.
+#[cfg(not(target_arch = "wasm32"))]
+fn format_tx_time(millis: u64) -> anyhow::Result<String> {
+    anyhow::ensure!(millis <= 253_402_300_799_999, "tx_id {millis} out of range");
+    let leap = |year: u64| {
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    };
+    let mut days = millis / 86_400_000;
+    let mut year = 1970;
+    loop {
+        let length = if leap(year) { 366 } else { 365 };
+        if days < length {
+            break;
+        }
+        days -= length;
+        year += 1;
+    }
+    let mut month = 1;
+    for length in [
+        31,
+        if leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ] {
+        if days < length {
+            break;
+        }
+        days -= length;
+        month += 1;
+    }
+    let day = days + 1;
+    let seconds = millis / 1000 % 86_400;
+    let (hour, minute, second) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    let fraction = millis % 1000;
+    Ok(format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{fraction:03}Z"
+    ))
 }
 
 /// Open time and RSS after open, then checkpoint times, on a copy of the fixture.
@@ -956,6 +1002,21 @@ fn main() {}
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timestamp_formatter_preserves_milliseconds_and_range() {
+        for (millis, expected) in [
+            (0, "1970-01-01T00:00:00.000Z"),
+            (1, "1970-01-01T00:00:00.001Z"),
+            (951_782_400_999, "2000-02-29T00:00:00.999Z"),
+            (4_107_542_400_001, "2100-03-01T00:00:00.001Z"),
+            (253_402_300_799_999, "9999-12-31T23:59:59.999Z"),
+        ] {
+            assert_eq!(format_tx_time(millis).unwrap(), expected);
+        }
+        assert!(format_tx_time(253_402_300_800_000).is_err());
+        assert!(format_tx_time(u64::MAX).is_err());
+    }
 
     fn records(path: &Path) -> Vec<minigraf::FactRecord> {
         let db = OpenOptions::new()
