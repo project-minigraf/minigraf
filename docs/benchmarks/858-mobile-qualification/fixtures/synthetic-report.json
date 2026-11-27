@@ -1,0 +1,2704 @@
+{
+  "categories": {
+    "synthetic-simulated": {
+      "allocation/conversion": {
+        "inconclusive": 0,
+        "qualified": 6,
+        "rejected": 0
+      },
+      "compute/callback": {
+        "inconclusive": 0,
+        "qualified": 5,
+        "rejected": 0
+      },
+      "storage/startup": {
+        "inconclusive": 0,
+        "qualified": 3,
+        "rejected": 0
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "aggregate/1k",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "cursor_batch_1/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "cursor_batch_256/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "fact_log_batch_256/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "file_transact/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "log_writer_append_finish/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "options_error/negative_cache",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "options_readonly_open/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "predicate/1k",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "prepare/point",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "prepared_execute/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "register_aggregate/first",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "register_predicate/first",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "synthetic-simulated",
+      "case": "set_roundtrip/2",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.000000000000e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "B2": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 100,
+            "median_ns": 1.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 1.414213562373e+00,
+            "values_ns": [
+              98,
+              99,
+              100,
+              100,
+              101,
+              102
+            ]
+          },
+          "V": {
+            "cv": 1.414213562373e-02,
+            "mean_ns": 200,
+            "median_ns": 2.000000000000e+02,
+            "n": 6,
+            "sample_stdev_ns": 2.828427124746e+00,
+            "values_ns": [
+              196,
+              198,
+              200,
+              200,
+              202,
+              204
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 1.000000000000e+01,
+            "p": 5.000000000000e-01,
+            "t": 0.000000000000e+00
+          },
+          "delta": 1.000000000000e+00,
+          "detection": {
+            "df": 7.352941176471e+00,
+            "p": 2.795557243290e-12,
+            "t": 7.745966692415e+01
+          }
+        }
+      },
+      "outcome": "qualified",
+      "physical": "synthetic-physical",
+      "platform": "ios",
+      "reasons": [
+        "all gates passed"
+      ]
+    }
+  ],
+  "configurations": [
+    {
+      "blocking_reason": null,
+      "build": {
+        "artifact_sha256": {
+          "B1": "4444444444444444444444444444444444444444444444444444444444444444",
+          "B2": "4444444444444444444444444444444444444444444444444444444444444444",
+          "V": "4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "binding_revision": "2222222222222222222222222222222222222222",
+        "core_revision": "1111111111111111111111111111111111111111",
+        "harness_revision": "3333333333333333333333333333333333333333",
+        "profile": "Release",
+        "slowdown_flag": "repeat-timed-operation-twice"
+      },
+      "id": "synthetic-physical",
+      "kind": "physical",
+      "platform": "ios",
+      "reference": null,
+      "runtime": {
+        "description": "SYNTHETIC ONLY; not a real runtime"
+      }
+    },
+    {
+      "blocking_reason": null,
+      "build": {
+        "artifact_sha256": {
+          "B1": "5555555555555555555555555555555555555555555555555555555555555555",
+          "B2": "5555555555555555555555555555555555555555555555555555555555555555",
+          "V": "5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "binding_revision": "2222222222222222222222222222222222222222",
+        "core_revision": "1111111111111111111111111111111111111111",
+        "harness_revision": "3333333333333333333333333333333333333333",
+        "profile": "Release",
+        "slowdown_flag": "repeat-timed-operation-twice"
+      },
+      "id": "synthetic-simulated",
+      "kind": "simulated",
+      "platform": "ios",
+      "reference": "synthetic-physical",
+      "runtime": {
+        "description": "SYNTHETIC ONLY; not a real runtime"
+      }
+    }
+  ],
+  "protocol": "858-mobile-ac12-n6-v1",
+  "schema_version": 1,
+  "synthetic": true
+}

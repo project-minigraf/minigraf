@@ -1,0 +1,2742 @@
+{
+  "categories": {
+    "android-emulator-v1": {
+      "allocation/conversion": {
+        "inconclusive": 0,
+        "qualified": 0,
+        "rejected": 6
+      },
+      "compute/callback": {
+        "inconclusive": 0,
+        "qualified": 0,
+        "rejected": 5
+      },
+      "storage/startup": {
+        "inconclusive": 0,
+        "qualified": 0,
+        "rejected": 3
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "aggregate/1k",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 4.397594921352e-01,
+        "physical": {
+          "B1": {
+            "cv": 6.171747740544e-02,
+            "mean_ns": 7.328843468750e+07,
+            "median_ns": 7.358400115000e+07,
+            "n": 6,
+            "sample_stdev_ns": 4.523177311906e+06,
+            "values_ns": [
+              7.912427982500e+07,
+              7.383465990000e+07,
+              7.333334240000e+07,
+              6.749391685000e+07,
+              6.883930257500e+07,
+              7.710510657500e+07
+            ]
+          },
+          "B2": {
+            "cv": 6.421191264198e-02,
+            "mean_ns": 7.490808975417e+07,
+            "median_ns": 7.650252482500e+07,
+            "n": 6,
+            "sample_stdev_ns": 4.809991715472e+06,
+            "values_ns": [
+              8.057183032500e+07,
+              7.776549487500e+07,
+              6.849268290000e+07,
+              7.574009302500e+07,
+              7.726495662500e+07,
+              6.961348077500e+07
+            ]
+          },
+          "V": {
+            "cv": 4.035607278453e-02,
+            "mean_ns": 1.486109709833e+08,
+            "median_ns": 1.503551092625e+08,
+            "n": 6,
+            "sample_stdev_ns": 5.997355161583e+06,
+            "values_ns": [
+              1.539117533500e+08,
+              1.463305045500e+08,
+              1.509727133000e+08,
+              1.497375052250e+08,
+              1.376587942000e+08,
+              1.530545552750e+08
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.962437941225e+00,
+            "p": 7.193256521626e-01,
+            "t": -6.008679707069e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.962437941225e+00,
+            "p": 2.806743478374e-01,
+            "t": 6.008679707069e-01
+          },
+          "delta": 1.043312498813e+00,
+          "detection": {
+            "df": 9.297627891960e+00,
+            "p": 4.493900428144e-10,
+            "t": 2.456153659532e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.467573099904e-01,
+            "mean_ns": 3.559183666667e+07,
+            "median_ns": 3.235926297500e+07,
+            "n": 6,
+            "sample_stdev_ns": 8.782545873485e+06,
+            "values_ns": [
+              5.347281197500e+07,
+              3.261086455000e+07,
+              3.269267730000e+07,
+              3.098805820000e+07,
+              3.210766140000e+07,
+              3.167894657500e+07
+            ]
+          },
+          "B2": {
+            "cv": 2.228272056391e-02,
+            "mean_ns": 3.217302938333e+07,
+            "median_ns": 3.213250941250e+07,
+            "n": 6,
+            "sample_stdev_ns": 7.169026234433e+05,
+            "values_ns": [
+              3.307903577500e+07,
+              3.276222360000e+07,
+              3.197277112500e+07,
+              3.229224770000e+07,
+              3.104911102500e+07,
+              3.188278707500e+07
+            ]
+          },
+          "V": {
+            "cv": 9.467158950419e-03,
+            "mean_ns": 6.364462936250e+07,
+            "median_ns": 6.335993566250e+07,
+            "n": 6,
+            "sample_stdev_ns": 6.025338225153e+05,
+            "values_ns": [
+              6.385409665000e+07,
+              6.478356562500e+07,
+              6.329677925000e+07,
+              6.342309207500e+07,
+              6.327343972500e+07,
+              6.323680285000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.066628525800e+00,
+            "p": 1.925142007936e-01,
+            "t": 9.503590912688e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.066628525800e+00,
+            "p": 8.074857992064e-01,
+            "t": -9.503590912688e-01
+          },
+          "delta": 9.580154131276e-01,
+          "detection": {
+            "df": 5.047066552244e+00,
+            "p": 2.649463389830e-04,
+            "t": 7.805696095868e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "cursor_batch_1/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 4.142802449565e-01,
+        "physical": {
+          "B1": {
+            "cv": 6.269255514021e-02,
+            "mean_ns": 1.055422814792e+08,
+            "median_ns": 1.048979502500e+08,
+            "n": 6,
+            "sample_stdev_ns": 6.616715301257e+06,
+            "values_ns": [
+              1.048722494500e+08,
+              1.015898622500e+08,
+              9.672908935000e+07,
+              1.161761954000e+08,
+              1.089626413750e+08,
+              1.049236510500e+08
+            ]
+          },
+          "B2": {
+            "cv": 4.712979159868e-02,
+            "mean_ns": 1.061688324833e+08,
+            "median_ns": 1.059970358375e+08,
+            "n": 6,
+            "sample_stdev_ns": 5.003714949215e+06,
+            "values_ns": [
+              1.089529257750e+08,
+              1.129153514250e+08,
+              1.030411459000e+08,
+              1.022569764250e+08,
+              1.095993734000e+08,
+              1.002472219750e+08
+            ]
+          },
+          "V": {
+            "cv": 4.811502817853e-02,
+            "mean_ns": 2.031018571042e+08,
+            "median_ns": 2.005425990625e+08,
+            "n": 6,
+            "sample_stdev_ns": 9.772251577678e+06,
+            "values_ns": [
+              2.076579642750e+08,
+              1.962494649750e+08,
+              2.003051788500e+08,
+              2.007800192750e+08,
+              1.932249075000e+08,
+              2.203936077500e+08
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.309395121515e+00,
+            "p": 5.714030187609e-01,
+            "t": -1.850038493988e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.309395121515e+00,
+            "p": 4.285969812391e-01,
+            "t": 1.850038493988e-01
+          },
+          "delta": 9.117875857875e-01,
+          "detection": {
+            "df": 8.788311425678e+00,
+            "p": 5.578039502823e-09,
+            "t": 2.024904492393e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.011294494493e-01,
+            "mean_ns": 4.706933152917e+07,
+            "median_ns": 4.345714852500e+07,
+            "n": 6,
+            "sample_stdev_ns": 9.467028736408e+06,
+            "values_ns": [
+              6.629546397500e+07,
+              4.461421187500e+07,
+              4.406091147500e+07,
+              4.246536017500e+07,
+              4.285338557500e+07,
+              4.212665610000e+07
+            ]
+          },
+          "B2": {
+            "cv": 2.521137490972e-02,
+            "mean_ns": 4.402422439583e+07,
+            "median_ns": 4.413600746250e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.109911226353e+06,
+            "values_ns": [
+              4.473999875000e+07,
+              4.547868175000e+07,
+              4.434732795000e+07,
+              4.392468697500e+07,
+              4.230182672500e+07,
+              4.335282422500e+07
+            ]
+          },
+          "V": {
+            "cv": 1.792197392655e-02,
+            "mean_ns": 8.802196113750e+07,
+            "median_ns": 8.788774325000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.577527292470e+06,
+            "values_ns": [
+              9.044918607500e+07,
+              8.742122927500e+07,
+              8.835425722500e+07,
+              8.649171805000e+07,
+              8.903830120000e+07,
+              8.637707500000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.137425414179e+00,
+            "p": 2.342110706580e-01,
+            "t": 7.825284110812e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.137425414179e+00,
+            "p": 7.657889293420e-01,
+            "t": -7.825284110812e-01
+          },
+          "delta": 1.022400139748e+00,
+          "detection": {
+            "df": 5.277454428907e+00,
+            "p": 5.012933219697e-05,
+            "t": 1.045192834541e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "cursor_batch_256/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 5.499342688977e-01,
+        "physical": {
+          "B1": {
+            "cv": 1.144578226142e-01,
+            "mean_ns": 2.677591591667e+06,
+            "median_ns": 2.522654712500e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.064713034323e+05,
+            "values_ns": [
+              2.528485075000e+06,
+              2.516824350000e+06,
+              2.479639700000e+06,
+              3.251380375000e+06,
+              2.804219475000e+06,
+              2.485000575000e+06
+            ]
+          },
+          "B2": {
+            "cv": 2.262122756374e-02,
+            "mean_ns": 2.476568395833e+06,
+            "median_ns": 2.469735675000e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.602301725930e+04,
+            "values_ns": [
+              2.421855700000e+06,
+              2.575205275000e+06,
+              2.431938700000e+06,
+              2.488154050000e+06,
+              2.490939350000e+06,
+              2.451317300000e+06
+            ]
+          },
+          "V": {
+            "cv": 2.267088990299e-02,
+            "mean_ns": 4.983652700000e+06,
+            "median_ns": 4.989142312500e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.129838416765e+05,
+            "values_ns": [
+              5.072168925000e+06,
+              4.841013575000e+06,
+              4.993181350000e+06,
+              4.985103275000e+06,
+              4.873653050000e+06,
+              5.136796025000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.333786437710e+00,
+            "p": 8.559397975720e-02,
+            "t": 1.580499671883e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.333786437710e+00,
+            "p": 9.144060202428e-01,
+            "t": -1.580499671883e+00
+          },
+          "delta": 9.777349186071e-01,
+          "detection": {
+            "df": 6.334455489223e+00,
+            "p": 7.169331483617e-07,
+            "t": 1.729356625876e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 4.161492374378e-02,
+            "mean_ns": 1.400563654167e+06,
+            "median_ns": 1.387294275000e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.828434966646e+04,
+            "values_ns": [
+              1.513202575000e+06,
+              1.385119000000e+06,
+              1.389469550000e+06,
+              1.366233650000e+06,
+              1.401301500000e+06,
+              1.348055650000e+06
+            ]
+          },
+          "B2": {
+            "cv": 3.742033265635e-02,
+            "mean_ns": 1.395470516667e+06,
+            "median_ns": 1.370206100000e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.221897094579e+04,
+            "values_ns": [
+              1.462812925000e+06,
+              1.460654675000e+06,
+              1.375974600000e+06,
+              1.362991725000e+06,
+              1.345951575000e+06,
+              1.364437600000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.279467442550e-02,
+            "mean_ns": 2.722190162500e+06,
+            "median_ns": 2.712794737500e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.482953685350e+04,
+            "values_ns": [
+              2.687657775000e+06,
+              2.776379250000e+06,
+              2.712360325000e+06,
+              2.713229150000e+06,
+              2.751415625000e+06,
+              2.692098850000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.881630215090e+00,
+            "p": 4.382739927489e-01,
+            "t": 1.594217107987e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.881630215090e+00,
+            "p": 5.617260072511e-01,
+            "t": -1.594217107987e-01
+          },
+          "delta": 9.554573145629e-01,
+          "detection": {
+            "df": 8.167135951508e+00,
+            "p": 1.390782790400e-11,
+            "t": 4.767890471696e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "fact_log_batch_256/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 5.555911205456e-01,
+        "physical": {
+          "B1": {
+            "cv": 5.324415129363e-02,
+            "mean_ns": 1.817873783333e+06,
+            "median_ns": 1.811980137500e+06,
+            "n": 6,
+            "sample_stdev_ns": 9.679114675253e+04,
+            "values_ns": [
+              1.915787800000e+06,
+              1.846580975000e+06,
+              1.777379300000e+06,
+              1.727643825000e+06,
+              1.704509400000e+06,
+              1.935341400000e+06
+            ]
+          },
+          "B2": {
+            "cv": 4.169615625428e-02,
+            "mean_ns": 1.840604325000e+06,
+            "median_ns": 1.831287175000e+06,
+            "n": 6,
+            "sample_stdev_ns": 7.674612553750e+04,
+            "values_ns": [
+              1.950464925000e+06,
+              1.900586925000e+06,
+              1.732600900000e+06,
+              1.837512275000e+06,
+              1.825062075000e+06,
+              1.797398850000e+06
+            ]
+          },
+          "V": {
+            "cv": 4.192627869851e-02,
+            "mean_ns": 3.714086620833e+06,
+            "median_ns": 3.762696862500e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.557178307755e+05,
+            "values_ns": [
+              3.784062725000e+06,
+              3.678943925000e+06,
+              3.741331000000e+06,
+              3.831266325000e+06,
+              3.418826425000e+06,
+              3.830089325000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.505950150635e+00,
+            "p": 6.688597872425e-01,
+            "t": -4.507436076806e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.505950150635e+00,
+            "p": 3.311402127575e-01,
+            "t": 4.507436076806e-01
+          },
+          "delta": 1.076566284933e+00,
+          "detection": {
+            "df": 8.361788214476e+00,
+            "p": 1.676012916555e-09,
+            "t": 2.533296453831e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 3.858784505765e-02,
+            "mean_ns": 1.021013991667e+06,
+            "median_ns": 1.006720075000e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.939872971212e+04,
+            "values_ns": [
+              9.961289000000e+05,
+              1.017311250000e+06,
+              9.957807250000e+05,
+              1.096686375000e+06,
+              1.026314175000e+06,
+              9.938625250000e+05
+            ]
+          },
+          "B2": {
+            "cv": 2.370962847012e-02,
+            "mean_ns": 1.003532562500e+06,
+            "median_ns": 1.006920875000e+06,
+            "n": 6,
+            "sample_stdev_ns": 2.379338421454e+04,
+            "values_ns": [
+              1.012449900000e+06,
+              1.020807725000e+06,
+              1.001391850000e+06,
+              1.034276850000e+06,
+              9.770224250000e+05,
+              9.752466250000e+05
+            ]
+          },
+          "V": {
+            "cv": 6.855015910579e-02,
+            "mean_ns": 2.028491437500e+06,
+            "median_ns": 2.007913762500e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.390534107854e+05,
+            "values_ns": [
+              2.213843750000e+06,
+              2.104467375000e+06,
+              1.911360150000e+06,
+              1.902515675000e+06,
+              1.903631550000e+06,
+              2.135130125000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.218939985451e+00,
+            "p": 1.893509517927e-01,
+            "t": 9.303580292989e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.218939985451e+00,
+            "p": 8.106490482073e-01,
+            "t": -9.303580292989e-01
+          },
+          "delta": 9.945105023360e-01,
+          "detection": {
+            "df": 5.797647912048e+00,
+            "p": 1.765090186158e-06,
+            "t": 1.707502604536e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "file_transact/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 3.073153183976e-01,
+        "physical": {
+          "B1": {
+            "cv": 1.043701338772e-01,
+            "mean_ns": 9.689381916667e+06,
+            "median_ns": 9.592651500000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.011282087830e+06,
+            "values_ns": [
+              1.108188900000e+07,
+              9.799113500000e+06,
+              9.386189500000e+06,
+              1.060390200000e+07,
+              8.648193000000e+06,
+              8.617004500000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.652146896254e-01,
+            "mean_ns": 1.094921875000e+07,
+            "median_ns": 1.035927325000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.808971777422e+06,
+            "values_ns": [
+              1.023006200000e+07,
+              1.048848450000e+07,
+              1.085066750000e+07,
+              1.451871750000e+07,
+              9.445271500000e+06,
+              1.016210950000e+07
+            ]
+          },
+          "V": {
+            "cv": 1.402704864241e-01,
+            "mean_ns": 1.917967066667e+07,
+            "median_ns": 1.970521050000e+07,
+            "n": 6,
+            "sample_stdev_ns": 2.690341733867e+06,
+            "values_ns": [
+              2.036409550000e+07,
+              1.761010800000e+07,
+              1.472743750000e+07,
+              2.141092900000e+07,
+              1.904632550000e+07,
+              2.191912850000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 7.847142287346e+00,
+            "p": 9.122364785937e-01,
+            "t": -1.489034587516e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 7.847142287346e+00,
+            "p": 8.776352140628e-02,
+            "t": 1.489034587516e+00
+          },
+          "delta": 1.054198518522e+00,
+          "detection": {
+            "df": 6.385302621582e+00,
+            "p": 6.939104013554e-05,
+            "t": 8.088136344523e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 7.183077422427e-02,
+            "mean_ns": 3.023445166667e+06,
+            "median_ns": 2.947968750000e+06,
+            "n": 6,
+            "sample_stdev_ns": 2.171764071463e+05,
+            "values_ns": [
+              3.458646500000e+06,
+              2.942418000000e+06,
+              2.906526500000e+06,
+              3.000208500000e+06,
+              2.953519500000e+06,
+              2.879352000000e+06
+            ]
+          },
+          "B2": {
+            "cv": 2.147896156028e-02,
+            "mean_ns": 2.942275000000e+06,
+            "median_ns": 2.923825000000e+06,
+            "n": 6,
+            "sample_stdev_ns": 6.319701162476e+04,
+            "values_ns": [
+              2.888367500000e+06,
+              3.059538000000e+06,
+              2.898253500000e+06,
+              2.959841000000e+06,
+              2.937707000000e+06,
+              2.909943000000e+06
+            ]
+          },
+          "V": {
+            "cv": 9.411163848891e-03,
+            "mean_ns": 5.935143666667e+06,
+            "median_ns": 5.939477000000e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.585660951371e+04,
+            "values_ns": [
+              5.963177500000e+06,
+              6.001783000000e+06,
+              5.981630000000e+06,
+              5.915776500000e+06,
+              5.888745000000e+06,
+              5.859750000000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.840746171644e+00,
+            "p": 2.070381697883e-01,
+            "t": 8.790409600670e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.840746171644e+00,
+            "p": 7.929618302117e-01,
+            "t": -8.790409600670e-01
+          },
+          "delta": 1.014769322097e+00,
+          "detection": {
+            "df": 5.658608991323e+00,
+            "p": 6.715635650315e-08,
+            "t": 3.180536721602e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "log_writer_append_finish/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 3.901097380237e-01,
+        "physical": {
+          "B1": {
+            "cv": 4.782668655130e-02,
+            "mean_ns": 2.322143541667e+07,
+            "median_ns": 2.341970825000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.110604312944e+06,
+            "values_ns": [
+              2.310727900000e+07,
+              2.376139350000e+07,
+              2.361657700000e+07,
+              2.117191550000e+07,
+              2.322283950000e+07,
+              2.444860800000e+07
+            ]
+          },
+          "B2": {
+            "cv": 5.467416695675e-02,
+            "mean_ns": 2.435886300000e+07,
+            "median_ns": 2.474801625000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.331800542539e+06,
+            "values_ns": [
+              2.462640400000e+07,
+              2.524601250000e+07,
+              2.211470550000e+07,
+              2.577632700000e+07,
+              2.486962850000e+07,
+              2.352010050000e+07
+            ]
+          },
+          "V": {
+            "cv": 4.077423162048e-02,
+            "mean_ns": 4.541720600000e+07,
+            "median_ns": 4.569920850000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.851851676999e+06,
+            "values_ns": [
+              4.762294600000e+07,
+              4.562060550000e+07,
+              4.224204500000e+07,
+              4.577781150000e+07,
+              4.463344350000e+07,
+              4.660638450000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.687327986297e+00,
+            "p": 9.299029894925e-01,
+            "t": -1.606656167546e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.687327986297e+00,
+            "p": 7.009701050753e-02,
+            "t": 1.606656167546e+00
+          },
+          "delta": 9.513141672036e-01,
+          "detection": {
+            "df": 8.184728877581e+00,
+            "p": 2.398655041795e-09,
+            "t": 2.517808052259e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.930640890457e-02,
+            "mean_ns": 9.124458750000e+06,
+            "median_ns": 9.136256250000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.761605316604e+05,
+            "values_ns": [
+              9.281554000000e+06,
+              9.196950500000e+06,
+              9.075562000000e+06,
+              8.909743500000e+06,
+              9.336607500000e+06,
+              8.946335000000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.842632591913e-02,
+            "mean_ns": 9.104284333333e+06,
+            "median_ns": 9.069630000000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.677585103864e+05,
+            "values_ns": [
+              9.179699500000e+06,
+              9.389515000000e+06,
+              8.937901500000e+06,
+              8.979330000000e+06,
+              9.006495500000e+06,
+              9.132764500000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.737876198176e-02,
+            "mean_ns": 1.834957500000e+07,
+            "median_ns": 1.839275375000e+07,
+            "n": 6,
+            "sample_stdev_ns": 3.188928963914e+05,
+            "values_ns": [
+              1.863277000000e+07,
+              1.867594400000e+07,
+              1.810723800000e+07,
+              1.822911950000e+07,
+              1.789599050000e+07,
+              1.855638800000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.976211749225e+00,
+            "p": 4.215526756263e-01,
+            "t": 2.031448533961e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.976211749225e+00,
+            "p": 5.784473243737e-01,
+            "t": -2.031448533961e-01
+          },
+          "delta": 1.013160888520e+00,
+          "detection": {
+            "df": 7.791635184131e+00,
+            "p": 4.412554178774e-12,
+            "t": 6.202556920935e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "options_error/negative_cache",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 4.159033865403e-01,
+        "physical": {
+          "B1": {
+            "cv": 5.707093290281e-02,
+            "mean_ns": 2.098834875000e+05,
+            "median_ns": 2.092544875000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.197824643252e+04,
+            "values_ns": [
+              2.121420000000e+05,
+              1.966980000000e+05,
+              1.998017250000e+05,
+              2.063669750000e+05,
+              2.142822000000e+05,
+              2.300100250000e+05
+            ]
+          },
+          "B2": {
+            "cv": 6.052555578401e-02,
+            "mean_ns": 2.157473958333e+05,
+            "median_ns": 2.145396000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.305823104176e+04,
+            "values_ns": [
+              2.373870500000e+05,
+              2.165882750000e+05,
+              2.187795750000e+05,
+              2.124909250000e+05,
+              2.122395250000e+05,
+              1.969990250000e+05
+            ]
+          },
+          "V": {
+            "cv": 4.672067895217e-02,
+            "mean_ns": 4.046427083333e+05,
+            "median_ns": 4.121418750000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.890518206638e+04,
+            "values_ns": [
+              4.176788250000e+05,
+              3.963684250000e+05,
+              4.196085250000e+05,
+              4.139140000000e+05,
+              3.699167250000e+05,
+              4.103697500000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.926391941134e+00,
+            "p": 7.816979137351e-01,
+            "t": -8.105893404984e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.926391941134e+00,
+            "p": 2.183020862649e-01,
+            "t": 8.105893404984e-01
+          },
+          "delta": 9.695724566002e-01,
+          "detection": {
+            "df": 8.457273733776e+00,
+            "p": 5.991721045312e-09,
+            "t": 2.131596240123e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 5.030343614942e-02,
+            "mean_ns": 8.836470000000e+04,
+            "median_ns": 8.702965000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 4.445048044313e+03,
+            "values_ns": [
+              8.630010000000e+04,
+              9.565907500000e+04,
+              8.318115000000e+04,
+              9.128342500000e+04,
+              8.600525000000e+04,
+              8.775920000000e+04
+            ]
+          },
+          "B2": {
+            "cv": 1.743745458060e-02,
+            "mean_ns": 8.738280416667e+04,
+            "median_ns": 8.758946250000e+04,
+            "n": 6,
+            "sample_stdev_ns": 1.523733678782e+03,
+            "values_ns": [
+              8.758325000000e+04,
+              8.845160000000e+04,
+              8.759567500000e+04,
+              8.661442500000e+04,
+              8.484237500000e+04,
+              8.920950000000e+04
+            ]
+          },
+          "V": {
+            "cv": 3.388001767502e-02,
+            "mean_ns": 1.698349708333e+05,
+            "median_ns": 1.693674750000e+05,
+            "n": 6,
+            "sample_stdev_ns": 5.754011813670e+03,
+            "values_ns": [
+              1.707271000000e+05,
+              1.797173750000e+05,
+              1.680078500000e+05,
+              1.716379250000e+05,
+              1.632954750000e+05,
+              1.656241000000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 6.159069573929e+00,
+            "p": 3.132942892298e-01,
+            "t": 5.118460771915e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 6.159069573929e+00,
+            "p": 6.867057107702e-01,
+            "t": -5.118460771915e-01
+          },
+          "delta": 9.460893500089e-01,
+          "detection": {
+            "df": 9.400543785472e+00,
+            "p": 1.352938705164e-10,
+            "t": 2.744618741100e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "options_readonly_open/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 5.086370649601e-01,
+        "physical": {
+          "B1": {
+            "cv": 5.113342680688e-02,
+            "mean_ns": 2.446734875000e+05,
+            "median_ns": 2.443755500000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.251099386467e+04,
+            "values_ns": [
+              2.579925750000e+05,
+              2.489694500000e+05,
+              2.397816500000e+05,
+              2.319051500000e+05,
+              2.305572750000e+05,
+              2.588348250000e+05
+            ]
+          },
+          "B2": {
+            "cv": 8.501684900530e-02,
+            "mean_ns": 2.551641833333e+05,
+            "median_ns": 2.513096875000e+05,
+            "n": 6,
+            "sample_stdev_ns": 2.169325484601e+04,
+            "values_ns": [
+              2.619180500000e+05,
+              2.942676000000e+05,
+              2.338317250000e+05,
+              2.489929750000e+05,
+              2.536264000000e+05,
+              2.383483500000e+05
+            ]
+          },
+          "V": {
+            "cv": 5.078212876907e-02,
+            "mean_ns": 5.012868583333e+05,
+            "median_ns": 5.063483000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 2.545641379013e+04,
+            "values_ns": [
+              5.231770750000e+05,
+              4.907286750000e+05,
+              5.247019000000e+05,
+              5.020661000000e+05,
+              4.564169000000e+05,
+              5.106305000000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 7.994782162553e+00,
+            "p": 8.325643683602e-01,
+            "t": -1.026133361646e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 7.994782162553e+00,
+            "p": 1.674356316398e-01,
+            "t": 1.026133361646e+00
+          },
+          "delta": 1.072008840492e+00,
+          "detection": {
+            "df": 7.282250497035e+00,
+            "p": 2.984883459119e-08,
+            "t": 2.216038572590e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.706966495852e-02,
+            "mean_ns": 1.243076375000e+05,
+            "median_ns": 1.242984625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 2.121889723911e+03,
+            "values_ns": [
+              1.243515750000e+05,
+              1.242453500000e+05,
+              1.244547750000e+05,
+              1.280970250000e+05,
+              1.218746750000e+05,
+              1.228224250000e+05
+            ]
+          },
+          "B2": {
+            "cv": 1.942117866132e-02,
+            "mean_ns": 1.244882791667e+05,
+            "median_ns": 1.241860250000e+05,
+            "n": 6,
+            "sample_stdev_ns": 2.417709110936e+03,
+            "values_ns": [
+              1.276795250000e+05,
+              1.267528750000e+05,
+              1.223232250000e+05,
+              1.232300250000e+05,
+              1.251420250000e+05,
+              1.218020000000e+05
+            ]
+          },
+          "V": {
+            "cv": 6.196808163081e-02,
+            "mean_ns": 2.339795583333e+05,
+            "median_ns": 2.295015250000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.449926437074e+04,
+            "values_ns": [
+              2.341754750000e+05,
+              2.621232500000e+05,
+              2.248949500000e+05,
+              2.256070500000e+05,
+              2.236806250000e+05,
+              2.333960000000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.834368011449e+00,
+            "p": 5.533155313336e-01,
+            "t": -1.375532773615e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.834368011449e+00,
+            "p": 4.466844686664e-01,
+            "t": 1.375532773615e-01
+          },
+          "delta": 8.463746082137e-01,
+          "detection": {
+            "df": 5.214069367828e+00,
+            "p": 3.088675790770e-06,
+            "t": 1.833258121270e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "predicate/1k",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 4.350096490561e-01,
+        "physical": {
+          "B1": {
+            "cv": 4.712508306453e-02,
+            "mean_ns": 7.745553171250e+07,
+            "median_ns": 7.714814866250e+07,
+            "n": 6,
+            "sample_stdev_ns": 3.650098365759e+06,
+            "values_ns": [
+              8.193394777500e+07,
+              7.854038600000e+07,
+              7.575591132500e+07,
+              7.570922555000e+07,
+              7.208390815000e+07,
+              8.070981147500e+07
+            ]
+          },
+          "B2": {
+            "cv": 6.610647301751e-02,
+            "mean_ns": 7.860545690833e+07,
+            "median_ns": 8.050311793750e+07,
+            "n": 6,
+            "sample_stdev_ns": 5.196329516140e+06,
+            "values_ns": [
+              8.444060165000e+07,
+              8.125860297500e+07,
+              7.195751952500e+07,
+              7.974763290000e+07,
+              8.180320732500e+07,
+              7.242517707500e+07
+            ]
+          },
+          "V": {
+            "cv": 4.420004479560e-02,
+            "mean_ns": 1.566881778917e+08,
+            "median_ns": 1.592622503375e+08,
+            "n": 6,
+            "sample_stdev_ns": 6.925624481753e+06,
+            "values_ns": [
+              1.634411520000e+08,
+              1.535869049500e+08,
+              1.599299520500e+08,
+              1.585945486250e+08,
+              1.441722575500e+08,
+              1.604042521750e+08
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.968105249087e+00,
+            "p": 6.660675110913e-01,
+            "t": -4.435654509687e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.968105249087e+00,
+            "p": 3.339324889087e-01,
+            "t": 4.435654509687e-01
+          },
+          "delta": 1.064369049661e+00,
+          "detection": {
+            "df": 7.578764807338e+00,
+            "p": 7.849990230937e-09,
+            "t": 2.479098936495e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.301818402072e-01,
+            "mean_ns": 3.494630154167e+07,
+            "median_ns": 3.356018907500e+07,
+            "n": 6,
+            "sample_stdev_ns": 4.549373843131e+06,
+            "values_ns": [
+              4.392283865000e+07,
+              3.399652647500e+07,
+              3.485222285000e+07,
+              3.183609505000e+07,
+              3.312385167500e+07,
+              3.194627455000e+07
+            ]
+          },
+          "B2": {
+            "cv": 2.429262431552e-02,
+            "mean_ns": 3.342519748333e+07,
+            "median_ns": 3.356884865000e+07,
+            "n": 6,
+            "sample_stdev_ns": 8.119857651347e+05,
+            "values_ns": [
+              3.411564070000e+07,
+              3.428406805000e+07,
+              3.349166090000e+07,
+              3.364603640000e+07,
+              3.209308552500e+07,
+              3.292069332500e+07
+            ]
+          },
+          "V": {
+            "cv": 1.336046377115e-02,
+            "mean_ns": 6.642912375417e+07,
+            "median_ns": 6.621213075000e+07,
+            "n": 6,
+            "sample_stdev_ns": 8.875239012668e+05,
+            "values_ns": [
+              6.588891660000e+07,
+              6.809714915000e+07,
+              6.618110632500e+07,
+              6.659580395000e+07,
+              6.556861132500e+07,
+              6.624315517500e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.318238759950e+00,
+            "p": 2.273118412032e-01,
+            "t": 8.062567080191e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.318238759950e+00,
+            "p": 7.726881587968e-01,
+            "t": -8.062567080191e-01
+          },
+          "delta": 9.729367615310e-01,
+          "detection": {
+            "df": 5.380039072105e+00,
+            "p": 3.911421702264e-06,
+            "t": 1.663744550793e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness",
+        "cv_relative"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "prepare/point",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 4.245379945613e-01,
+        "physical": {
+          "B1": {
+            "cv": 5.404105388166e-02,
+            "mean_ns": 1.507760375000e+05,
+            "median_ns": 1.510574750000e+05,
+            "n": 6,
+            "sample_stdev_ns": 8.148095966601e+03,
+            "values_ns": [
+              1.591491000000e+05,
+              1.543153000000e+05,
+              1.477996500000e+05,
+              1.377249500000e+05,
+              1.472808750000e+05,
+              1.583863500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 7.447470808386e-02,
+            "mean_ns": 1.565002416667e+05,
+            "median_ns": 1.579839000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.165530981318e+04,
+            "values_ns": [
+              1.694569250000e+05,
+              1.620391500000e+05,
+              1.398509500000e+05,
+              1.539286500000e+05,
+              1.667775500000e+05,
+              1.469482250000e+05
+            ]
+          },
+          "V": {
+            "cv": 4.688845122634e-02,
+            "mean_ns": 3.015561083333e+05,
+            "median_ns": 3.058757750000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.413949887759e+04,
+            "values_ns": [
+              3.168945750000e+05,
+              2.965413250000e+05,
+              3.082061500000e+05,
+              3.049703250000e+05,
+              2.759430500000e+05,
+              3.067812250000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.944982933471e+00,
+            "p": 8.249655047727e-01,
+            "t": -9.859608398651e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.944982933471e+00,
+            "p": 1.750344952273e-01,
+            "t": 9.859608398651e-01
+          },
+          "delta": 1.024896649438e+00,
+          "detection": {
+            "df": 7.990973337562e+00,
+            "p": 7.810394156635e-09,
+            "t": 2.263185790365e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 5.233459301629e-02,
+            "mean_ns": 6.495201666667e+04,
+            "median_ns": 6.412963750000e+04,
+            "n": 6,
+            "sample_stdev_ns": 3.399237357837e+03,
+            "values_ns": [
+              7.165185000000e+04,
+              6.349195000000e+04,
+              6.435190000000e+04,
+              6.393940000000e+04,
+              6.195712500000e+04,
+              6.431987500000e+04
+            ]
+          },
+          "B2": {
+            "cv": 4.041177084734e-02,
+            "mean_ns": 6.590740416667e+04,
+            "median_ns": 6.577346250000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.663434914327e+03,
+            "values_ns": [
+              6.895745000000e+04,
+              6.875937500000e+04,
+              6.592047500000e+04,
+              6.562645000000e+04,
+              6.207002500000e+04,
+              6.411065000000e+04
+            ]
+          },
+          "V": {
+            "cv": 1.448607141145e-02,
+            "mean_ns": 1.212381458333e+05,
+            "median_ns": 1.214692375000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.756264438333e+03,
+            "values_ns": [
+              1.238155500000e+05,
+              1.210397000000e+05,
+              1.199627000000e+05,
+              1.218987750000e+05,
+              1.219561750000e+05,
+              1.187559750000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.458762564485e+00,
+            "p": 6.997955388112e-01,
+            "t": -5.419146563572e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.458762564485e+00,
+            "p": 3.002044611888e-01,
+            "t": 5.419146563572e-01
+          },
+          "delta": 8.941201328325e-01,
+          "detection": {
+            "df": 7.491854914963e+00,
+            "p": 5.678592547536e-10,
+            "t": 3.603438866036e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "prepared_execute/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 5.348469456288e-01,
+        "physical": {
+          "B1": {
+            "cv": 8.703405249696e-02,
+            "mean_ns": 1.203612600000e+06,
+            "median_ns": 1.192826925000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.047552822144e+05,
+            "values_ns": [
+              1.118206825000e+06,
+              1.267447025000e+06,
+              1.098156700000e+06,
+              1.340191675000e+06,
+              1.281537825000e+06,
+              1.116135550000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.238497841713e-01,
+            "mean_ns": 1.181403791667e+06,
+            "median_ns": 1.143006925000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.463166046171e+05,
+            "values_ns": [
+              1.097386775000e+06,
+              1.206008850000e+06,
+              1.055849275000e+06,
+              1.086201975000e+06,
+              1.454348800000e+06,
+              1.188627075000e+06
+            ]
+          },
+          "V": {
+            "cv": 2.543869735179e-02,
+            "mean_ns": 2.095609695833e+06,
+            "median_ns": 2.094357300000e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.330958081977e+04,
+            "values_ns": [
+              2.133340450000e+06,
+              2.150710100000e+06,
+              2.051567475000e+06,
+              2.035859150000e+06,
+              2.055374150000e+06,
+              2.146806850000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.059289790796e+00,
+            "p": 3.846220200825e-01,
+            "t": 3.023065698780e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.059289790796e+00,
+            "p": 6.153779799175e-01,
+            "t": -3.023065698780e-01
+          },
+          "delta": 7.557931130704e-01,
+          "detection": {
+            "df": 7.426981420272e+00,
+            "p": 8.458401090390e-08,
+            "t": 1.858893444279e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.031397860329e-01,
+            "mean_ns": 6.668252833333e+05,
+            "median_ns": 6.379798375000e+05,
+            "n": 6,
+            "sample_stdev_ns": 6.877621704433e+04,
+            "values_ns": [
+              8.059219750000e+05,
+              6.279679500000e+05,
+              6.558079750000e+05,
+              6.352941250000e+05,
+              6.405628250000e+05,
+              6.353968500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 5.490945521643e-02,
+            "mean_ns": 6.480363458333e+05,
+            "median_ns": 6.391730000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 3.558332271015e+04,
+            "values_ns": [
+              6.469862750000e+05,
+              7.153853000000e+05,
+              6.530100000000e+05,
+              6.213197750000e+05,
+              6.201570000000e+05,
+              6.313597250000e+05
+            ]
+          },
+          "V": {
+            "cv": 1.185863330505e-01,
+            "mean_ns": 1.240769154167e+06,
+            "median_ns": 1.183026262500e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.471382641548e+05,
+            "values_ns": [
+              1.535164150000e+06,
+              1.156728300000e+06,
+              1.154659275000e+06,
+              1.232010675000e+06,
+              1.196385900000e+06,
+              1.169666625000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 7.497826952636e+00,
+            "p": 2.848890915617e-01,
+            "t": 5.943396304888e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 7.497826952636e+00,
+            "p": 7.151109084383e-01,
+            "t": -5.943396304888e-01
+          },
+          "delta": 8.543317405387e-01,
+          "detection": {
+            "df": 7.085322533609e+00,
+            "p": 2.558719934288e-05,
+            "t": 8.655835520174e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "register_aggregate/first",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 3.846824906361e-01,
+        "physical": {
+          "B1": {
+            "cv": 1.395538802947e-01,
+            "mean_ns": 2.155712541667e+05,
+            "median_ns": 2.284846000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 3.008380499895e+04,
+            "values_ns": [
+              2.218678250000e+05,
+              2.351013750000e+05,
+              2.406474000000e+05,
+              1.772603250000e+05,
+              1.782246500000e+05,
+              2.403259500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 1.790901932635e-01,
+            "mean_ns": 2.156975916667e+05,
+            "median_ns": 2.239436125000e+05,
+            "n": 6,
+            "sample_stdev_ns": 3.862932337807e+04,
+            "values_ns": [
+              2.243307000000e+05,
+              2.237742000000e+05,
+              1.507823500000e+05,
+              2.690958250000e+05,
+              2.241130250000e+05,
+              2.020894500000e+05
+            ]
+          },
+          "V": {
+            "cv": 1.239229105698e-01,
+            "mean_ns": 3.798167208333e+05,
+            "median_ns": 3.888224625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 4.706799352874e+04,
+            "values_ns": [
+              4.086476500000e+05,
+              3.811218250000e+05,
+              3.698609250000e+05,
+              4.291433250000e+05,
+              2.936035000000e+05,
+              3.965231000000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.433993299136e+00,
+            "p": 5.024556683435e-01,
+            "t": -6.320484042022e-03
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.433993299136e+00,
+            "p": 4.975443316565e-01,
+            "t": 6.320484042022e-03
+          },
+          "delta": 7.017447237144e-01,
+          "detection": {
+            "df": 8.500938865608e+00,
+            "p": 3.397064446365e-05,
+            "t": 7.202142355123e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 5.503418997396e-02,
+            "mean_ns": 8.890824583333e+04,
+            "median_ns": 8.789402500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 4.892993291443e+03,
+            "values_ns": [
+              9.769095000000e+04,
+              8.548300000000e+04,
+              8.587125000000e+04,
+              8.449992500000e+04,
+              8.991680000000e+04,
+              8.998755000000e+04
+            ]
+          },
+          "B2": {
+            "cv": 2.491725420192e-02,
+            "mean_ns": 8.647590000000e+04,
+            "median_ns": 8.708022500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.154741982640e+03,
+            "values_ns": [
+              8.318865000000e+04,
+              8.457475000000e+04,
+              8.858870000000e+04,
+              8.684112500000e+04,
+              8.834285000000e+04,
+              8.731932500000e+04
+            ]
+          },
+          "V": {
+            "cv": 2.482900385338e-02,
+            "mean_ns": 1.408086583333e+05,
+            "median_ns": 1.422331375000e+05,
+            "n": 6,
+            "sample_stdev_ns": 3.496138720348e+03,
+            "values_ns": [
+              1.439654250000e+05,
+              1.429589000000e+05,
+              1.351763250000e+05,
+              1.432907750000e+05,
+              1.415073750000e+05,
+              1.379531500000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 6.868994006629e+00,
+            "p": 1.512893943234e-01,
+            "t": 1.114389972614e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 6.868994006629e+00,
+            "p": 8.487106056766e-01,
+            "t": -1.114389972614e+00
+          },
+          "delta": 6.182344306112e-01,
+          "detection": {
+            "df": 9.049802756078e+00,
+            "p": 2.579471496239e-09,
+            "t": 2.114004887454e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "register_predicate/first",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 3.610190365299e-01,
+        "physical": {
+          "B1": {
+            "cv": 1.820752674515e-01,
+            "mean_ns": 2.197830041667e+05,
+            "median_ns": 2.306742625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 4.001704926495e+04,
+            "values_ns": [
+              2.667704250000e+05,
+              2.482015000000e+05,
+              2.316813750000e+05,
+              1.750182250000e+05,
+              1.673593500000e+05,
+              2.296671500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 2.007343046103e-01,
+            "mean_ns": 2.246307458333e+05,
+            "median_ns": 2.279973250000e+05,
+            "n": 6,
+            "sample_stdev_ns": 4.509109655895e+04,
+            "values_ns": [
+              2.417154250000e+05,
+              2.561402250000e+05,
+              1.781829750000e+05,
+              2.142792250000e+05,
+              2.861053000000e+05,
+              1.713613250000e+05
+            ]
+          },
+          "V": {
+            "cv": 1.207258849501e-01,
+            "mean_ns": 4.022576250000e+05,
+            "median_ns": 4.014277625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 4.856290775604e+04,
+            "values_ns": [
+              3.997558750000e+05,
+              4.517323250000e+05,
+              4.030996500000e+05,
+              4.501891750000e+05,
+              3.193420000000e+05,
+              3.894267250000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.860794365197e+00,
+            "p": 5.760722277125e-01,
+            "t": -1.969647467314e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.860794365197e+00,
+            "p": 4.239277722875e-01,
+            "t": 1.969647467314e-01
+          },
+          "delta": 7.402364622278e-01,
+          "detection": {
+            "df": 9.647414650578e+00,
+            "p": 1.978201639730e-05,
+            "t": 7.103065888999e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.792753967040e-02,
+            "mean_ns": 8.368051250000e+04,
+            "median_ns": 8.327780000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 1.500185707483e+03,
+            "values_ns": [
+              8.284935000000e+04,
+              8.370625000000e+04,
+              8.499065000000e+04,
+              8.588617500000e+04,
+              8.271700000000e+04,
+              8.193365000000e+04
+            ]
+          },
+          "B2": {
+            "cv": 1.217597358992e-02,
+            "mean_ns": 8.528942083333e+04,
+            "median_ns": 8.479427500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 1.038481735566e+03,
+            "values_ns": [
+              8.701000000000e+04,
+              8.479972500000e+04,
+              8.478882500000e+04,
+              8.610547500000e+04,
+              8.471612500000e+04,
+              8.431637500000e+04
+            ]
+          },
+          "V": {
+            "cv": 1.976661814533e-02,
+            "mean_ns": 1.370749708333e+05,
+            "median_ns": 1.362973000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 2.709508605745e+03,
+            "values_ns": [
+              1.364708250000e+05,
+              1.421989250000e+05,
+              1.358659750000e+05,
+              1.361237750000e+05,
+              1.343240250000e+05,
+              1.374663000000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.897047559381e+00,
+            "p": 9.702936205433e-01,
+            "t": -2.159981008740e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.897047559381e+00,
+            "p": 2.970637945666e-02,
+            "t": 2.159981008740e+00
+          },
+          "delta": 6.366582690705e-01,
+          "detection": {
+            "df": 7.802212702304e+00,
+            "p": 8.540926474292e-11,
+            "t": 4.222963815179e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 9,
+            "invalid_attempts": 3,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 8,
+            "invalid_attempts": 2,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "android-emulator-v1",
+      "case": "set_roundtrip/2",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": true,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 4.081573737038e-01,
+        "physical": {
+          "B1": {
+            "cv": 7.001662079000e-02,
+            "mean_ns": 2.836598875000e+05,
+            "median_ns": 2.778513750000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.986090677642e+04,
+            "values_ns": [
+              2.816009250000e+05,
+              2.741018250000e+05,
+              2.681052000000e+05,
+              3.189727000000e+05,
+              2.662739250000e+05,
+              2.929047500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 6.244856942279e-02,
+            "mean_ns": 2.875069958333e+05,
+            "median_ns": 2.934866125000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.795440058883e+04,
+            "values_ns": [
+              2.824859500000e+05,
+              2.919057750000e+05,
+              2.538757250000e+05,
+              2.974801750000e+05,
+              2.950674500000e+05,
+              3.042269000000e+05
+            ]
+          },
+          "V": {
+            "cv": 9.759290142342e-02,
+            "mean_ns": 5.423682625000e+05,
+            "median_ns": 5.512391125000e+05,
+            "n": 6,
+            "sample_stdev_ns": 5.293129237735e+04,
+            "values_ns": [
+              5.589214250000e+05,
+              5.061686250000e+05,
+              6.025400750000e+05,
+              5.435568000000e+05,
+              4.585347250000e+05,
+              5.844879250000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.899855971191e+00,
+            "p": 6.338813287924e-01,
+            "t": -3.519704148604e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.899855971191e+00,
+            "p": 3.661186712076e-01,
+            "t": 3.519704148604e-01
+          },
+          "delta": 9.839351613790e-01,
+          "detection": {
+            "df": 6.380539369934e+00,
+            "p": 9.816138789439e-06,
+            "t": 1.120909835237e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.345670887275e-01,
+            "mean_ns": 1.201820458333e+05,
+            "median_ns": 1.134070875000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.617254802511e+04,
+            "values_ns": [
+              1.525177250000e+05,
+              1.197507500000e+05,
+              1.143034000000e+05,
+              1.112541000000e+05,
+              1.107555250000e+05,
+              1.125107750000e+05
+            ]
+          },
+          "B2": {
+            "cv": 6.348738818620e-02,
+            "mean_ns": 1.184215958333e+05,
+            "median_ns": 1.163046375000e+05,
+            "n": 6,
+            "sample_stdev_ns": 7.518277824300e+03,
+            "values_ns": [
+              1.332242000000e+05,
+              1.179469750000e+05,
+              1.132337750000e+05,
+              1.175954500000e+05,
+              1.135153500000e+05,
+              1.150138250000e+05
+            ]
+          },
+          "V": {
+            "cv": 5.018624706215e-02,
+            "mean_ns": 2.196293708333e+05,
+            "median_ns": 2.176270750000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.102237386675e+04,
+            "values_ns": [
+              2.224658500000e+05,
+              2.395692250000e+05,
+              2.186763000000e+05,
+              2.074676250000e+05,
+              2.130193750000e+05,
+              2.165778500000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 7.064694056383e+00,
+            "p": 4.079066145881e-01,
+            "t": 2.417875854911e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 7.064694056383e+00,
+            "p": 5.920933854119e-01,
+            "t": -2.417875854911e-01
+          },
+          "delta": 9.189900719388e-01,
+          "detection": {
+            "df": 8.820698065808e+00,
+            "p": 3.392438663528e-07,
+            "t": 1.244641790470e+01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "android-physical-v1",
+      "platform": "android",
+      "reasons": [
+        "closeness"
+      ]
+    }
+  ],
+  "configurations": [
+    {
+      "blocking_reason": null,
+      "build": {
+        "artifact_sha256": {
+          "B1": "928b813141fcd00c0b9d0cd0db4a29bd78c37c66314cb2f83e8bd7f9daa7239e",
+          "B2": "928b813141fcd00c0b9d0cd0db4a29bd78c37c66314cb2f83e8bd7f9daa7239e",
+          "V": "928b813141fcd00c0b9d0cd0db4a29bd78c37c66314cb2f83e8bd7f9daa7239e"
+        },
+        "binding_revision": "702e25d7b54d2fa6566a03799e2bbf73d6bc16cc",
+        "core_revision": "b0d2d014d57c90680a6adc1d10e749a3db5df40c",
+        "harness_revision": "702e25d7b54d2fa6566a03799e2bbf73d6bc16cc",
+        "profile": "Release",
+        "slowdown_flag": "repeat-timed-operation-twice"
+      },
+      "id": "android-emulator-v1",
+      "kind": "simulated",
+      "platform": "android",
+      "reference": "android-physical-v1",
+      "runtime": {
+        "abi": "x86_64",
+        "accel_check_output": "accel:\n0\nKVM (version 12) is installed and usable.\naccel",
+        "acceleration_active": "true",
+        "acceleration_evidence": "accel:\n0\nKVM (version 12) is installed and usable.\naccel",
+        "api_level": "34",
+        "avd_evidence": "Available Android Virtual Devices:\n    Name: minigraf858\n  Device: pixel_7 (Google)\n    Path: /home/runner/.android/avd/minigraf858.avd\n  Target: Google APIs (Google Inc.)\n          Based on: Android 14.0 (\"UpsideDownCake\") Tag/ABI: google_apis/x86_64\n  Sdcard: 512 MB",
+        "backend": "KVM",
+        "boot_policy": "one cold boot with -no-snapshot; warm guest retained; force-stop app and test package before every attempt",
+        "device_profile": "pixel_7",
+        "emulator_package": "{\"Pkg.BuildId\":\"16740729\",\"Pkg.Desc\":\"Android Emulator\",\"Pkg.Path\":\"emulator\",\"Pkg.Revision\":\"37.2.13\",\"Pkg.UserSrc\":\"false\"}",
+        "emulator_version": "Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)",
+        "emulator_version_evidence": "Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)\nCopyright (C) 2006-2024 The Android Open Source Project and many others.\nThis program is a derivative of the QEMU CPU emulator (www.qemu.org).\n\n  This software is licensed under the terms of the GNU General Public\n  License version 2, as published by the Free Software Foundation, and\n  may be copied, distributed, and modified under those terms.\n\n  This program is distributed in the hope that it will be useful,\n  but WITHOUT ANY WARRANTY; without even the implied warranty of\n  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n  GNU General Public License for more details.",
+        "fingerprint": "google/sdk_gphone64_x86_64/emu64xa:14/UE1A.230829.050/12077443:userdebug/dev-keys",
+        "host_arch": "x86_64",
+        "host_kernel": "7.0.0-1014-aws",
+        "image": "system-images;android-34;google_apis;x86_64",
+        "kvm_present": "true",
+        "live_kvm_fd_targets": "[\"/dev/kvm\",\"anon_inode:kvm-vcpu:0\",\"anon_inode:kvm-vcpu:1\",\"anon_inode:kvm-vm\"]",
+        "os": "14",
+        "provider": "GitHub Actions",
+        "runner_arch": "X64",
+        "runner_image": "ubuntu24",
+        "runner_image_version": "20261116.133.1",
+        "runner_label": "ubuntu-24.04",
+        "runner_os": "Linux",
+        "system_image_package": "{\"Addon.VendorDisplay\":\"Google Inc.\",\"Addon.VendorId\":\"google\",\"AndroidVersion.ApiLevel\":\"34\",\"AndroidVersion.ExtensionLevel\":\"7\",\"AndroidVersion.IsBaseSdk\":\"true\",\"Pkg.Dependencies\":\"emulator#34.2.16\",\"Pkg.Desc\":\"System Image x86_64 with Google APIs.\",\"Pkg.Revision\":\"14\",\"SystemImage.Abi\":\"x86_64\",\"SystemImage.GpuSupport\":\"true\",\"SystemImage.TagDisplay\":\"Google APIs\",\"SystemImage.TagId\":\"google_apis\"}",
+        "translation": "none: x86_64 guest on x86_64 host"
+      }
+    },
+    {
+      "blocking_reason": null,
+      "build": {
+        "artifact_sha256": {
+          "B1": "4e7204738308412a539a55740d0b0dbb4e4b99e3d218eeda4de34e9e41a5fe80",
+          "B2": "4e7204738308412a539a55740d0b0dbb4e4b99e3d218eeda4de34e9e41a5fe80",
+          "V": "4e7204738308412a539a55740d0b0dbb4e4b99e3d218eeda4de34e9e41a5fe80"
+        },
+        "binding_revision": "702e25d7b54d2fa6566a03799e2bbf73d6bc16cc",
+        "core_revision": "b0d2d014d57c90680a6adc1d10e749a3db5df40c",
+        "harness_revision": "702e25d7b54d2fa6566a03799e2bbf73d6bc16cc",
+        "profile": "Release",
+        "slowdown_flag": "repeat-timed-operation-twice"
+      },
+      "id": "android-physical-v1",
+      "kind": "physical",
+      "platform": "android",
+      "reference": null,
+      "runtime": {
+        "fingerprint": "google/panther/panther:14/AP2A.240905.003/12231197:user/release-keys",
+        "hardware": "panther",
+        "loaded_abi": "arm64-v8a",
+        "model": "Pixel 7",
+        "os": "Android 14",
+        "product": "panther",
+        "provider": "Device Farm",
+        "sdk": "34"
+      }
+    }
+  ],
+  "protocol": "858-mobile-ac12-n6-v1",
+  "schema_version": 1,
+  "synthetic": false
+}
