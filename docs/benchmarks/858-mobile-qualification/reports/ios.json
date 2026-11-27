@@ -1,0 +1,2755 @@
+{
+  "categories": {
+    "ios-simulator-v1": {
+      "allocation/conversion": {
+        "inconclusive": 0,
+        "qualified": 0,
+        "rejected": 6
+      },
+      "compute/callback": {
+        "inconclusive": 0,
+        "qualified": 0,
+        "rejected": 5
+      },
+      "storage/startup": {
+        "inconclusive": 0,
+        "qualified": 0,
+        "rejected": 3
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "aggregate/1k",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 1.432212715969e+00,
+        "physical": {
+          "B1": {
+            "cv": 9.145650716809e-02,
+            "mean_ns": 1.305579187500e+06,
+            "median_ns": 1.243316150000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.194037123201e+05,
+            "values_ns": [
+              1.227915600000e+06,
+              1.224783375000e+06,
+              1.258716700000e+06,
+              1.223392700000e+06,
+              1.384351100000e+06,
+              1.514315650000e+06
+            ]
+          },
+          "B2": {
+            "cv": 9.256478957493e-02,
+            "mean_ns": 1.297075025000e+06,
+            "median_ns": 1.253997400000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.200634767520e+05,
+            "values_ns": [
+              1.225741750000e+06,
+              1.200127175000e+06,
+              1.185594875000e+06,
+              1.472220825000e+06,
+              1.416512475000e+06,
+              1.282253050000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.484591023373e-01,
+            "mean_ns": 2.710916137500e+06,
+            "median_ns": 2.519230200000e+06,
+            "n": 6,
+            "sample_stdev_ns": 4.024601762850e+05,
+            "values_ns": [
+              2.530657325000e+06,
+              3.501278150000e+06,
+              2.507803075000e+06,
+              2.480135400000e+06,
+              2.768869775000e+06,
+              2.476753100000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.999696383075e+00,
+            "p": 4.522644774210e-01,
+            "t": 1.230196560837e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.999696383075e+00,
+            "p": 5.477355225790e-01,
+            "t": -1.230196560837e-01
+          },
+          "delta": 1.026218512484e+00,
+          "detection": {
+            "df": 5.873449829215e+00,
+            "p": 9.897068461189e-05,
+            "t": 8.200010252538e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.898248213707e-01,
+            "mean_ns": 1.838700179167e+06,
+            "median_ns": 1.780693200000e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.490309330645e+05,
+            "values_ns": [
+              1.501658450000e+06,
+              1.780862400000e+06,
+              1.882368750000e+06,
+              1.780524000000e+06,
+              2.492325975000e+06,
+              1.594461500000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.576846053228e-01,
+            "mean_ns": 2.020544625000e+06,
+            "median_ns": 1.959785950000e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.186087817303e+05,
+            "values_ns": [
+              1.894965625000e+06,
+              2.381611450000e+06,
+              2.005994750000e+06,
+              1.913577150000e+06,
+              1.549270800000e+06,
+              2.377847975000e+06
+            ]
+          },
+          "V": {
+            "cv": 2.409794628240e-01,
+            "mean_ns": 3.864996716667e+06,
+            "median_ns": 3.802859350000e+06,
+            "n": 6,
+            "sample_stdev_ns": 9.313848325989e+05,
+            "values_ns": [
+              2.741763625000e+06,
+              3.150660475000e+06,
+              5.393766600000e+06,
+              4.298070900000e+06,
+              3.674315625000e+06,
+              3.931403075000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.917969253493e+00,
+            "p": 8.158450399692e-01,
+            "t": -9.425363315978e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.917969253493e+00,
+            "p": 1.841549600308e-01,
+            "t": 9.425363315978e-01
+          },
+          "delta": 1.135606150459e+00,
+          "detection": {
+            "df": 6.377171274804e+00,
+            "p": 1.038662620138e-03,
+            "t": 4.990160996737e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "cv_absolute",
+        "cv_relative",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "cursor_batch_1/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.534258605200e+00,
+        "physical": {
+          "B1": {
+            "cv": 9.912876212706e-02,
+            "mean_ns": 3.259355904167e+06,
+            "median_ns": 3.083167700000e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.230959161116e+05,
+            "values_ns": [
+              3.038717750000e+06,
+              3.082542775000e+06,
+              3.083792625000e+06,
+              3.066799975000e+06,
+              3.440818725000e+06,
+              3.843463575000e+06
+            ]
+          },
+          "B2": {
+            "cv": 9.832700109328e-02,
+            "mean_ns": 3.227777441667e+06,
+            "median_ns": 3.081682362500e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.173776760356e+05,
+            "values_ns": [
+              3.037149050000e+06,
+              2.971286425000e+06,
+              2.975705250000e+06,
+              3.687559350000e+06,
+              3.568748900000e+06,
+              3.126215675000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.577179361191e-01,
+            "mean_ns": 6.867332637500e+06,
+            "median_ns": 6.384063550000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.083101530230e+06,
+            "values_ns": [
+              6.485728200000e+06,
+              9.013204150000e+06,
+              6.216748950000e+06,
+              6.282398900000e+06,
+              6.926966625000e+06,
+              6.278949000000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.996813054458e+00,
+            "p": 4.338979929066e-01,
+            "t": 1.707902475259e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.996813054458e+00,
+            "p": 5.661020070934e-01,
+            "t": -1.707902475259e-01
+          },
+          "delta": 1.070618328675e+00,
+          "detection": {
+            "df": 5.882874823669e+00,
+            "p": 1.272069077175e-04,
+            "t": 7.819138696654e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.566333461103e-01,
+            "mean_ns": 5.316241379167e+06,
+            "median_ns": 4.730376575000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.364324813866e+06,
+            "values_ns": [
+              4.780901050000e+06,
+              4.679852100000e+06,
+              4.091666725000e+06,
+              4.552227150000e+06,
+              6.019410575000e+06,
+              7.773390675000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.762541853664e-01,
+            "mean_ns": 4.974644083333e+06,
+            "median_ns": 4.842814587500e+06,
+            "n": 6,
+            "sample_stdev_ns": 8.768018403955e+05,
+            "values_ns": [
+              4.331326025000e+06,
+              3.932367725000e+06,
+              4.869251050000e+06,
+              5.497740625000e+06,
+              4.816378125000e+06,
+              6.400800950000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.717213482231e-01,
+            "mean_ns": 9.939460070833e+06,
+            "median_ns": 1.051872503750e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.706817483973e+06,
+            "values_ns": [
+              7.269835375000e+06,
+              1.095314367500e+07,
+              1.185241867500e+07,
+              1.032200422500e+07,
+              8.523912625000e+06,
+              1.071544585000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.528298252634e+00,
+            "p": 3.095022270652e-01,
+            "t": 5.159393620468e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.528298252634e+00,
+            "p": 6.904977729348e-01,
+            "t": -5.159393620468e-01
+          },
+          "delta": 1.223654897390e+00,
+          "detection": {
+            "df": 9.537144590662e+00,
+            "p": 2.396597816615e-04,
+            "t": 5.182641833741e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "cursor_batch_256/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.711683054216e+00,
+        "physical": {
+          "B1": {
+            "cv": 1.040088403221e-01,
+            "mean_ns": 1.031355000000e+06,
+            "median_ns": 9.796817500000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.072700375104e+05,
+            "values_ns": [
+              9.432937250000e+05,
+              9.557082500000e+05,
+              9.885979000000e+05,
+              9.707656000000e+05,
+              1.126811400000e+06,
+              1.202953125000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.052176224852e-01,
+            "mean_ns": 1.002259075000e+06,
+            "median_ns": 9.654604125000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.054553169857e+05,
+            "values_ns": [
+              9.509833500000e+05,
+              9.168865000000e+05,
+              8.989616250000e+05,
+              1.125463550000e+06,
+              1.141321950000e+06,
+              9.799374750000e+05
+            ]
+          },
+          "V": {
+            "cv": 1.638625903161e-01,
+            "mean_ns": 2.132197012500e+06,
+            "median_ns": 1.969808275000e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.493873255326e+05,
+            "values_ns": [
+              1.990692700000e+06,
+              2.821325925000e+06,
+              1.948923850000e+06,
+              1.939406250000e+06,
+              2.168812600000e+06,
+              1.924020750000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.997090278745e+00,
+            "p": 3.229128235070e-01,
+            "t": 4.737920108038e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.997090278745e+00,
+            "p": 6.770871764930e-01,
+            "t": -4.737920108038e-01
+          },
+          "delta": 1.010661395907e+00,
+          "detection": {
+            "df": 5.934330794992e+00,
+            "p": 1.672799924995e-04,
+            "t": 7.377896532923e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.527923241064e-01,
+            "mean_ns": 1.787496329167e+06,
+            "median_ns": 1.676904650000e+06,
+            "n": 6,
+            "sample_stdev_ns": 4.518653513818e+05,
+            "values_ns": [
+              1.419921800000e+06,
+              1.327325000000e+06,
+              2.215802150000e+06,
+              1.475705150000e+06,
+              1.878104150000e+06,
+              2.408119725000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.612949265781e-01,
+            "mean_ns": 1.780974645833e+06,
+            "median_ns": 1.794222387500e+06,
+            "n": 6,
+            "sample_stdev_ns": 2.872621747372e+05,
+            "values_ns": [
+              1.426980175000e+06,
+              1.551065675000e+06,
+              1.989695850000e+06,
+              2.093627075000e+06,
+              1.598748925000e+06,
+              2.025730175000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.879536322177e-01,
+            "mean_ns": 3.123366687500e+06,
+            "median_ns": 3.087449987500e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.870481136633e+05,
+            "values_ns": [
+              2.329317800000e+06,
+              3.042794825000e+06,
+              3.132105150000e+06,
+              3.236197950000e+06,
+              2.871492725000e+06,
+              4.128291675000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.474035420236e+00,
+            "p": 4.884448688269e-01,
+            "t": 2.983459060679e-02
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.474035420236e+00,
+            "p": 5.115551311731e-01,
+            "t": -2.983459060679e-02
+          },
+          "delta": 8.411601324500e-01,
+          "detection": {
+            "df": 9.385371988569e+00,
+            "p": 7.579804173656e-04,
+            "t": 4.417024493006e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "fact_log_batch_256/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": false,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 1.221107531650e+00,
+        "physical": {
+          "B1": {
+            "cv": 9.226559617186e-02,
+            "mean_ns": 3.134261108333e+06,
+            "median_ns": 3.003742150000e+06,
+            "n": 6,
+            "sample_stdev_ns": 2.891844697186e+05,
+            "values_ns": [
+              2.855155125000e+06,
+              2.996101075000e+06,
+              2.964033425000e+06,
+              3.011383225000e+06,
+              3.378182325000e+06,
+              3.600711475000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.031131200814e-01,
+            "mean_ns": 3.104737512500e+06,
+            "median_ns": 3.007075525000e+06,
+            "n": 6,
+            "sample_stdev_ns": 3.201391719477e+05,
+            "values_ns": [
+              3.012791625000e+06,
+              2.807043825000e+06,
+              2.810146925000e+06,
+              3.560734275000e+06,
+              3.436349000000e+06,
+              3.001359425000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.525803451440e-01,
+            "mean_ns": 6.720815804167e+06,
+            "median_ns": 6.216908312500e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.025464395049e+06,
+            "values_ns": [
+              6.233398925000e+06,
+              8.740911500000e+06,
+              6.170152100000e+06,
+              6.130191750000e+06,
+              6.849822850000e+06,
+              6.200417700000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.898342160545e+00,
+            "p": 4.351247756542e-01,
+            "t": 1.676301563282e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.898342160545e+00,
+            "p": 5.648752243458e-01,
+            "t": -1.676301563282e-01
+          },
+          "delta": 1.069721035309e+00,
+          "detection": {
+            "df": 5.790261398301e+00,
+            "p": 1.033260815069e-04,
+            "t": 8.245480296618e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.710681544891e-01,
+            "mean_ns": 3.878587333333e+06,
+            "median_ns": 3.667892162500e+06,
+            "n": 6,
+            "sample_stdev_ns": 6.635027771382e+05,
+            "values_ns": [
+              3.118938525000e+06,
+              3.473190675000e+06,
+              3.581313500000e+06,
+              3.754470825000e+06,
+              4.450896900000e+06,
+              4.892713575000e+06
+            ]
+          },
+          "B2": {
+            "cv": 2.854835029394e-01,
+            "mean_ns": 3.390389991667e+06,
+            "median_ns": 2.984179250000e+06,
+            "n": 6,
+            "sample_stdev_ns": 9.679004111516e+05,
+            "values_ns": [
+              3.027542850000e+06,
+              2.770553150000e+06,
+              3.412555300000e+06,
+              2.876520850000e+06,
+              2.940815650000e+06,
+              5.314352150000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.987964884558e-01,
+            "mean_ns": 6.611111104167e+06,
+            "median_ns": 6.393872325000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.314265672300e+06,
+            "values_ns": [
+              5.042230200000e+06,
+              5.516440700000e+06,
+              8.309632275000e+06,
+              6.254589575000e+06,
+              8.010618800000e+06,
+              6.533155075000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.849202145985e+00,
+            "p": 1.676156960083e-01,
+            "t": 1.019045270459e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.849202145985e+00,
+            "p": 8.323843039917e-01,
+            "t": -1.019045270459e+00
+          },
+          "delta": 7.432007381160e-01,
+          "detection": {
+            "df": 7.393240447955e+00,
+            "p": 1.151943659487e-03,
+            "t": 4.546288543177e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "cv_absolute",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "file_transact/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 7.971574594235e-01,
+        "physical": {
+          "B1": {
+            "cv": 8.489691455813e-02,
+            "mean_ns": 7.732427166667e+06,
+            "median_ns": 7.988135750000e+06,
+            "n": 6,
+            "sample_stdev_ns": 6.564592084954e+05,
+            "values_ns": [
+              8.311854000000e+06,
+              7.389021000000e+06,
+              7.861833500000e+06,
+              6.565291500000e+06,
+              8.152125000000e+06,
+              8.114438000000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.551508608820e-01,
+            "mean_ns": 8.066100750000e+06,
+            "median_ns": 8.320010500000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.251462475324e+06,
+            "values_ns": [
+              8.532229500000e+06,
+              7.498146000000e+06,
+              8.107791500000e+06,
+              5.933646000000e+06,
+              8.751229000000e+06,
+              9.573562500000e+06
+            ]
+          },
+          "V": {
+            "cv": 6.970371604251e-02,
+            "mean_ns": 1.498080208333e+07,
+            "median_ns": 1.506132300000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.044217574506e+06,
+            "values_ns": [
+              1.488322950000e+07,
+              1.382291700000e+07,
+              1.523941650000e+07,
+              1.633120800000e+07,
+              1.584054200000e+07,
+              1.376749950000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 7.557903574990e+00,
+            "p": 7.100794589644e-01,
+            "t": -5.783594934741e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 7.557903574990e+00,
+            "p": 2.899205410356e-01,
+            "t": 5.783594934741e-01
+          },
+          "delta": 8.854615734341e-01,
+          "detection": {
+            "df": 8.418239002623e+00,
+            "p": 1.599282397313e-07,
+            "t": 1.439476890138e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.683581347826e-01,
+            "mean_ns": 7.060058916667e+06,
+            "median_ns": 6.367802000000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.894624242332e+06,
+            "values_ns": [
+              4.843562500000e+06,
+              6.438854000000e+06,
+              6.296750000000e+06,
+              6.014666500000e+06,
+              9.682625000000e+06,
+              9.083895500000e+06
+            ]
+          },
+          "B2": {
+            "cv": 2.269059031085e-01,
+            "mean_ns": 5.584944500000e+06,
+            "median_ns": 5.224791500000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.267256875583e+06,
+            "values_ns": [
+              5.070313000000e+06,
+              5.249687500000e+06,
+              4.438062500000e+06,
+              8.070521000000e+06,
+              5.481187500000e+06,
+              5.199895500000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.577348922337e-01,
+            "mean_ns": 1.024895150000e+07,
+            "median_ns": 1.008555225000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.616617260361e+06,
+            "values_ns": [
+              8.076250000000e+06,
+              9.180042000000e+06,
+              1.265708350000e+07,
+              1.140922900000e+07,
+              1.013710450000e+07,
+              1.003400000000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 8.727741799367e+00,
+            "p": 7.421540393304e-02,
+            "t": 1.585206863962e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 8.727741799367e+00,
+            "p": 9.257845960670e-01,
+            "t": -1.585206863962e+00
+          },
+          "delta": 5.838357175679e-01,
+          "detection": {
+            "df": 9.758343754580e+00,
+            "p": 5.443798175766e-03,
+            "t": 3.136265286931e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "cv_absolute",
+        "cv_relative",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "log_writer_append_finish/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": false,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 7.920930972867e-01,
+        "physical": {
+          "B1": {
+            "cv": 1.258154069731e-01,
+            "mean_ns": 1.095596183333e+07,
+            "median_ns": 1.158536450000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.378428796843e+06,
+            "values_ns": [
+              1.124672900000e+07,
+              8.822916500000e+06,
+              1.192400000000e+07,
+              9.684875000000e+06,
+              1.210585400000e+07,
+              1.195139650000e+07
+            ]
+          },
+          "B2": {
+            "cv": 9.630569720632e-02,
+            "mean_ns": 1.144612841667e+07,
+            "median_ns": 1.150088525000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.102327377480e+06,
+            "values_ns": [
+              1.007743800000e+07,
+              1.201875000000e+07,
+              1.301641650000e+07,
+              1.098302050000e+07,
+              1.053368750000e+07,
+              1.204745800000e+07
+            ]
+          },
+          "V": {
+            "cv": 5.532998977329e-02,
+            "mean_ns": 2.115819441667e+07,
+            "median_ns": 2.111473975000e+07,
+            "n": 6,
+            "sample_stdev_ns": 1.170682680695e+06,
+            "values_ns": [
+              2.084297950000e+07,
+              2.007983300000e+07,
+              2.308850000000e+07,
+              2.164729150000e+07,
+              2.138650000000e+07,
+              1.990406250000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.538860410181e+00,
+            "p": 7.437453992214e-01,
+            "t": -6.802631476342e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.538860410181e+00,
+            "p": 2.562546007786e-01,
+            "t": 6.802631476342e-01
+          },
+          "delta": 8.225356440015e-01,
+          "detection": {
+            "df": 9.744518994970e+00,
+            "p": 5.050033645061e-08,
+            "t": 1.381845621370e+01
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.994910934291e-01,
+            "mean_ns": 9.516239416667e+06,
+            "median_ns": 9.176687250000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.898405006564e+06,
+            "values_ns": [
+              7.481229000000e+06,
+              9.543166500000e+06,
+              8.810208000000e+06,
+              7.798499500000e+06,
+              1.228350000000e+07,
+              1.118083350000e+07
+            ]
+          },
+          "B2": {
+            "cv": 1.486654670635e-01,
+            "mean_ns": 9.807284666667e+06,
+            "median_ns": 9.546604000000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.458004555595e+06,
+            "values_ns": [
+              9.503416500000e+06,
+              8.912812500000e+06,
+              9.589791500000e+06,
+              1.236462500000e+07,
+              1.035404150000e+07,
+              8.119021000000e+06
+            ]
+          },
+          "V": {
+            "cv": 2.043452162585e-01,
+            "mean_ns": 1.635304533333e+07,
+            "median_ns": 1.613089600000e+07,
+            "n": 6,
+            "sample_stdev_ns": 3.341666585125e+06,
+            "values_ns": [
+              1.342043750000e+07,
+              1.278545850000e+07,
+              2.101570850000e+07,
+              1.419958350000e+07,
+              1.863487550000e+07,
+              1.806220850000e+07
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.375984112106e+00,
+            "p": 6.138366137966e-01,
+            "t": -2.978307154422e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.375984112106e+00,
+            "p": 3.861633862034e-01,
+            "t": 2.978307154422e-01
+          },
+          "delta": 7.578125483137e-01,
+          "detection": {
+            "df": 7.922935998270e+00,
+            "p": 1.238697829851e-03,
+            "t": 4.357412489761e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "cv_absolute",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "options_error/negative_cache",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": true,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": false,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 9.124363353516e-01,
+        "physical": {
+          "B1": {
+            "cv": 1.083034549279e-01,
+            "mean_ns": 4.158337500000e+04,
+            "median_ns": 4.024015000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 4.503623180063e+03,
+            "values_ns": [
+              3.736780000000e+04,
+              4.101775000000e+04,
+              3.742297500000e+04,
+              3.946255000000e+04,
+              4.671045000000e+04,
+              4.751872500000e+04
+            ]
+          },
+          "B2": {
+            "cv": 1.164001099121e-01,
+            "mean_ns": 4.237877083333e+04,
+            "median_ns": 4.070882500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 4.932893582939e+03,
+            "values_ns": [
+              4.013222500000e+04,
+              3.697700000000e+04,
+              3.931972500000e+04,
+              5.018432500000e+04,
+              4.637392500000e+04,
+              4.128542500000e+04
+            ]
+          },
+          "V": {
+            "cv": 1.605099209000e-01,
+            "mean_ns": 8.887532916667e+04,
+            "median_ns": 8.236037500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 1.426537205450e+04,
+            "values_ns": [
+              8.186555000000e+04,
+              1.173458750000e+05,
+              8.285520000000e+04,
+              8.103342500000e+04,
+              8.902485000000e+04,
+              8.112707500000e+04
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.918240633701e+00,
+            "p": 6.117313215872e-01,
+            "t": -2.916844821443e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.918240633701e+00,
+            "p": 3.882686784128e-01,
+            "t": 2.916844821443e-01
+          },
+          "delta": 1.046721371565e+00,
+          "detection": {
+            "df": 5.986881425211e+00,
+            "p": 1.231321870094e-04,
+            "t": 7.743706631621e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 5.272656299997e-01,
+            "mean_ns": 4.442098750000e+04,
+            "median_ns": 3.671657500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.342165995940e+04,
+            "values_ns": [
+              3.275087500000e+04,
+              2.665942500000e+04,
+              4.068227500000e+04,
+              2.721875000000e+04,
+              8.848335000000e+04,
+              5.073125000000e+04
+            ]
+          },
+          "B2": {
+            "cv": 2.220348877624e-01,
+            "mean_ns": 3.056044583333e+04,
+            "median_ns": 2.875475000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 6.785485160573e+03,
+            "values_ns": [
+              2.508327500000e+04,
+              2.641365000000e+04,
+              2.461672500000e+04,
+              4.222505000000e+04,
+              3.109585000000e+04,
+              3.392812500000e+04
+            ]
+          },
+          "V": {
+            "cv": 3.745054208027e-01,
+            "mean_ns": 6.197955416667e+04,
+            "median_ns": 5.164478750000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.321167901435e+04,
+            "values_ns": [
+              5.099487500000e+04,
+              5.180935000000e+04,
+              5.776355000000e+04,
+              5.148022500000e+04,
+              1.090562750000e+05,
+              5.077305000000e+04
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.833446612762e+00,
+            "p": 1.072918662742e-01,
+            "t": 1.392313968651e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.833446612762e+00,
+            "p": 8.927081337258e-01,
+            "t": -1.392313968651e+00
+          },
+          "delta": 4.065796578248e-01,
+          "detection": {
+            "df": 9.999189087660e+00,
+            "p": 1.106764374206e-01,
+            "t": 1.304303828100e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "cv_absolute",
+        "cv_relative",
+        "delta_agreement",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "options_readonly_open/1k",
+      "category": "storage/startup",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 4.956921762855e-01,
+        "physical": {
+          "B1": {
+            "cv": 9.121340472190e-02,
+            "mean_ns": 4.641578291667e+05,
+            "median_ns": 4.433677250000e+05,
+            "n": 6,
+            "sample_stdev_ns": 4.233741592662e+04,
+            "values_ns": [
+              4.224510500000e+05,
+              4.424990000000e+05,
+              4.442364500000e+05,
+              4.416469250000e+05,
+              5.057979000000e+05,
+              5.283156500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 1.279484999918e-01,
+            "mean_ns": 4.618926916667e+05,
+            "median_ns": 4.428911625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 5.909847705595e+04,
+            "values_ns": [
+              4.456645750000e+05,
+              4.098197000000e+05,
+              4.109594000000e+05,
+              5.595822500000e+05,
+              5.052124750000e+05,
+              4.401177500000e+05
+            ]
+          },
+          "V": {
+            "cv": 1.572609946006e-01,
+            "mean_ns": 9.860512166667e+05,
+            "median_ns": 9.120755625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.550673950601e+05,
+            "values_ns": [
+              9.281656750000e+05,
+              1.286582250000e+06,
+              8.925865250000e+05,
+              8.959854500000e+05,
+              1.019601000000e+06,
+              8.933864000000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.062189231567e+00,
+            "p": 4.704110625277e-01,
+            "t": 7.632101438022e-02
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.062189231567e+00,
+            "p": 5.295889374723e-01,
+            "t": -7.632101438022e-02
+          },
+          "delta": 1.057153714786e+00,
+          "detection": {
+            "df": 5.741312214822e+00,
+            "p": 1.308611728378e-04,
+            "t": 7.952890432078e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.368296070557e-01,
+            "mean_ns": 2.298003416667e+05,
+            "median_ns": 2.197739125000e+05,
+            "n": 6,
+            "sample_stdev_ns": 5.442352461819e+04,
+            "values_ns": [
+              1.843364250000e+05,
+              2.011749750000e+05,
+              2.667084250000e+05,
+              1.731177250000e+05,
+              2.383728500000e+05,
+              3.150916500000e+05
+            ]
+          },
+          "B2": {
+            "cv": 2.300104511806e-01,
+            "mean_ns": 1.720508916667e+05,
+            "median_ns": 1.661974500000e+05,
+            "n": 6,
+            "sample_stdev_ns": 3.957350321827e+04,
+            "values_ns": [
+              1.452146750000e+05,
+              1.292478750000e+05,
+              2.165937750000e+05,
+              2.158634750000e+05,
+              1.382053250000e+05,
+              1.871802250000e+05
+            ]
+          },
+          "V": {
+            "cv": 2.518802219276e-01,
+            "mean_ns": 3.358359708333e+05,
+            "median_ns": 3.545490000000e+05,
+            "n": 6,
+            "sample_stdev_ns": 8.459043886476e+04,
+            "values_ns": [
+              2.466001250000e+05,
+              2.291864750000e+05,
+              4.521729000000e+05,
+              3.779583250000e+05,
+              3.398583250000e+05,
+              3.692396750000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.132147534716e+00,
+            "p": 3.222359289266e-02,
+            "t": 2.102185918665e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.132147534716e+00,
+            "p": 9.677764071073e-01,
+            "t": -2.102185918665e+00
+          },
+          "delta": 6.132442470851e-01,
+          "detection": {
+            "df": 8.533844142636e+00,
+            "p": 1.542698614827e-02,
+            "t": 2.582210505773e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "predicate/1k",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": true
+      },
+      "metrics": {
+        "closeness_ratio": 1.526014645333e+00,
+        "physical": {
+          "B1": {
+            "cv": 9.641438376217e-02,
+            "mean_ns": 1.750034179167e+06,
+            "median_ns": 1.678862500000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.687284669471e+05,
+            "values_ns": [
+              1.608484350000e+06,
+              1.632973950000e+06,
+              1.711051025000e+06,
+              1.646673975000e+06,
+              1.861006175000e+06,
+              2.040015600000e+06
+            ]
+          },
+          "B2": {
+            "cv": 9.776167297025e-02,
+            "mean_ns": 1.715875016667e+06,
+            "median_ns": 1.667057850000e+06,
+            "n": 6,
+            "sample_stdev_ns": 1.677468122372e+05,
+            "values_ns": [
+              1.631556300000e+06,
+              1.558623925000e+06,
+              1.561892800000e+06,
+              1.946607225000e+06,
+              1.894010450000e+06,
+              1.702559400000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.495286335500e-01,
+            "mean_ns": 3.614031600000e+06,
+            "median_ns": 3.348778125000e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.404012067544e+05,
+            "values_ns": [
+              3.355246875000e+06,
+              4.682768675000e+06,
+              3.331061450000e+06,
+              3.342309375000e+06,
+              3.666005275000e+06,
+              3.306797950000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.999659553403e+00,
+            "p": 3.661895090458e-01,
+            "t": 3.516760776181e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.999659553403e+00,
+            "p": 6.338104909542e-01,
+            "t": -3.516760776181e-01
+          },
+          "delta": 9.946708709022e-01,
+          "detection": {
+            "df": 5.965686651532e+00,
+            "p": 1.001378518789e-04,
+            "t": 8.065012512568e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 1.777677281402e-01,
+            "mean_ns": 2.525274470833e+06,
+            "median_ns": 2.561968762500e+06,
+            "n": 6,
+            "sample_stdev_ns": 4.489123056105e+05,
+            "values_ns": [
+              2.015141525000e+06,
+              2.564429125000e+06,
+              2.609603125000e+06,
+              2.120336525000e+06,
+              3.282628125000e+06,
+              2.559508400000e+06
+            ]
+          },
+          "B2": {
+            "cv": 1.953545540364e-01,
+            "mean_ns": 2.886573420833e+06,
+            "median_ns": 2.628228087500e+06,
+            "n": 6,
+            "sample_stdev_ns": 5.639052633201e+05,
+            "values_ns": [
+              2.560891575000e+06,
+              3.942505225000e+06,
+              2.695564600000e+06,
+              2.528083300000e+06,
+              2.489970800000e+06,
+              3.102425025000e+06
+            ]
+          },
+          "V": {
+            "cv": 1.468242614800e-01,
+            "mean_ns": 4.758609737500e+06,
+            "median_ns": 4.769411475000e+06,
+            "n": 6,
+            "sample_stdev_ns": 6.986793603797e+05,
+            "values_ns": [
+              3.625611475000e+06,
+              4.717738575000e+06,
+              5.732241650000e+06,
+              5.138985350000e+06,
+              4.515997000000e+06,
+              4.821084375000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.521459923809e+00,
+            "p": 8.755039643246e-01,
+            "t": -1.227848493996e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.521459923809e+00,
+            "p": 1.244960356754e-01,
+            "t": 1.227848493996e+00
+          },
+          "delta": 8.616196828044e-01,
+          "detection": {
+            "df": 8.527146070560e+00,
+            "p": 6.442454475226e-05,
+            "t": 6.587297438666e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "prepare/point",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 2.307954420949e+00,
+        "physical": {
+          "B1": {
+            "cv": 9.872965949467e-02,
+            "mean_ns": 2.394416666667e+03,
+            "median_ns": 2.281750000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 2.363999421884e+02,
+            "values_ns": [
+              2.201025000000e+03,
+              2.249000000000e+03,
+              2.282275000000e+03,
+              2.281225000000e+03,
+              2.541650000000e+03,
+              2.811325000000e+03
+            ]
+          },
+          "B2": {
+            "cv": 1.158370323077e-01,
+            "mean_ns": 2.365954166667e+03,
+            "median_ns": 2.307800000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 2.740651092426e+02,
+            "values_ns": [
+              2.280150000000e+03,
+              2.042675000000e+03,
+              2.150000000000e+03,
+              2.718750000000e+03,
+              2.668700000000e+03,
+              2.335450000000e+03
+            ]
+          },
+          "V": {
+            "cv": 1.861581261033e-01,
+            "mean_ns": 4.874158333333e+03,
+            "median_ns": 4.733325000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 9.073641816639e+02,
+            "values_ns": [
+              4.861500000000e+03,
+              6.613500000000e+03,
+              4.207450000000e+03,
+              4.095850000000e+03,
+              4.709375000000e+03,
+              4.757275000000e+03
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.789120035962e+00,
+            "p": 4.255940360120e-01,
+            "t": 1.926276512142e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.789120035962e+00,
+            "p": 5.744059639880e-01,
+            "t": -1.926276512142e-01
+          },
+          "delta": 1.074427522735e+00,
+          "detection": {
+            "df": 5.675670665190e+00,
+            "p": 4.008421771553e-04,
+            "t": 6.477979006272e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 3.156477386478e-01,
+            "mean_ns": 5.809187500000e+03,
+            "median_ns": 5.266175000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 1.833656897756e+03,
+            "values_ns": [
+              5.428150000000e+03,
+              5.047900000000e+03,
+              5.418775000000e+03,
+              4.377025000000e+03,
+              9.469700000000e+03,
+              5.113575000000e+03
+            ]
+          },
+          "B2": {
+            "cv": 3.571574990527e-01,
+            "mean_ns": 6.732070833333e+03,
+            "median_ns": 6.372875000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 2.404409582279e+03,
+            "values_ns": [
+              4.852050000000e+03,
+              9.416625000000e+03,
+              9.519725000000e+03,
+              5.404150000000e+03,
+              3.858275000000e+03,
+              7.341600000000e+03
+            ]
+          },
+          "V": {
+            "cv": 4.038206894948e-01,
+            "mean_ns": 1.014012083333e+04,
+            "median_ns": 8.441125000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 4.094790586477e+03,
+            "values_ns": [
+              7.280275000000e+03,
+              7.361500000000e+03,
+              1.310310000000e+04,
+              1.695215000000e+04,
+              6.622950000000e+03,
+              9.520750000000e+03
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.345920962797e+00,
+            "p": 7.634527434490e-01,
+            "t": -7.475953577227e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.345920962797e+00,
+            "p": 2.365472565510e-01,
+            "t": 7.475953577227e-01
+          },
+          "delta": 6.028948905040e-01,
+          "detection": {
+            "df": 6.927752582170e+00,
+            "p": 2.518849763408e-02,
+            "t": 2.364500824000e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "prepared_execute/1k",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": false,
+        "delta_agreement": true,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 1.977211252566e+00,
+        "physical": {
+          "B1": {
+            "cv": 8.739595324041e-02,
+            "mean_ns": 2.218646041667e+05,
+            "median_ns": 2.246443125000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.939006857145e+04,
+            "values_ns": [
+              2.072406250000e+05,
+              2.250146000000e+05,
+              1.928926250000e+05,
+              2.242740250000e+05,
+              2.342677250000e+05,
+              2.474980250000e+05
+            ]
+          },
+          "B2": {
+            "cv": 6.142364076851e-02,
+            "mean_ns": 2.317850833333e+05,
+            "median_ns": 2.284104625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.423708369417e+04,
+            "values_ns": [
+              2.221646250000e+05,
+              2.232063000000e+05,
+              2.336146250000e+05,
+              2.477551750000e+05,
+              2.491437500000e+05,
+              2.148260250000e+05
+            ]
+          },
+          "V": {
+            "cv": 1.901212205278e-01,
+            "mean_ns": 4.957861250000e+05,
+            "median_ns": 4.518276375000e+05,
+            "n": 6,
+            "sample_stdev_ns": 9.425946320576e+04,
+            "values_ns": [
+              4.457791750000e+05,
+              6.844874750000e+05,
+              4.530115250000e+05,
+              4.463281000000e+05,
+              4.944667250000e+05,
+              4.506437500000e+05
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.177107970086e+00,
+            "p": 8.308466703281e-01,
+            "t": -1.010166702726e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.177107970086e+00,
+            "p": 1.691533296719e-01,
+            "t": 1.010166702726e+00
+          },
+          "delta": 1.011302367159e+00,
+          "detection": {
+            "df": 5.422407654319e+00,
+            "p": 3.337395349392e-04,
+            "t": 6.972315496346e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 3.664267726672e-01,
+            "mean_ns": 5.098118125000e+05,
+            "median_ns": 4.441692625000e+05,
+            "n": 6,
+            "sample_stdev_ns": 1.868086971220e+05,
+            "values_ns": [
+              3.723084000000e+05,
+              3.342416250000e+05,
+              3.736916500000e+05,
+              5.146468750000e+05,
+              7.931302000000e+05,
+              6.708521250000e+05
+            ]
+          },
+          "B2": {
+            "cv": 1.141608686779e-01,
+            "mean_ns": 4.620963625000e+05,
+            "median_ns": 4.672484500000e+05,
+            "n": 6,
+            "sample_stdev_ns": 5.275332215588e+04,
+            "values_ns": [
+              4.966187500000e+05,
+              4.977458500000e+05,
+              4.378781500000e+05,
+              4.325583250000e+05,
+              3.836812500000e+05,
+              5.240958500000e+05
+            ]
+          },
+          "V": {
+            "cv": 2.219306093094e-01,
+            "mean_ns": 9.470486333333e+05,
+            "median_ns": 9.530724250000e+05,
+            "n": 6,
+            "sample_stdev_ns": 2.101790802413e+05,
+            "values_ns": [
+              7.038459250000e+05,
+              8.255822750000e+05,
+              1.080562575000e+06,
+              1.208068725000e+06,
+              7.580886000000e+05,
+              1.106143700000e+06
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.792414423481e+00,
+            "p": 2.849501529802e-01,
+            "t": 6.021114466343e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.792414423481e+00,
+            "p": 7.150498470198e-01,
+            "t": -6.021114466343e-01
+          },
+          "delta": 1.145741512224e+00,
+          "detection": {
+            "df": 9.864201692608e+00,
+            "p": 1.761072095964e-03,
+            "t": 3.808719351469e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "cv_relative",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "register_aggregate/first",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": true,
+        "delta_agreement": false,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 6.012842333282e+00,
+        "physical": {
+          "B1": {
+            "cv": 2.826454369553e-01,
+            "mean_ns": 2.100504166667e+03,
+            "median_ns": 2.181262500000e+03,
+            "n": 6,
+            "sample_stdev_ns": 5.936979180140e+02,
+            "values_ns": [
+              1.352025000000e+03,
+              1.454200000000e+03,
+              2.235350000000e+03,
+              2.127175000000e+03,
+              2.666700000000e+03,
+              2.767575000000e+03
+            ]
+          },
+          "B2": {
+            "cv": 3.164536588532e-01,
+            "mean_ns": 1.771366666667e+03,
+            "median_ns": 1.535487500000e+03,
+            "n": 6,
+            "sample_stdev_ns": 5.605554628372e+02,
+            "values_ns": [
+              2.265575000000e+03,
+              1.292600000000e+03,
+              1.341700000000e+03,
+              2.657350000000e+03,
+              1.627125000000e+03,
+              1.443850000000e+03
+            ]
+          },
+          "V": {
+            "cv": 1.434205354992e-01,
+            "mean_ns": 3.501058333333e+03,
+            "median_ns": 3.657262500000e+03,
+            "n": 6,
+            "sample_stdev_ns": 5.021236609807e+02,
+            "values_ns": [
+              3.737500000000e+03,
+              4.084425000000e+03,
+              2.748975000000e+03,
+              3.805175000000e+03,
+              3.053250000000e+03,
+              3.577025000000e+03
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.967184146789e+00,
+            "p": 1.734075350723e-01,
+            "t": 9.873880786618e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.967184146789e+00,
+            "p": 8.265924649277e-01,
+            "t": -9.873880786618e-01
+          },
+          "delta": 6.766723399866e-01,
+          "detection": {
+            "df": 9.731910032326e+00,
+            "p": 6.995334022607e-04,
+            "t": 4.412040884950e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.439924156463e-01,
+            "mean_ns": 1.214741250000e+04,
+            "median_ns": 1.311558750000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.963876519727e+03,
+            "values_ns": [
+              9.090750000000e+03,
+              1.330725000000e+04,
+              7.988600000000e+03,
+              1.562397500000e+04,
+              1.292392500000e+04,
+              1.394997500000e+04
+            ]
+          },
+          "B2": {
+            "cv": 1.807461681579e-01,
+            "mean_ns": 9.415579166667e+03,
+            "median_ns": 9.329662500000e+03,
+            "n": 6,
+            "sample_stdev_ns": 1.701829855363e+03,
+            "values_ns": [
+              8.550975000000e+03,
+              6.969700000000e+03,
+              1.010835000000e+04,
+              8.484300000000e+03,
+              1.095945000000e+04,
+              1.142070000000e+04
+            ]
+          },
+          "V": {
+            "cv": 1.847812170758e-01,
+            "mean_ns": 1.343370000000e+04,
+            "median_ns": 1.330682500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.482295435832e+03,
+            "values_ns": [
+              9.894825000000e+03,
+              1.204162500000e+04,
+              1.678440000000e+04,
+              1.423540000000e+04,
+              1.526770000000e+04,
+              1.237825000000e+04
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 7.973709549740e+00,
+            "p": 4.302692193694e-02,
+            "t": 1.957914568143e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 7.973709549740e+00,
+            "p": 9.569730780631e-01,
+            "t": -1.957914568143e+00
+          },
+          "delta": 1.458093280229e-02,
+          "detection": {
+            "df": 9.701269516090e+00,
+            "p": 2.173177540536e-01,
+            "t": 8.149782768382e-01
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "delta_agreement",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "register_predicate/first",
+      "category": "compute/callback",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": true,
+        "delta_agreement": false,
+        "detection_physical": true,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 5.971641050353e+00,
+        "physical": {
+          "B1": {
+            "cv": 2.924433770195e-01,
+            "mean_ns": 1.766325000000e+03,
+            "median_ns": 1.737987500000e+03,
+            "n": 6,
+            "sample_stdev_ns": 5.165500479140e+02,
+            "values_ns": [
+              1.214500000000e+03,
+              1.273075000000e+03,
+              2.127050000000e+03,
+              1.967625000000e+03,
+              2.507350000000e+03,
+              1.508350000000e+03
+            ]
+          },
+          "B2": {
+            "cv": 3.460447960817e-01,
+            "mean_ns": 1.626754166667e+03,
+            "median_ns": 1.366750000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 5.629298138793e+02,
+            "values_ns": [
+              2.280175000000e+03,
+              1.145775000000e+03,
+              1.204150000000e+03,
+              2.396925000000e+03,
+              1.464700000000e+03,
+              1.268800000000e+03
+            ]
+          },
+          "V": {
+            "cv": 1.436971381802e-01,
+            "mean_ns": 3.094591666667e+03,
+            "median_ns": 3.284825000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 4.446839663364e+02,
+            "values_ns": [
+              3.338400000000e+03,
+              3.519775000000e+03,
+              2.422925000000e+03,
+              3.394825000000e+03,
+              2.660375000000e+03,
+              3.231250000000e+03
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.926969750826e+00,
+            "p": 3.320684474842e-01,
+            "t": 4.474765374816e-01
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.926969750826e+00,
+            "p": 6.679315525158e-01,
+            "t": -4.474765374816e-01
+          },
+          "delta": 8.900164701990e-01,
+          "detection": {
+            "df": 9.783673380956e+00,
+            "p": 4.002284361301e-04,
+            "t": 4.773493716735e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 2.018646312942e-01,
+            "mean_ns": 1.046298750000e+04,
+            "median_ns": 1.037863750000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.112107113924e+03,
+            "values_ns": [
+              1.026877500000e+04,
+              9.721850000000e+03,
+              7.154200000000e+03,
+              1.048850000000e+04,
+              1.353947500000e+04,
+              1.160512500000e+04
+            ]
+          },
+          "B2": {
+            "cv": 2.005077100508e-01,
+            "mean_ns": 9.237866666667e+03,
+            "median_ns": 9.060375000000e+03,
+            "n": 6,
+            "sample_stdev_ns": 1.852263491088e+03,
+            "values_ns": [
+              8.494725000000e+03,
+              6.877025000000e+03,
+              1.102417500000e+04,
+              9.626025000000e+03,
+              7.798025000000e+03,
+              1.160722500000e+04
+            ]
+          },
+          "V": {
+            "cv": 2.175545076924e-01,
+            "mean_ns": 1.257115833333e+04,
+            "median_ns": 1.254840000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.734912162331e+03,
+            "values_ns": [
+              8.328150000000e+03,
+              1.278640000000e+04,
+              1.628330000000e+04,
+              1.449262500000e+04,
+              1.122607500000e+04,
+              1.231040000000e+04
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.832476788916e+00,
+            "p": 1.554707116715e-01,
+            "t": 1.068229113727e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.832476788916e+00,
+            "p": 8.445292883285e-01,
+            "t": -1.068229113727e+00
+          },
+          "delta": 2.090604378465e-01,
+          "detection": {
+            "df": 9.399262212002e+00,
+            "p": 8.393228457841e-02,
+            "t": 1.494396310302e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "delta_agreement",
+        "detection_simulated"
+      ]
+    },
+    {
+      "audit": {
+        "physical": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        },
+        "simulated": {
+          "B1": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "B2": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          },
+          "V": {
+            "attempts": 6,
+            "invalid_attempts": 0,
+            "valid_runs": 6
+          }
+        }
+      },
+      "candidate": "ios-simulator-v1",
+      "case": "set_roundtrip/2",
+      "category": "allocation/conversion",
+      "checks": {
+        "aa_physical_b1_gt_b2": true,
+        "aa_physical_b2_gt_b1": true,
+        "aa_simulated_b1_gt_b2": true,
+        "aa_simulated_b2_gt_b1": true,
+        "closeness": false,
+        "cv_absolute": false,
+        "cv_relative": true,
+        "delta_agreement": true,
+        "detection_physical": false,
+        "detection_simulated": false
+      },
+      "metrics": {
+        "closeness_ratio": 1.588727452174e+00,
+        "physical": {
+          "B1": {
+            "cv": 4.815057224503e-01,
+            "mean_ns": 1.567328750000e+04,
+            "median_ns": 1.281720000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 7.546777620858e+03,
+            "values_ns": [
+              1.134895000000e+04,
+              1.285627500000e+04,
+              1.277812500000e+04,
+              1.228645000000e+04,
+              1.377717500000e+04,
+              3.099275000000e+04
+            ]
+          },
+          "B2": {
+            "cv": 1.210742067422e-01,
+            "mean_ns": 1.242680416667e+04,
+            "median_ns": 1.181102500000e+04,
+            "n": 6,
+            "sample_stdev_ns": 1.504565456819e+03,
+            "values_ns": [
+              1.128442500000e+04,
+              1.135942500000e+04,
+              1.118435000000e+04,
+              1.485325000000e+04,
+              1.361675000000e+04,
+              1.226262500000e+04
+            ]
+          },
+          "V": {
+            "cv": 2.200107345731e-01,
+            "mean_ns": 2.878003750000e+04,
+            "median_ns": 2.744270000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 6.331917191415e+03,
+            "values_ns": [
+              2.757290000000e+04,
+              4.109685000000e+04,
+              2.370317500000e+04,
+              2.438130000000e+04,
+              2.731250000000e+04,
+              2.861350000000e+04
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 5.396838241709e+00,
+            "p": 1.727447053683e-01,
+            "t": 1.033388235355e+00
+          },
+          "aa_b2_gt_b1": {
+            "df": 5.396838241709e+00,
+            "p": 8.272552946317e-01,
+            "t": -1.033388235355e+00
+          },
+          "delta": 1.141083856068e+00,
+          "detection": {
+            "df": 9.706998064179e+00,
+            "p": 4.462637048756e-03,
+            "t": 3.258963687461e+00
+          }
+        },
+        "simulated": {
+          "B1": {
+            "cv": 7.395893277768e-01,
+            "mean_ns": 3.028991250000e+04,
+            "median_ns": 2.036303750000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.240209602429e+04,
+            "values_ns": [
+              1.636555000000e+04,
+              1.556872500000e+04,
+              2.309477500000e+04,
+              1.763130000000e+04,
+              3.569060000000e+04,
+              7.338852500000e+04
+            ]
+          },
+          "B2": {
+            "cv": 7.029949238583e-01,
+            "mean_ns": 3.117430833333e+04,
+            "median_ns": 1.978541250000e+04,
+            "n": 6,
+            "sample_stdev_ns": 2.191538051313e+04,
+            "values_ns": [
+              1.555630000000e+04,
+              6.937712500000e+04,
+              1.648645000000e+04,
+              1.893230000000e+04,
+              4.605515000000e+04,
+              2.063852500000e+04
+            ]
+          },
+          "V": {
+            "cv": 7.049726134513e-01,
+            "mean_ns": 4.893402916667e+04,
+            "median_ns": 3.220670000000e+04,
+            "n": 6,
+            "sample_stdev_ns": 3.449715042833e+04,
+            "values_ns": [
+              3.053232500000e+04,
+              3.206565000000e+04,
+              3.234775000000e+04,
+              1.178197500000e+05,
+              3.142615000000e+04,
+              4.941255000000e+04
+            ]
+          },
+          "aa_b1_gt_b2": {
+            "df": 9.995178900087e+00,
+            "p": 5.268733120925e-01,
+            "t": -6.912515176555e-02
+          },
+          "aa_b2_gt_b1": {
+            "df": 9.995178900087e+00,
+            "p": 4.731266879075e-01,
+            "t": 6.912515176555e-02
+          },
+          "delta": 5.816255310633e-01,
+          "detection": {
+            "df": 8.580352038241e+00,
+            "p": 1.485128855085e-01,
+            "t": 1.110271407585e+00
+          }
+        }
+      },
+      "outcome": "rejected",
+      "physical": "ios-physical-v1",
+      "platform": "ios",
+      "reasons": [
+        "closeness",
+        "cv_absolute",
+        "detection_physical",
+        "detection_simulated"
+      ]
+    }
+  ],
+  "configurations": [
+    {
+      "blocking_reason": null,
+      "build": {
+        "artifact_sha256": {
+          "B1": "4521a60f23349848612fe78588ee393eb350245ea932f9aeee19427c7ac0edd7",
+          "B2": "4521a60f23349848612fe78588ee393eb350245ea932f9aeee19427c7ac0edd7",
+          "V": "4521a60f23349848612fe78588ee393eb350245ea932f9aeee19427c7ac0edd7"
+        },
+        "binding_revision": "a566cb246a235b10a93e27b571b7a8cbdc6aea36",
+        "core_revision": "b0d2d014d57c90680a6adc1d10e749a3db5df40c",
+        "harness_revision": "a566cb246a235b10a93e27b571b7a8cbdc6aea36",
+        "profile": "Release",
+        "slowdown_flag": "repeat-timed-operation-twice"
+      },
+      "id": "ios-physical-v1",
+      "kind": "physical",
+      "platform": "ios",
+      "reference": null,
+      "runtime": {
+        "architecture": "arm64",
+        "machine": "iPhone15,4",
+        "model": "iPhone 15",
+        "os": "iOS 18.5",
+        "os_build": "22F76",
+        "provider": "Device Farm"
+      }
+    },
+    {
+      "blocking_reason": null,
+      "build": {
+        "artifact_sha256": {
+          "B1": "8da7edfc8fa2120695fde83660e5f96dde459443b4e898b7d2d374bd36129990",
+          "B2": "8da7edfc8fa2120695fde83660e5f96dde459443b4e898b7d2d374bd36129990",
+          "V": "8da7edfc8fa2120695fde83660e5f96dde459443b4e898b7d2d374bd36129990"
+        },
+        "binding_revision": "a566cb246a235b10a93e27b571b7a8cbdc6aea36",
+        "core_revision": "b0d2d014d57c90680a6adc1d10e749a3db5df40c",
+        "harness_revision": "a566cb246a235b10a93e27b571b7a8cbdc6aea36",
+        "profile": "Release",
+        "slowdown_flag": "repeat-timed-operation-twice"
+      },
+      "id": "ios-simulator-v1",
+      "kind": "simulated",
+      "platform": "ios",
+      "reference": "ios-physical-v1",
+      "runtime": {
+        "abi": "aarch64-apple-ios-sim",
+        "host_arch": "arm64",
+        "host_os": "ProductName:\t\tmacOS\nProductVersion:\t\t15.8.2\nBuildVersion:\t\t24H232",
+        "provider": "GitHub Actions",
+        "runner_arch": "ARM64",
+        "runner_image": "macos15",
+        "runner_image_version": "20261104.0514.1",
+        "runner_label": "macos-15",
+        "runner_os": "macOS",
+        "simulator_device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
+        "simulator_runtime": "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+        "simulator_runtime_build": "22G86",
+        "simulator_runtime_version": "18.6",
+        "translation": "none",
+        "xcode": "Xcode 16.4\nBuild version 16F6"
+      }
+    }
+  ],
+  "protocol": "858-mobile-ac12-n6-v1",
+  "schema_version": 1,
+  "synthetic": false
+}

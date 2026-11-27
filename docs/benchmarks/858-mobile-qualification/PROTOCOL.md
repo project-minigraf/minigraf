@@ -1,5 +1,13 @@
 # #858 mobile qualification protocol — pre-registration
 
+> **Status overlay, 2026-11-27 (the pre-registered text below is unchanged).** This protocol
+> and the decision tooling were committed at `b6b07e314` and pushed on 2026-11-19 at
+> 09:11 UTC, before any qualification timing. The collection is complete on both
+> platforms and every case has a decision (`REPORT.md`, `reports/`). The status
+> paragraph and the unchecked pre-timing checklist boxes below describe the state
+> at the time of pre-registration, not the current state. Later changes are
+> recorded only in the deviation log at the end; no gate or threshold changed.
+
 Status: **no qualification timing collected here; not yet committed**. The
 requesting user fixed the parameters below before timing. Commit this protocol,
 the completed configuration pins, schema and decision tooling **before any
@@ -246,3 +254,46 @@ activated by this report generator, including when synthetic cases pass.
    string for the pin. That probe run is excluded from the dataset (it is not a
    registered slot), retained as evidence with its Device Farm minutes, and no
    timing value from it is used in any decision.
+6. **Physical iOS: parser defect on the first batch, resolved without
+   altering any gate.** The first nine physical iOS attempts (run slot 1, sets
+   B1, V and B2, three attempts each) were classified "no valid stream" at the
+   time because the collector did not decode the octal escapes (for example
+   `\134`) in the iOS device syslog and did not require the exact
+   `MinigrafBench:` marker, so the mirrored syslog and Automation Output streams
+   looked conflicting. The collector was fixed (octal decoding, exact marker,
+   mirrored-stream equality) with regression tests and the retained artifacts
+   were re-parsed offline: all nine streams are valid. The retries were
+   therefore scheduled by the defect, not by any value. Rule applied, fixed
+   before any decision was computed: for each slot the **earliest valid
+   attempt (by attempt number only, never by value)** is the run's value; every
+   later attempt is excluded from the decision input and listed in the assembled
+   `superseded_attempts` with its reason (seven attempts: slot 1 attempts 2 and 3
+   in each of B1, V and B2, and the abandoned slot 2 B1 attempt 2). The assembler
+   keeps its original protocol rejection by default; the rule is the opt-in
+   `--earliest-valid-attempt`. All superseded attempts and values remain in
+   the archive. The user approved this rule (option A) before the decision was run.
+7. **Oversized device syslog.** An iOS device syslog above 128 MiB is not a
+   stream the collector needs, but its download aborted collection once. The
+   collector now records such non-stream artifacts as `oversized_not_retained`
+   with its size and continues. Streams are never skipped this way.
+8. **Hand-abandoned attempt 02-B1-2.** One attempt stuck in the artifact phase
+   was marked abandoned by hand after the collector failed on item 7. The
+   state file backup taken before the edit was lost in the reboot (item 9).
+   The attempt produced no used value; it is listed in the archive as a superseded
+   historical attempt with the explicit recovery input.
+9. **Reboot and state rebuild.** A memory-pressure reboot wiped `/tmp` (tmpfs)
+   in the middle of the physical iOS series, including the collection state,
+   collector sources and downloaded artifacts. The state was rebuilt from
+   Device Farm (the runs and artifacts remain retrievable for 30 days, retrieval
+   costs no device minutes) with a read-only `rebuild-state` command and the
+   simulator evidence from the CI artifacts. Run names, pins and slot
+   identities were authenticated against the frozen inputs; Android runtime pins
+   were taken from the recorded pre-timing smoke and checked against the downloaded
+   runtime of every attempt (two Android attempts on a different Pixel build were
+   again rejected for identity, as in item 4). The rebuilt collector was
+   recreated from the session's sources; its source is archived as
+   `data/collection-tooling.tgz`. The final four iOS slots ran after the rebuild.
+   One smoke fixture is only partial. No gate or threshold was changed.
+10. **Transient collection errors.** Network `URLError`s during artifact
+    downloads stopped the resumable collector several times; each was resumed in
+    place with no second submission.
