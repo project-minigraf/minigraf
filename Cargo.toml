@@ -34,7 +34,6 @@ serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1.0", features = ["alloc"] }
 crc32fast = "1.4"
 anyhow = "1.0"
-chrono = { version = "0.4", features = ["serde", "std"], default-features = false }
 uuid = { version = "1.0", features = ["v5", "serde"] }
 regex-lite = "0.1.9"
 serde_json = { version = "1.0", optional = true }

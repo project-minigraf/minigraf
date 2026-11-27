@@ -2,6 +2,29 @@
 
 ## Coverage Summary
 
+**#900 strict UTC timestamps**: `src/temporal.rs` has 13 tests (seven added),
+including all 328 frozen chrono 0.4.45 vectors in
+`src/temporal/chrono_vectors.rs`, whole-second vector round trips, strict syntax
+and INT-004 rejections, Gregorian leap/calendar/clock boundaries, formatter range
+edges and INT-005, and UTF-8 insertions at every byte offset. Two native proptests
+cover arbitrary in-range milliseconds (flooring to seconds) and arbitrary strings
+(no panics). `tests/bitemporal_test.rs` has 13 tests (one added), checking strict
+forms through `:as-of`, `:valid-at`, and both statement/per-fact
+`:valid-from`/`:valid-to` maps. `examples/perf_envelope.rs` has two tests (one
+added), including millisecond formatting and its unsigned transaction-time range.
+`src/db.rs` retains 55 native unit tests (plus one WASI-only test); its pending-metadata test now formats the
+millisecond timestamp without chrono. The existing large-transaction window test
+continues to exercise the whole-second formatter. No error codes were added or
+removed. Browser-only test counts are unchanged.
+
+Verification on 2026-11-27: full default `cargo test` passes 2,158 tests with
+23 ignored and zero failures. Formatting, strict `--all-targets --all-features`
+Clippy, the browser WASM library build, and all four cargo-deny checks pass.
+Removing chrono shrinks the dist binary by 22,704 bytes (measured with the same
+local toolchain before and after). Root and fuzz resolved lockfiles contain no
+chrono package; archived golden fixture generators and audit evidence are
+unchanged.
+
 **#894 evaluator follow-up**: the nonempty smaller-import abort regression raises
 the flush suite to 14 browser-only tests (95 main-thread / 128 dedicated-worker
 tests in the inventory). Native counts are unchanged. The test checks failed-handle
@@ -19,12 +42,12 @@ are documented in the [PR 1 evidence](testing/894-idb-flush-recovery.md).
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,149 | 2,187 |
+| **Active** | 2,158 | 2,196 |
 | **Ignored** | 23 | 32 |
-| **Total** | 2,172 | 2,219 |
+| **Total** | 2,181 | 2,228 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #441, #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871, #872 and #824 (Linux). Verification results below identify which suites ran.
+including #900, #441, #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871, #872 and #824 (Linux). Verification results below identify which suites ran.
 
 **#441 verification (2026-11-14)**: the full native default suite passes
 (2,149 active, 23 ignored), including the grammar verifier and eight new

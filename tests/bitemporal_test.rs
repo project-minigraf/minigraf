@@ -455,3 +455,29 @@ fn test_retraction_cancels_prior_intervals_reassertion_survives() {
     assert_eq!(rows_2025.len(), 1, "re-assertion after retraction visible");
     assert_eq!(rows_2025[0][0], Value::Integer(100000));
 }
+
+#[test]
+fn test_strict_timestamp_forms_through_datalog() {
+    let db = Minigraf::in_memory().unwrap();
+    for keyword in [":as-of", ":valid-at"] {
+        let query = format!(r#"(query [:find ?v {keyword} "2023-6-1" :where [:a :n ?v]])"#);
+        assert_eq!(db.execute(&query).unwrap_err().code(), "INT-004");
+    }
+    for keyword in [":valid-from", ":valid-to"] {
+        for statement in [
+            format!(r#"(transact {{{keyword} "2023-6-1"}} [[:a :n 1]])"#),
+            format!(r#"(transact [[:a :n 1 {{{keyword} "2023-6-1"}}]])"#),
+        ] {
+            assert_eq!(db.execute(&statement).unwrap_err().code(), "INT-004");
+        }
+    }
+    exec(
+        &db,
+        r#"(transact {:valid-from "2023-06-01" :valid-to "9999-12-31T23:59:59.999Z"} [[:a :n 1]])"#,
+    );
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :as-of "9999-12-31T23:59:59.999Z" :valid-at "2023-06-01T00:00:00Z" :where [:a :n ?v]])"#,
+    ));
+    assert!(rows == vec![vec![Value::Integer(1)]]);
+}

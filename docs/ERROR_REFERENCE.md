@@ -3854,26 +3854,34 @@ but fires at the API layer's own materialization step.
 **Error text**: `invalid timestamp: {}`
 
 **Cause**: `parse_timestamp` (used for `:as-of`, `:valid-at`, `:valid-from`,
-and `:valid-to` date strings) rejected the input — either a timezone offset
-was present (only UTC `Z` timestamps are supported, to avoid chrono's local
-timezone handling, GHSA-wcg3-cvx6-7396), or the string did not parse as an
-RFC 3339 datetime or `YYYY-MM-DD` date.
+and `:valid-to` date strings) rejected an invalid calendar date, clock field or
+format. From v3.0.0, accepted forms are exactly `YYYY-MM-DD` (midnight UTC),
+`YYYY-MM-DDTHH:MM:SSZ`, and `YYYY-MM-DDTHH:MM:SS.fZ`, where `f` is 1–9 ASCII
+digits. Fractions are truncated to milliseconds, never rounded up, including
+before 1970 (`1969-12-31T23:59:59.9999Z` is -1 ms).
 
 **Resolution**:
-- Use a UTC timestamp like `"2024-01-15T10:00:00Z"` or a bare date like
-  `"2024-01-15"`. Do not include a timezone offset such as `+05:30`.
+- Use ASCII digits only: four year digits (0000–9999) and two digits for every
+  other field. Use a valid Gregorian day (including the century leap-year rule), hours 00–23,
+  minutes and seconds 00–59, and uppercase `T` and `Z`.
+- Do not include whitespace, timezone offsets (including `-00:00`), a `UTC`
+  suffix, lowercase `t`/`z`, signed or short years, single-digit fields, leap
+  seconds, comma fractions, empty fractions, more than nine fractional digits,
+  or trailing characters.
 
 ### INT-005 Millisecond value outside supported datetime range
 
 **Error text**: `millisecond value {} is outside the supported datetime range`
 
-**Cause**: `millis_to_timestamp_string` was given a millisecond value
-outside the range chrono can represent as a UTC datetime. `i64::MAX`
-(`VALID_TIME_FOREVER`) must never be passed to this function directly —
-callers should check for the sentinel before formatting.
+**Cause**: `millis_to_timestamp_string` was given a value outside
+0000-01-01T00:00:00Z through 9999-12-31T23:59:59.999Z, inclusive
+(-62,167,219,200,000 through 253,402,300,799,999 Unix milliseconds).
+The output is `YYYY-MM-DDTHH:MM:SSZ`, flooring to whole seconds.
+`i64::MAX` (`VALID_TIME_FOREVER`) is outside this range.
 
 **Resolution**:
-- Check for `VALID_TIME_FOREVER` before formatting a `valid_to` value.
+- Check for `VALID_TIME_FOREVER` before formatting a `valid_to` value and
+  ensure other millisecond values fall within the supported range.
 
 ### INT-006 Internal parser error: expected token
 

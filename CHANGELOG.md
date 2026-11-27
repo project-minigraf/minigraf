@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Strict UTC timestamps (v3.0.0 behaviour change, #900)**: removed the unmaintained `chrono` dependency (RUSTSEC-2026-0543) without a replacement crate. Accept only `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM:SSZ`, or `YYYY-MM-DDTHH:MM:SS.fZ` with 1–9 ASCII fractional digits, truncated to milliseconds (also before 1970), and years 0000–9999. Newly rejected with INT-004: lowercase `z`, the `UTC` suffix, any whitespace, single-digit fields, one- or two-digit years, negative years, leap seconds, more than nine fractional digits, empty fractions and comma fractions. Offsets, lowercase `t`, missing seconds, five-digit years, invalid calendar/clock fields, non-ASCII digits and trailing characters remain rejected. Formatting keeps whole-second UTC output and returns INT-005 outside the same year range.
+
 - **v3 binary-size CI budget**: raise the enforced distribution-binary limit from 1,240 to 1,250 KiB (1,280,000 bytes). Unchanged production source measured 1,242 KiB after CI moved to Rust 1.100.0 and a newer runner image; the additional headroom changes no production code or build settings.
 
 - **INT-001 text** (#824): `a WriteTransaction is already in progress on this thread; use tx.execute() instead` now reads `a write transaction is already in progress on this thread; use tx.execute() instead`, since owned and browser transactions raise it too. The code and the calls that raise it for a borrowed transaction are unchanged.
