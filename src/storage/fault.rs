@@ -1,8 +1,8 @@
 //! Test-only fault plan for the file and WAL I/O paths (#390).
 //!
-//! Every write and sync that reaches the disk through `FileBackend`, the WAL
+//! Every page read, write and sync through `FileBackend`, the WAL
 //! writer and `sync_parent_dir` asks [`on`] first. With a plan armed on the
-//! calling thread, the `at`-th call of the plan's kind (writes or syncs,
+//! calling thread, the `at`-th call of the plan's kind (reads, writes or syncs,
 //! counted from 0) fails the way [`Fault`] says. A [`Fault::Enospc`] plan
 //! keeps failing every later write too, like a full disk. With no plan
 //! armed, [`on`] returns [`Action::Proceed`] and the call runs as usual.
@@ -16,6 +16,8 @@ use std::io;
 /// Where an I/O call happens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Site {
+    /// `FileBackend::read_page` (cache misses only).
+    PageRead,
     /// `FileBackend::write_page`.
     PageWrite,
     /// `FileBackend::sync`.
@@ -44,6 +46,8 @@ impl Site {
 /// How the chosen call fails.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Fault {
+    /// A page read fails with EIO.
+    ReadEio,
     /// The write fails with EIO and writes nothing.
     Eio,
     /// The write stores its first `n` bytes, then fails with EIO: a short
@@ -63,9 +67,12 @@ pub(crate) enum Fault {
 impl Fault {
     fn targets(self, site: Site) -> bool {
         match self {
+            Fault::ReadEio => site == Site::PageRead,
             Fault::Eio | Fault::Torn(_) => site.is_write(),
             Fault::Enospc => site.is_write() && site != Site::WalRemove,
-            Fault::SyncEio | Fault::SyncLost => !site.is_write(),
+            Fault::SyncEio | Fault::SyncLost => {
+                matches!(site, Site::PageSync | Site::WalSync | Site::DirSync)
+            }
         }
     }
 }
@@ -147,7 +154,7 @@ pub(crate) fn on(site: Site) -> Action {
         }
         plan.tripped = Some(site);
         match plan.fault {
-            Fault::Eio | Fault::SyncEio => Action::Fail(eio()),
+            Fault::ReadEio | Fault::Eio | Fault::SyncEio => Action::Fail(eio()),
             Fault::Torn(bytes) => Action::Tear(bytes),
             Fault::Enospc => Action::Fail(io::Error::from(io::ErrorKind::StorageFull)),
             Fault::SyncLost => Action::Lose,

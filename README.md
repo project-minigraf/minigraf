@@ -158,6 +158,18 @@ let mut tx = db.begin_write()?;
 tx.execute(r#"(transact [[:alice :person/age 31]])"#)?;
 tx.commit()?;
 
+// v3: bounded incoming scalar Ref links, including future/expired assertions.
+// Require Complete before staging a cascading delete; Exhausted has no links.
+use minigraf::{IncomingRefLimits, IncomingRefs};
+let mut tx = db.begin_write()?;
+let target = uuid::Uuid::nil();
+match tx.incoming_refs(target, IncomingRefLimits::new(100, 10_000))? {
+    IncomingRefs::Complete { links, .. } => { /* inspect every link before deleting */ }
+    IncomingRefs::Exhausted { budget, .. } => { /* retry or abandon the delete */ }
+    _ => { /* future outcomes */ }
+}
+tx.rollback();
+
 // Owned transaction — Send + 'static, so it can live in an object or move to
 // another thread; every language binding's transaction is one
 let mut tx = db.begin_write_owned()?;

@@ -699,3 +699,33 @@ fn owned_tx_user_function_off_the_begin_thread() {
 }
 
 const NAMES_Q: &str = "(query [:find ?n :where [?e :person/name ?n]])";
+
+#[test]
+fn owned_incoming_refs_cross_thread_and_guards() {
+    use minigraf::{IncomingRefLimits, IncomingRefs};
+    let db = Minigraf::in_memory().unwrap();
+    let target = uuid::Uuid::from_u128(9);
+    let mut tx = db.begin_write_owned().unwrap();
+    tx.execute(&format!("(transact [[:source :ref #uuid \"{target}\"]])"))
+        .unwrap();
+    assert_eq!(
+        db.execute("(query [:find ?e :where [?e :ref ?v]])")
+            .unwrap_err()
+            .code(),
+        "INT-001"
+    );
+    let reader = db.clone();
+    let tx = thread::spawn(move || {
+        assert!(rows(&reader).is_empty());
+        let out = tx
+            .incoming_refs(target, IncomingRefLimits::new(10, 10))
+            .unwrap();
+        assert!(matches!(out, IncomingRefs::Complete { links, .. } if links.len() == 1));
+        tx
+    })
+    .join()
+    .unwrap();
+    assert_eq!(db.begin_write().err().unwrap().code(), "INT-001");
+    tx.commit().unwrap();
+    assert_eq!(rows(&db).len(), 1);
+}

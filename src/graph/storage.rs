@@ -65,6 +65,7 @@ struct PendingStore {
     /// fact sets (e.g. 1M-fact benchmark setup).
     keys: HashSet<PendingKey>,
     indexes: Indexes,
+    incoming: crate::incoming::RefPositions,
     /// The first position whose fact's `tx_count` or `tx_id` is below the
     /// previous fact's, or whose `tx_id` differs from it within one
     /// `tx_count`; `usize::MAX` if none (#551 plan, decision 6). Before it,
@@ -78,6 +79,7 @@ impl PendingStore {
             facts: Vec::with_capacity(capacity),
             keys: HashSet::new(),
             indexes: Indexes::new(),
+            incoming: crate::incoming::RefPositions::default(),
             first_irregular: usize::MAX,
         }
     }
@@ -88,6 +90,12 @@ impl PendingStore {
 
     /// Append `fact` unless it is already here; returns whether it was added.
     fn push(&mut self, fact: Fact) -> bool {
+        self.push_indexed::<true>(fact)
+    }
+
+    fn push_indexed<const INCOMING: bool>(&mut self, fact: Fact) -> bool {
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::incoming::enumerated_many(1);
         if !self.keys.insert(pending_key(&fact)) {
             return false;
         }
@@ -95,6 +103,9 @@ impl PendingStore {
             && self.facts.last().is_some_and(|p| out_of_order(p, &fact))
         {
             self.first_irregular = self.facts.len();
+        }
+        if INCOMING {
+            self.incoming.insert(&fact, self.facts.len());
         }
         self.indexes.insert(&fact, self.facts.len());
         self.facts.push(fact);
@@ -106,7 +117,7 @@ impl PendingStore {
     fn of(facts: Vec<Fact>) -> Self {
         let mut store = PendingStore::empty(facts.len());
         for fact in facts {
-            store.push(fact);
+            store.push_indexed::<false>(fact);
         }
         store
     }
@@ -114,6 +125,8 @@ impl PendingStore {
     /// Append `facts` without the duplicate check (fresh writes: each has a
     /// new tx_count, so none can repeat a stored one).
     fn extend(&mut self, facts: Vec<Fact>) {
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::incoming::enumerated_many(facts.len());
         let base = self.facts.len();
         for (i, fact) in facts.iter().enumerate() {
             let prev = match i.checked_sub(1) {
@@ -124,6 +137,7 @@ impl PendingStore {
                 self.first_irregular = base + i;
             }
             self.keys.insert(pending_key(fact));
+            self.incoming.insert(fact, base + i);
             self.indexes.insert(fact, base + i);
         }
         self.facts.extend(facts);
@@ -164,9 +178,9 @@ struct FactData {
 ///
 /// # Storage Model (Phase 3-6)
 ///
-/// This is a simple in-memory store using `Vec<Fact>` plus four covering
-/// indexes (EAVT, AEVT, AVET, VAET). For persistence, see `PersistentFactStorage`
-/// which wraps this with a "load all, save all" strategy.
+/// Pending facts use `Vec<Fact>`, EAVT/AEVT indexes and target-keyed positions
+/// for scalar refs. `PersistentFactStorage` checkpoints them into four
+/// durable covering indexes (EAVT, AEVT, AVET, VAET).
 ///
 /// # Examples
 /// ```ignore
@@ -248,10 +262,15 @@ impl<'a> PendingView<'a> {
     fn extend(&self, from: usize, to: usize, out: &mut Vec<Fact>) {
         let to = to.min(self.total());
         let first = self.p.facts.get(from.min(self.len)..to.min(self.len));
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::incoming::enumerated_many(first.map_or(0, <[Fact]>::len));
         out.extend_from_slice(first.unwrap_or(&[]));
         if let Some(s) = self.staged {
             let (from, to) = (from.saturating_sub(self.len), to.saturating_sub(self.len));
-            out.extend_from_slice(s.facts.get(from.min(to)..to).unwrap_or(&[]));
+            let facts = s.facts.get(from.min(to)..to).unwrap_or(&[]);
+            #[cfg(any(test, feature = "test-hooks"))]
+            crate::incoming::enumerated_many(facts.len());
+            out.extend_from_slice(facts);
         }
     }
 
@@ -284,6 +303,8 @@ fn merged<'a, K: Ord + 'a>(
     pending: impl Iterator<Item = (&'a K, &'a usize)>,
     staged: Option<impl Iterator<Item = (&'a K, &'a usize)>>,
 ) -> impl Iterator<Item = (&'a K, usize)> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    let pending = pending.inspect(|_| crate::incoming::enumerated_many(1));
     let mut a = pending
         .filter(move |&(_, &pos)| pos < len)
         .map(|(k, &pos)| (k, pos))
@@ -291,7 +312,11 @@ fn merged<'a, K: Ord + 'a>(
     let mut b = staged
         .into_iter()
         .flatten()
-        .map(move |(k, &pos)| (k, pos.saturating_add(len)))
+        .map(move |(k, &pos)| {
+            #[cfg(any(test, feature = "test-hooks"))]
+            crate::incoming::enumerated_many(1);
+            (k, pos.saturating_add(len))
+        })
         .peekable();
     std::iter::from_fn(move || match (a.peek(), b.peek()) {
         (Some((ka, _)), Some((kb, _))) if kb < ka => b.next(),
@@ -362,6 +387,8 @@ impl Snapshot {
     /// This snapshot with `facts` staged after its pending ones (#550 spec
     /// §7), its `now` raised to the newest of their `tx_id`s.
     pub(crate) fn with_staged(mut self, facts: Vec<Fact>) -> Self {
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::incoming::enumerated_many(facts.len());
         if let Some(newest) = facts.iter().map(|f| f.tx_id.cast_signed()).max() {
             self.now = self.now.max(newest);
             self.staged = Some(Arc::new(PendingStore::of(facts)));
@@ -456,6 +483,19 @@ impl Snapshot {
     /// Wall-clock time when the snapshot was taken (Unix ms).
     pub(crate) fn now(&self) -> i64 {
         self.now
+    }
+
+    pub(crate) fn incoming_pending(
+        &self,
+        target: EntityId,
+        lookup: &mut crate::incoming::Lookup,
+    ) -> Result<bool> {
+        let pending = self.read_pending()?;
+        let facts = pending
+            .facts
+            .get(..self.pending_len)
+            .unwrap_or(&pending.facts);
+        Ok(pending.incoming.visit(target, facts, lookup))
     }
 
     fn read_pending(&self) -> Result<RwLockReadGuard<'_, PendingStore>> {
@@ -941,6 +981,8 @@ impl FactStorage {
     pub(crate) fn get_pending_facts(&self) -> Vec<Fact> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
         let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::incoming::enumerated_many(p.facts.len());
         p.facts.clone()
     }
 
@@ -1246,6 +1288,8 @@ pub(crate) fn check_valid_windows(facts: &[Fact], tx_id: TxId) -> Result<()> {
 
 /// The pending fact at `pos`, as indexed by `PendingStore::indexes`.
 fn pending_fact(p: &PendingStore, pos: usize) -> Result<Fact> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    crate::incoming::enumerated_many(1);
     p.facts
         .get(pos)
         .cloned()
@@ -1455,6 +1499,51 @@ impl FactStorage {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn incoming_refs_query_snapshot_skips_target_index() {
+        let target = EntityId::from_u128(9);
+        let facts = vec![Fact::new(
+            EntityId::from_u128(1),
+            ":a".into(),
+            Value::Ref(target),
+            1,
+        )];
+        let storage = FactStorage::new();
+        let snapshot = storage.snapshot().unwrap().with_staged(facts);
+        let staged = snapshot.staged.as_ref().unwrap();
+        let mut lookup = crate::incoming::Lookup::new(crate::IncomingRefLimits::new(10, 10));
+        assert!(staged.incoming.visit(target, &staged.facts, &mut lookup));
+        assert_eq!(
+            lookup.remaining(),
+            10,
+            "query-only stores need no target index"
+        );
+        assert_eq!(
+            snapshot
+                .pending_records(crate::storage::Scan::All, &TxBound::All)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn incoming_refs_pending_extend_work_is_counted() {
+        let facts = vec![Fact::new(
+            EntityId::from_u128(1),
+            ":n".into(),
+            Value::Integer(1),
+            1,
+        )];
+        let mut store = PendingStore::empty(0);
+        crate::incoming::enumeration();
+        store.extend(facts);
+        assert!(
+            crate::incoming::enumeration().0 >= 1,
+            "non-ref indexing is work too"
+        );
+    }
+
     use super::*;
 
     fn fact_at(i: u128, tx_count: u64, tx_id: u64) -> Fact {
@@ -2168,6 +2257,22 @@ mod tests {
                 .cloned()
                 .collect())
         }
+    }
+
+    #[test]
+    fn incoming_refs_default_reader_returns_int019_without_visiting() {
+        use crate::storage::CommittedReader;
+
+        let reader = MockReader(Vec::new());
+        let mut visited = false;
+        let err = reader
+            .incoming_ref_records(uuid::Uuid::from_u128(1), 1, &mut |_, _, _, _| {
+                visited = true;
+            })
+            .unwrap_err();
+
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-019");
+        assert!(!visited, "unsupported reader must not call the visitor");
     }
 
     #[test]

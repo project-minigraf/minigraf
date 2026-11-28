@@ -370,6 +370,21 @@ impl Default for LegacyHeaderV7 {
 /// query layer uses; results are in index order (eid, then iid), not insertion
 /// order.
 pub trait CommittedReader: Send + Sync {
+    /// Visit at most `max` raw scalar-ref versions for `target`. Returns
+    /// whether the range ended. No net-assert buffering or value lookahead.
+    #[doc(hidden)]
+    fn incoming_ref_records(
+        &self,
+        _target: crate::graph::types::EntityId,
+        _max: usize,
+        _visit: &mut dyn FnMut(crate::graph::types::EntityId, String, u64, bool),
+    ) -> Result<bool> {
+        Err(crate::error::err_coded!(
+            crate::error::ErrorCode::Int019,
+            "reader has no incoming-reference access"
+        ))
+    }
+
     /// Every committed fact (an EAVT scan).
     #[cfg(test)]
     fn all_facts(&self) -> Result<Vec<crate::graph::types::Fact>>;
