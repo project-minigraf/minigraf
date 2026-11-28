@@ -62,16 +62,16 @@ tests. The distribution binary is **1,270,880 bytes** (+16 bytes), below the
 failures, one-line existing crash-harness Clippy correction, and unverified lanes
 are documented in the [PR 1 evidence](testing/894-idb-flush-recovery.md).
 
-| | Default features (#924 run) | `test-hooks` (pre-#924 inventory) |
+| | Default features (#924 run) | `test-hooks` (#924 run) |
 |---|---|---|
-| **Active** | 2,188 | 2,196 |
+| **Active** | 2,188 | 2,226 |
 | **Ignored** | 23 | 32 |
-| **Total** | 2,211 | 2,228 |
+| **Total** | 2,211 | 2,258 |
 
-Default counts above come from the completed #924 Linux run, including unit,
-integration, example and doc tests. The test-hooks column preserves the last
-pre-#924 inventory; that full feature suite was not rerun for #924. Verification
-results below identify which earlier suites ran.
+Both columns come from the completed #924 runs on the same committed code with
+Rust 1.99.1 on Linux x86_64, including unit, integration, example and doc tests;
+both suites had zero failures. Verification results below identify which earlier
+suites ran.
 
 **#441 verification (2026-11-14)**: the full native default suite passes
 (2,149 active, 23 ignored), including the grammar verifier and eight new

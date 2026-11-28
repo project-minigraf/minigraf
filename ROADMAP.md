@@ -73,7 +73,7 @@ Shipped:
 
 ## v3.0.0 — File Format v8 and Data Integrity
 
-- Bounded typed incoming references (#924): core Rust transaction APIs implemented, with separate link/record limits, exact scalar Ref matching and target-local access in every storage layer. JVM bindings and the docs site remain separate deliverables. Bench-machine comparison is pending; see [acceptance evidence](docs/testing/924-incoming-refs.md).
+- Bounded typed incoming references (#924): core Rust transaction APIs implemented, with separate link/record limits, exact scalar Ref matching and target-local access in every storage layer. JVM bindings and the docs site remain separate deliverables. The measurement report shows no median regression above 5% on any of 65 IDs in either round; see [acceptance evidence](docs/testing/924-incoming-refs.md).
 
 **v3.0.0 supports file format v8 only.** Fixing #287/#371 (`EavtKey`/`AevtKey` carry no value bytes, so same-transaction multi-values collapse) bumps the format from v7 to v8. Support for v1–v6 is dropped at the same time. The v1–v6 → v7 auto-migration code in `persistent_facts.rs` can be removed when cutting this release; a v7→v8 migration replaces it. Any database opened at least once under a v1.x release will already be on v7; there are no known users on older formats. Every other layout change this release needs goes into v8 too, so there is no separate v9.
 
