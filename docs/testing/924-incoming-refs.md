@@ -26,7 +26,7 @@ Names below are executable tests; combined names cover several closely related c
 | 3 | `incoming_refs_exact_types_and_attributes` (memory, pending and durable) |
 | 4–5 | `incoming_refs_unique_pairs_and_any_valid_window`, `incoming_refs_legacy_ties_and_group_budget` |
 | 6 | `incoming_refs_statement_order_rejected_statement_and_promotion` (memory and file), `incoming_refs_model`, `incoming_refs_promotion_filters_before_stamping` (allocation reuse, both statement orders and tied retractions after stamping), the three failed-statement tests in AC8a |
-| 7 | `incoming_refs_unknown_target_with_populated_dictionary` (committed dictionary/VAET plus pending facts, small and promoted transactions, zero/large limits, unchanged file/WAL bytes and counters, empty commit, reopen integrity and exact known links), `incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen`, `incoming_refs_external_types_and_large_read_only`, statement/promotion test |
+| 7 | `incoming_refs_unknown_target_with_populated_dictionary` (committed dictionary/VAET plus pending facts, small and promoted transactions, zero/large limits, unchanged main-file bytes (length on Windows), WAL bytes and counters, empty commit, reopen integrity and exact known links), `incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen`, `incoming_refs_external_types_and_large_read_only`, statement/promotion test |
 | 8 | `incoming_refs_read_only_retryable_exhaustion_rollback_and_drop`, `incoming_refs_external_types_and_large_read_only` |
 | 8a | `incoming_refs_on_failed_handle` (fault-injected STG-046 and WAL-007; borrowed and owned); `incoming_refs_failed_promotion_keeps_completed_statements` (earlier assertion and retraction), `incoming_refs_failed_large_statement_keeps_completed_statements` (every chunk-write fault ordinal), `incoming_refs_failed_end_statement_keeps_completed_statements` (claims-tree read failure) |
 | 9 | `incoming_refs_wal_recovery_and_recovered_then_promoted` (actual crashing child, implicit and explicit commits), `incoming_refs_promotion_exact_set` (before/after promotion, new source/attribute and retraction after promotion, exact set before commit); checkpoint/reopen, statement/promotion, rollback/drop and model tests |
@@ -37,7 +37,7 @@ Names below are executable tests; combined names cover several closely related c
 | 14 | `incoming_refs_unrelated_growth`: 100,000 mixed unrelated facts, all four layers, first and repeated calls; independent enumeration and separate successor probes; history and legacy budget tests independently check low-budget counts; `incoming_refs_setup_work_is_counted`, `incoming_refs_pending_extend_work_is_counted`, `incoming_refs_query_snapshot_skips_target_index` |
 | 15 | outcome, shared-layer budget and external large read-only tests; reduction establishes links only after all ranges finish |
 | 16 | `owned_incoming_refs_cross_thread_and_guards`, existing `owned_tx_guards_begin_thread`, `owned_tx_user_function_off_the_begin_thread`, `owned_tx_other_thread_query_reads_committed` |
-| 19 | `incoming_refs_read_errors_remain_errors`; full native suite, golden/model/WAL/crash/owned suites, fmt and native/browser/WASI Clippy |
+| 19 | `incoming_refs_read_errors_remain_errors`, `incoming_refs_default_reader_returns_int019_without_visiting` (MockReader inherits the default, INT-019, visitor never called); full native suite, golden/model/WAL/crash/owned suites, fmt and native/browser/WASI Clippy |
 | 20 | Distribution binary measurements below |
 | 21, Rust half | Criterion median comparison below: no regression above 5% on any of 65 IDs in either round; `incoming_refs_position_memory` capacity accounting |
 | 22, in-repo half | API rustdoc, CHANGELOG, CLAUDE, TEST_COVERAGE, ROADMAP and README |
@@ -162,17 +162,24 @@ Total allocator/RSS usage was not measured. No allocator instrumentation was add
 
 ## Verification (2026-11-28)
 
-Verification with Rust 1.99.1 on Linux x86_64. The full native suites, native
-Clippy, fmt and 500-case model results include the incoming-reference test
-changes. The build, WASI, Firefox, wasm Clippy, distribution-size and benchmark
-results predate that test-only change, which is excluded from wasm32 builds and
-changes no production source.
+Full native runs on Linux x86_64 with Rust 1.99.1 include the new default-reader
+test and precede the Windows-only test helper, which behaves identically on
+non-Windows. Native all-target Clippy with and without `test-hooks` and fmt pass.
+Coverage using the coverage-gates workflow's nightly-2026-10-01,
+cargo-llvm-cov 0.9.1 and `--branch` passes every per-module gate:
+`src/storage/mod.rs` has **85.82% line coverage** (84% floor) and
+**93.33% branch coverage** (92% floor).
+
+The build, WASI, Firefox, wasm Clippy, distribution-size and benchmark results
+predate the later test-only changes; no production source has changed since.
+Open main-file checks compare length on Windows because its mandatory lock
+prevents reading through a second handle. Windows was not run.
 
 | Command | Result |
 |---|---|
 | `cargo build` | Pass |
-| `cargo test` | **2,189 passed, 0 failed, 23 ignored** (2,212 total) |
-| `cargo test --features test-hooks` | **2,227 passed, 0 failed, 32 ignored** (2,259 total) |
+| `cargo test` | **2,190 passed, 0 failed, 23 ignored** (2,213 total) |
+| `cargo test --features test-hooks` | **2,228 passed, 0 failed, 32 ignored** (2,260 total) |
 | `PROPTEST_CASES=500 cargo test --test incoming_refs_test incoming_refs_model` | Pass |
 | `cargo clippy --all-targets -- -D warnings` | Pass |
 | `cargo clippy --all-targets --features test-hooks -- -D warnings` | Pass |
@@ -185,7 +192,11 @@ changes no production source.
 
 The earlier base-only source check with the new benchmark, `cargo check --offline --bench incoming_refs_write`, also passed.
 
-The library suite is 1,268 passed / eight ignored. The incoming-reference integration file is 15 passed; owned transactions are 17 passed. Fourteen focused incoming-reference unit tests pass. The full run includes the existing golden-file, model, WAL, crash and transaction suites; ignored cases remain ignored. The new API rustdoc passes.
+The library has 1,269 passed and eight ignored; incoming-reference integration
+tests have 15 passed and owned transactions have 17 passed. The full runs
+include the default-reader INT-019/no-visitor test, the existing golden-file,
+model, WAL, crash and transaction suites, and the new API rustdoc; ignored cases
+remain ignored.
 
 Chrome and Safari browser runs and CI's Rust 1.100 size build were not run for this repository. Ordinary unit tests exercise the test-only enumeration sites.
 

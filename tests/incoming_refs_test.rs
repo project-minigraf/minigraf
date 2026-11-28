@@ -8,6 +8,19 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 mod common;
 
+fn main_file_state(path: &std::path::Path) -> impl PartialEq {
+    // Windows locks are mandatory: a second handle cannot read the open database.
+    // Compare its length there, and exact bytes elsewhere. The WAL is not locked.
+    #[cfg(windows)]
+    {
+        std::fs::metadata(path).unwrap().len()
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::read(path).unwrap()
+    }
+}
+
 fn id(n: u128) -> Uuid {
     Uuid::from_u128(n)
 }
@@ -185,7 +198,7 @@ fn incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reopen.graph");
     let db = database(true, &path);
-    let before = std::fs::read(&path).unwrap();
+    let before = main_file_state(&path);
     {
         let mut tx = db.begin_write().unwrap();
         assert!(
@@ -198,7 +211,7 @@ fn incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen() {
         );
         tx.commit().unwrap();
     }
-    assert!(std::fs::read(&path).unwrap() == before);
+    assert!(main_file_state(&path) == before);
     db.execute(&statement(true, 1, ":a", 9)).unwrap();
     assert_eq!(lookup(&db, 9).0.len(), 1);
     db.checkpoint().unwrap();
@@ -224,7 +237,7 @@ fn incoming_refs_unknown_target_with_populated_dictionary() {
         db.execute(&statement(true, 4, ":c", 9)).unwrap();
         db.execute(&statement(true, 5, ":d", 10)).unwrap();
         let count = db.current_tx_count();
-        let before = std::fs::read(&path).unwrap();
+        let before = main_file_state(&path);
         let wal_before = std::fs::read(&wal_path).unwrap();
         let mut tx = db
             .begin_write_with(TxOptions::new().chunk_facts(1))
@@ -233,13 +246,15 @@ fn incoming_refs_unknown_target_with_populated_dictionary() {
             // Two facts cross the threshold and populate the working trees.
             tx.execute("(transact [[:filler-a :n 1] [:filler-b :n 2]])")
                 .unwrap();
-            assert!(std::fs::read(&path).unwrap() != before);
+            // Changed pages need not change file length, so this proof needs bytes.
+            #[cfg(not(windows))]
+            assert!(main_file_state(&path) != before);
         }
         // Promotion may write pages; only lookup itself must leave them intact.
-        let bytes = std::fs::read(&path).unwrap();
+        let state = main_file_state(&path);
         let wal = std::fs::read(&wal_path).unwrap();
         if !large {
-            assert!(bytes == before);
+            assert!(state == before);
             assert!(wal == wal_before);
         }
         for limits in [
@@ -249,7 +264,7 @@ fn incoming_refs_unknown_target_with_populated_dictionary() {
             let (links, examined) = complete(tx.incoming_refs(id(999), limits).unwrap());
             assert!(links.is_empty());
             assert_eq!(examined, 0);
-            assert!(std::fs::read(&path).unwrap() == bytes);
+            assert!(main_file_state(&path) == state);
             assert!(std::fs::read(&wal_path).unwrap() == wal);
             assert_eq!(db.current_tx_count(), count);
         }
@@ -257,14 +272,14 @@ fn incoming_refs_unknown_target_with_populated_dictionary() {
             tx.rollback();
         } else {
             tx.commit().unwrap();
-            assert!(std::fs::read(&path).unwrap() == bytes);
+            assert!(main_file_state(&path) == state);
             assert!(std::fs::read(&wal_path).unwrap() == wal);
         }
         assert_eq!(db.current_tx_count(), count);
-        let bytes = std::fs::read(&path).unwrap();
+        let state = main_file_state(&path);
         let wal = std::fs::read(&wal_path).unwrap();
         db.begin_write().unwrap().commit().unwrap();
-        assert!(std::fs::read(&path).unwrap() == bytes);
+        assert!(main_file_state(&path) == state);
         assert!(std::fs::read(&wal_path).unwrap() == wal);
         assert_eq!(db.current_tx_count(), count);
         db.checkpoint().unwrap();
@@ -306,7 +321,7 @@ fn incoming_refs_read_only_retryable_exhaustion_rollback_and_drop() {
     let path = dir.path().join("readonly.graph");
     let db = database(true, &path);
     db.execute(&statement(true, 1, ":a", 9)).unwrap();
-    let bytes = std::fs::read(&path).unwrap();
+    let state = main_file_state(&path);
     let wal = std::fs::read(path.with_extension("graph.wal")).unwrap();
     for rollback in [false, true] {
         let mut tx = db
@@ -327,7 +342,7 @@ fn incoming_refs_read_only_retryable_exhaustion_rollback_and_drop() {
             .0
             .is_empty()
         );
-        assert!(std::fs::read(&path).unwrap() == bytes);
+        assert!(main_file_state(&path) == state);
         assert!(std::fs::read(path.with_extension("graph.wal")).unwrap() == wal);
         if rollback {
             tx.rollback();
@@ -563,7 +578,7 @@ fn incoming_refs_external_types_and_large_read_only() {
         .unwrap();
     tx.execute(&statement(true, 1, ":a", 9)).unwrap();
     tx.execute(&statement(true, 2, ":b", 9)).unwrap();
-    let before = std::fs::read(&path).unwrap();
+    let before = main_file_state(&path);
     let wal = std::fs::read(path.with_extension("graph.wal")).unwrap();
     let count = db.current_tx_count();
     assert!(
@@ -589,7 +604,7 @@ fn incoming_refs_external_types_and_large_read_only() {
         .len(),
         2
     );
-    assert!(std::fs::read(&path).unwrap() == before);
+    assert!(main_file_state(&path) == before);
     assert!(std::fs::read(path.with_extension("graph.wal")).unwrap() == wal);
     assert_eq!(db.current_tx_count(), count);
     tx.commit().unwrap();

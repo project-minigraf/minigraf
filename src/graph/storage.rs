@@ -2260,6 +2260,22 @@ mod tests {
     }
 
     #[test]
+    fn incoming_refs_default_reader_returns_int019_without_visiting() {
+        use crate::storage::CommittedReader;
+
+        let reader = MockReader(Vec::new());
+        let mut visited = false;
+        let err = reader
+            .incoming_ref_records(uuid::Uuid::from_u128(1), 1, &mut |_, _, _, _| {
+                visited = true;
+            })
+            .unwrap_err();
+
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-019");
+        assert!(!visited, "unsupported reader must not call the visitor");
+    }
+
+    #[test]
     fn committed_and_pending_facts_combine_in_every_lookup() {
         let (e, other) = (uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2));
         let committed = vec![

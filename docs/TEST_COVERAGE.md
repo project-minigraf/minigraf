@@ -2,27 +2,35 @@
 
 ## Coverage Summary
 
-**#924 bounded incoming references**: full native `cargo test` on
-2026-11-28 passes **2,189 tests, 0 failures, 23 ignored** (2,212 total).
-This adds 31 active tests:
+**#924 bounded incoming references**: full native runs on 2026-11-28 with
+Rust 1.99.1 on Linux x86_64 pass **2,190 tests, 0 failed, 23 ignored**
+(2,213 total) by default and **2,228 tests, 0 failed, 32 ignored**
+(2,260 total) with `test-hooks`. Both runs include the new default-reader test
+and precede the Windows-only test helper, which behaves identically on
+non-Windows. This adds 32 active tests:
 `src/db/incoming_tests.rs` has ten (fault-injected STG-046/WAL-007 reads,
 legacy ties/budgets, 100,000 unrelated facts in all four representations,
 independent history-enumeration bounds, unchanged non-ref batch capacity,
 failed promotion/chunk/finalization visibility, setup-work instrumentation,
 and allocation reuse with last-statement/tied-retraction precedence after stamping);
-`src/graph/storage.rs` adds two tests for counted pending extension and omission
-of the unused incoming index in query-only snapshots;
+`src/graph/storage.rs` adds three tests for counted pending extension, omission
+of the unused incoming index in query-only snapshots, and the default reader
+error (`incoming_refs_default_reader_returns_int019_without_visiting`, asserting
+INT-019 and no visitor calls);
 `src/incoming.rs` has one capacity-accounting test; `src/storage/reader.rs`
 has one malformed/missing VAET test; `tests/incoming_refs_test.rs` has 15
 (including the crash-child entrypoint, proptest model, exact-set
 promotion and unknown-target lookup with a populated committed dictionary); the owned
 transaction suite has one new cross-thread/guard case (17 total); and the API
-has one new rustdoc test. The library suite passes 1,268 with eight ignored.
+has one new rustdoc test. The library count is 1,269 passed with eight ignored.
 Strict native all-target Clippy with and without `test-hooks`, fmt, and
-`incoming_refs_model` with `PROPTEST_CASES=500` pass. The earlier build,
-browser/WASI Clippy, WASI/Firefox tests, distribution-size and benchmark results
-predate the test-only change, which is excluded from wasm32 builds and changes
-no production source. The Rust 1.99.1 distribution binary is 1,250,568 bytes
+`incoming_refs_model` with `PROPTEST_CASES=500` pass. Coverage using the
+coverage-gates workflow's nightly-2026-10-01, cargo-llvm-cov 0.9.1 and `--branch`
+passes every per-module gate; `src/storage/mod.rs` has **85.82% line coverage**
+(84% floor) and **93.33% branch coverage** (92% floor).
+The earlier build, WASI, Firefox, wasm Clippy, distribution-size and benchmark
+results predate the later test-only changes; no production source has changed
+since. Windows was not run. The Rust 1.99.1 distribution binary is 1,250,568 bytes
 (+3,808 from the v3 base), below the unchanged 1,280,000-byte gate.
 No browser tests or ignored tests were added.
 See the [AC-to-test mapping, memory accounting and binary/benchmark evidence](testing/924-incoming-refs.md).
@@ -66,17 +74,14 @@ tests. The distribution binary is **1,270,880 bytes** (+16 bytes), below the
 failures, one-line existing crash-harness Clippy correction, and unverified lanes
 are documented in the [PR 1 evidence](testing/894-idb-flush-recovery.md).
 
-| | Default features (#924 run) | `test-hooks` (#924 run) |
+| | Default features (#924) | `test-hooks` (#924) |
 |---|---|---|
-| **Passed** | 2,189 | 2,227 |
+| **Passed** | 2,190 | 2,228 |
 | **Failed** | 0 | 0 |
 | **Ignored** | 23 | 32 |
-| **Total** | 2,212 | 2,259 |
+| **Total** | 2,213 | 2,260 |
 
-Both columns come from the completed #924 runs on the working tree including
-the incoming-reference test changes, with Rust 1.99.1 on Linux x86_64, including
-unit, integration, example and doc tests; both suites had zero failures.
-Verification results below identify which earlier suites ran.
+Both completed runs include unit, integration, example and doc tests.
 
 **#441 verification (2026-11-14)**: the full native default suite passes
 (2,149 active, 23 ignored), including the grammar verifier and eight new
