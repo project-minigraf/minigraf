@@ -210,6 +210,97 @@ fn incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen() {
 }
 
 #[test]
+fn incoming_refs_unknown_target_with_populated_dictionary() {
+    for large in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unknown.graph");
+        let wal_path = path.with_extension("graph.wal");
+        let db = database(true, &path);
+        for (source, attr, target) in [(1, ":a", 9), (2, ":b", 9), (3, ":a", 10)] {
+            db.execute(&statement(true, source, attr, target)).unwrap();
+        }
+        db.execute("(transact [[:property :n 42]])").unwrap();
+        db.checkpoint().unwrap();
+        db.execute(&statement(true, 4, ":c", 9)).unwrap();
+        db.execute(&statement(true, 5, ":d", 10)).unwrap();
+        let count = db.current_tx_count();
+        let before = std::fs::read(&path).unwrap();
+        let wal_before = std::fs::read(&wal_path).unwrap();
+        let mut tx = db
+            .begin_write_with(TxOptions::new().chunk_facts(1))
+            .unwrap();
+        if large {
+            // Two facts cross the threshold and populate the working trees.
+            tx.execute("(transact [[:filler-a :n 1] [:filler-b :n 2]])")
+                .unwrap();
+            assert!(std::fs::read(&path).unwrap() != before);
+        }
+        // Promotion may write pages; only lookup itself must leave them intact.
+        let bytes = std::fs::read(&path).unwrap();
+        let wal = std::fs::read(&wal_path).unwrap();
+        if !large {
+            assert!(bytes == before);
+            assert!(wal == wal_before);
+        }
+        for limits in [
+            IncomingRefLimits::new(0, 0),
+            IncomingRefLimits::new(usize::MAX, usize::MAX),
+        ] {
+            let (links, examined) = complete(tx.incoming_refs(id(999), limits).unwrap());
+            assert!(links.is_empty());
+            assert_eq!(examined, 0);
+            assert!(std::fs::read(&path).unwrap() == bytes);
+            assert!(std::fs::read(&wal_path).unwrap() == wal);
+            assert_eq!(db.current_tx_count(), count);
+        }
+        if large {
+            tx.rollback();
+        } else {
+            tx.commit().unwrap();
+            assert!(std::fs::read(&path).unwrap() == bytes);
+            assert!(std::fs::read(&wal_path).unwrap() == wal);
+        }
+        assert_eq!(db.current_tx_count(), count);
+        let bytes = std::fs::read(&path).unwrap();
+        let wal = std::fs::read(&wal_path).unwrap();
+        db.begin_write().unwrap().commit().unwrap();
+        assert!(std::fs::read(&path).unwrap() == bytes);
+        assert!(std::fs::read(&wal_path).unwrap() == wal);
+        assert_eq!(db.current_tx_count(), count);
+        db.checkpoint().unwrap();
+        drop(db);
+
+        let db = database(true, &path);
+        let report = db.verify().unwrap();
+        assert!(report.is_ok());
+        assert_eq!(report.facts, 6);
+        assert_eq!(db.current_tx_count(), count);
+        assert!(
+            lookup(&db, 9).0
+                == BTreeSet::from([
+                    (id(1), ":a".into()),
+                    (id(2), ":b".into()),
+                    (id(4), ":c".into())
+                ])
+        );
+        assert!(lookup(&db, 10).0 == BTreeSet::from([(id(3), ":a".into()), (id(5), ":d".into())]));
+        let (links, examined) = lookup(&db, 999);
+        assert!(links.is_empty());
+        assert_eq!(examined, 0);
+        // The public fact log exposes neither an entity nor a ref for the unknown ID.
+        let records: Vec<_> = db
+            .fact_log(&minigraf::FactFilter::new())
+            .unwrap()
+            .map(|record| record.unwrap())
+            .collect();
+        assert_eq!(records.len(), 6);
+        assert!(records.iter().all(|record| {
+            record.entity != id(999) && record.value != minigraf::Value::Ref(id(999))
+        }));
+    }
+}
+
+#[test]
 fn incoming_refs_read_only_retryable_exhaustion_rollback_and_drop() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("readonly.graph");
@@ -424,6 +515,8 @@ fn incoming_refs_wal_recovery_and_recovered_then_promoted() {
 }
 
 use proptest::prelude::*;
+
+// More cases: PROPTEST_CASES=500 cargo test --test incoming_refs_test incoming_refs_model
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
     #[test]

@@ -26,11 +26,11 @@ Names below are executable tests; combined names cover several closely related c
 | 3 | `incoming_refs_exact_types_and_attributes` (memory, pending and durable) |
 | 4–5 | `incoming_refs_unique_pairs_and_any_valid_window`, `incoming_refs_legacy_ties_and_group_budget` |
 | 6 | `incoming_refs_statement_order_rejected_statement_and_promotion` (memory and file), `incoming_refs_model`, `incoming_refs_promotion_filters_before_stamping` (allocation reuse, both statement orders and tied retractions after stamping), the three failed-statement tests in AC8a |
-| 7 | `incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen`, `incoming_refs_external_types_and_large_read_only`, statement/promotion test |
+| 7 | `incoming_refs_unknown_target_with_populated_dictionary` (committed dictionary/VAET plus pending facts, small and promoted transactions, zero/large limits, unchanged file/WAL bytes and counters, empty commit, reopen integrity and exact known links), `incoming_refs_unknown_pending_only_dangling_and_checkpoint_reopen`, `incoming_refs_external_types_and_large_read_only`, statement/promotion test |
 | 8 | `incoming_refs_read_only_retryable_exhaustion_rollback_and_drop`, `incoming_refs_external_types_and_large_read_only` |
 | 8a | `incoming_refs_on_failed_handle` (fault-injected STG-046 and WAL-007; borrowed and owned); `incoming_refs_failed_promotion_keeps_completed_statements` (earlier assertion and retraction), `incoming_refs_failed_large_statement_keeps_completed_statements` (every chunk-write fault ordinal), `incoming_refs_failed_end_statement_keeps_completed_statements` (claims-tree read failure) |
 | 9 | `incoming_refs_wal_recovery_and_recovered_then_promoted` (actual crashing child, implicit and explicit commits), `incoming_refs_promotion_exact_set` (before/after promotion, new source/attribute and retraction after promotion, exact set before commit); checkpoint/reopen, statement/promotion, rollback/drop and model tests |
-| 10 | `incoming_refs_model`: 32 proptest cases, up to 79 operations, independent exact-typed set model; asserts/retracts, aliases, commit/rollback, checkpoint/reopen and low promotion thresholds |
+| 10 | `incoming_refs_model`: 32 proptest cases by default, `PROPTEST_CASES` overrides; up to 79 operations, independent exact-typed set model; asserts/retracts, aliases, commit/rollback, checkpoint/reopen and low promotion thresholds |
 | 11 | `incoming_refs_exact_link_cap_overflow_zero_and_huge_limits` |
 | 12 | `incoming_refs_budget_shared_across_layers`, `incoming_refs_legacy_ties_and_group_budget` |
 | 13 | `incoming_refs_dead_pairs_exhaust_and_one_pair_long_history`, `incoming_refs_history_enumeration_is_bounded` |
@@ -162,13 +162,18 @@ Total allocator/RSS usage was not measured. No allocator instrumentation was add
 
 ## Verification (2026-11-28)
 
-Verification on the same committed code with Rust 1.99.1 on Linux x86_64:
+Verification with Rust 1.99.1 on Linux x86_64. The full native suites, native
+Clippy, fmt and 500-case model results include the incoming-reference test
+changes. The build, WASI, Firefox, wasm Clippy, distribution-size and benchmark
+results predate that test-only change, which is excluded from wasm32 builds and
+changes no production source.
 
 | Command | Result |
 |---|---|
 | `cargo build` | Pass |
-| `cargo test` | **2,188 passed, 0 failed, 23 ignored** (2,211 total) |
-| `cargo test --features test-hooks` | **2,226 passed, 0 failed, 32 ignored** (2,258 total) |
+| `cargo test` | **2,189 passed, 0 failed, 23 ignored** (2,212 total) |
+| `cargo test --features test-hooks` | **2,227 passed, 0 failed, 32 ignored** (2,259 total) |
+| `PROPTEST_CASES=500 cargo test --test incoming_refs_test incoming_refs_model` | Pass |
 | `cargo clippy --all-targets -- -D warnings` | Pass |
 | `cargo clippy --all-targets --features test-hooks -- -D warnings` | Pass |
 | `cargo fmt --check` | Pass |
@@ -180,7 +185,7 @@ Verification on the same committed code with Rust 1.99.1 on Linux x86_64:
 
 The earlier base-only source check with the new benchmark, `cargo check --offline --bench incoming_refs_write`, also passed.
 
-The library suite is 1,268 passed / eight ignored. The incoming-reference integration file is 14 passed; owned transactions are 17 passed. Fourteen focused incoming-reference unit tests pass. The full run includes the existing golden-file, model, WAL, crash and transaction suites; ignored cases remain ignored. The new API rustdoc passes.
+The library suite is 1,268 passed / eight ignored. The incoming-reference integration file is 15 passed; owned transactions are 17 passed. Fourteen focused incoming-reference unit tests pass. The full run includes the existing golden-file, model, WAL, crash and transaction suites; ignored cases remain ignored. The new API rustdoc passes.
 
 Chrome and Safari browser runs and CI's Rust 1.100 size build were not run for this repository. Ordinary unit tests exercise the test-only enumeration sites.
 

@@ -250,7 +250,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2211 tests** (2188 active, 23 ignored; unit + integration + example + doc). Browser-only inventory is separate: #894 adds 14 wasm tests (95 main-thread / 128 dedicated-worker tests in total); see `docs/testing/894-idb-flush-recovery.md` for execution results. Engine answers once checked by the executor are frozen in `tests/answers/` (#551). The #924 Rust 1.99.1 dist binary is 1,250,568 bytes (+3,808 from the v3 base), below the 1,280,000-byte gate; [verification and acceptance mapping](docs/testing/924-incoming-refs.md).
+**2212 tests** (2189 active, 23 ignored; unit + integration + example + doc). Browser-only inventory is separate: #894 adds 14 wasm tests (95 main-thread / 128 dedicated-worker tests in total); see `docs/testing/894-idb-flush-recovery.md` for execution results. Engine answers once checked by the executor are frozen in `tests/answers/` (#551). The #924 Rust 1.99.1 dist binary is 1,250,568 bytes (+3,808 from the v3 base), below the 1,280,000-byte gate; [verification and acceptance mapping](docs/testing/924-incoming-refs.md).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.
