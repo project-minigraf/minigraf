@@ -2,6 +2,28 @@
 
 ## Coverage Summary
 
+**#924 bounded incoming references**: full offline native `cargo test` on
+2026-11-28 passes **2,188 tests, 0 failures, 23 ignored** (2,211 total), with
+`CARGO_BUILD_JOBS=4` and `RUST_TEST_THREADS=4`. This adds 30 active tests:
+`src/db/incoming_tests.rs` has ten (fault-injected STG-046/WAL-007 reads,
+legacy ties/budgets, 100,000 unrelated facts in all four representations,
+independent history-enumeration bounds, unchanged non-ref batch capacity,
+failed promotion/chunk/finalization visibility, setup-work instrumentation,
+and allocation reuse with last-statement/tied-retraction precedence after stamping);
+`src/graph/storage.rs` adds two tests for counted pending extension and omission
+of the unused incoming index in query-only snapshots;
+`src/incoming.rs` has one capacity-accounting test; `src/storage/reader.rs`
+has one malformed/missing VAET test; `tests/incoming_refs_test.rs` has 14
+(including the crash-child entrypoint, proptest model and exact-set promotion); the owned
+transaction suite has one new cross-thread/guard case (17 total); and the API
+has one new rustdoc test. The library suite passes 1,268 with eight ignored.
+Build, strict native all-target Clippy, fmt, browser wasm Clippy and WASI Clippy
+all pass offline. The Rust 1.99.1 distribution binary is 1,250,568 bytes
+(+3,808 from the v3 base), below the unchanged 1,280,000-byte gate.
+No browser tests or ignored tests were added.
+See the [AC-to-test mapping, memory accounting and binary/benchmark evidence](testing/924-incoming-refs.md).
+
+
 **#900 strict UTC timestamps**: `src/temporal.rs` has 13 tests (seven added),
 including all 328 frozen chrono 0.4.45 vectors in
 `src/temporal/chrono_vectors.rs`, whole-second vector round trips, strict syntax
@@ -40,14 +62,16 @@ tests. The distribution binary is **1,270,880 bytes** (+16 bytes), below the
 failures, one-line existing crash-harness Clippy correction, and unverified lanes
 are documented in the [PR 1 evidence](testing/894-idb-flush-recovery.md).
 
-| | Default features | With `--features test-hooks` |
+| | Default features (#924 run) | `test-hooks` (pre-#924 inventory) |
 |---|---|---|
-| **Active** | 2,158 | 2,196 |
+| **Active** | 2,188 | 2,196 |
 | **Ignored** | 23 | 32 |
-| **Total** | 2,181 | 2,228 |
+| **Total** | 2,211 | 2,228 |
 
-Counts above are the current Cargo test inventory (active versus ignored),
-including #900, #441, #777, #789, #781, #794, #795, #837, #865, #869, #870, #861, #863, #871, #872 and #824 (Linux). Verification results below identify which suites ran.
+Default counts above come from the completed #924 Linux run, including unit,
+integration, example and doc tests. The test-hooks column preserves the last
+pre-#924 inventory; that full feature suite was not rerun for #924. Verification
+results below identify which earlier suites ran.
 
 **#441 verification (2026-11-14)**: the full native default suite passes
 (2,149 active, 23 ignored), including the grammar verifier and eight new

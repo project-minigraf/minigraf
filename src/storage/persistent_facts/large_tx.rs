@@ -46,6 +46,8 @@ pub(crate) struct LargeTx {
     written: bool,
     /// The running statement's base, in a `WriteTransaction` (plan decision 33).
     stmt: Option<Base>,
+    /// Completed statements retained if releasing a statement base fails.
+    incoming_base: Option<MetaPage>,
 }
 
 /// A statement's base (spec §5.1, plan decision 28): what a failed statement
@@ -131,6 +133,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             pending_len: 0,
             written: false,
             stmt: None,
+            incoming_base: None,
         };
         // No fact joins the pending store while the write lock is held, so
         // these are the facts the commit publishes. Their own tx_counts and
@@ -191,6 +194,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         };
         let since = tx.alloc.end_base();
         if ok {
+            tx.incoming_base = Some(base.work);
             let claims = {
                 let backend = self.lock()?;
                 btree::tree_pages(base.claims, &*backend, &self.page_cache)
@@ -200,6 +204,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 tx.alloc.release(id);
             }
             tx.written |= base.wrote;
+            tx.incoming_base = None;
         } else {
             tx.work = base.work;
             tx.freed.truncate(base.freed_len);
@@ -216,12 +221,27 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// learns an id that is not committed. Unpinned: nothing frees a working
     /// page while the transaction holds the write lock.
     pub(crate) fn large_reader(&self, tx: &LargeTx) -> Arc<dyn crate::storage::CommittedReader> {
+        self.large_reader_at(tx, tx.work)
+    }
+
+    pub(crate) fn large_incoming_reader(
+        &self,
+        tx: &LargeTx,
+    ) -> Arc<dyn crate::storage::CommittedReader> {
+        self.large_reader_at(tx, tx.incoming_base.unwrap_or(tx.work))
+    }
+
+    fn large_reader_at(
+        &self,
+        tx: &LargeTx,
+        work: MetaPage,
+    ) -> Arc<dyn crate::storage::CommittedReader> {
         Arc::new(crate::storage::reader::OnDiskReader::new(
             self.backend.clone(),
             self.page_cache.clone(),
             &MetaPage {
                 last_checkpointed_tx_count: tx.tx_count,
-                ..tx.work
+                ..work
             },
         ))
     }

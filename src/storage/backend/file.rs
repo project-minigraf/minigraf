@@ -473,6 +473,12 @@ impl StorageBackend for FileBackend {
     }
 
     fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
+        #[cfg(test)]
+        if let crate::storage::fault::Action::Fail(e) =
+            crate::storage::fault::on(crate::storage::fault::Site::PageRead)
+        {
+            return Err(e.into());
+        }
         if page_id >= self.page_count {
             bail_coded!(
                 ErrorCode::Int049,

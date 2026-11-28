@@ -480,6 +480,51 @@ impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
 }
 
 impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
+    fn incoming_ref_records(
+        &self,
+        target: EntityId,
+        max: usize,
+        visit: &mut dyn FnMut(EntityId, String, u64, bool),
+    ) -> Result<bool> {
+        if self.vaet_root == 0 {
+            return Ok(true);
+        }
+        let mut dict = self.dict();
+        let Some(eid) = dict.eid_of(&target)? else {
+            return Ok(true);
+        };
+        let prefix = keys::entity_prefix(eid);
+        let mut cursor =
+            LeafCursor::new(self.vaet_root, Some(&prefix), &self.backend, &self.cache)?;
+        let mut examined = 0;
+        loop {
+            // Only the target prefix is checked before charging. In particular,
+            // do not decode the next version to settle the preceding group.
+            match cursor.peek_ref()? {
+                None => return Ok(true),
+                Some((key, _)) if !key.starts_with(&prefix) => {
+                    crate::incoming::prefix_end();
+                    return Ok(true);
+                }
+                Some(_) => {}
+            }
+            if examined == max {
+                return Ok(false);
+            }
+            examined += 1;
+            if let Some((key, _)) = cursor.next_ref()? {
+                crate::incoming::enumerated();
+                let fact = KeyFact::decode(Index::Vaet, key)?;
+                visit(
+                    dict.uuid_of(fact.e)?,
+                    dict.name_of(fact.a)?,
+                    fact.tx_count,
+                    fact.asserted,
+                );
+            }
+        }
+    }
+
     fn log_source(&self) -> Option<&dyn LogSource> {
         Some(self)
     }
@@ -711,5 +756,59 @@ mod uuid_batch_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod incoming_tests {
+    use super::*;
+    use crate::storage::backend::memory::MemoryBackend;
+    use crate::storage::btree::build_btree;
+    use crate::storage::page::PageAllocator;
+
+    #[test]
+    fn incoming_refs_read_errors_remain_errors() {
+        let target = EntityId::from_u128(9);
+        let mut backend = MemoryBackend::new();
+        let cache = Arc::new(PageCache::new(0));
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let mut meta = MetaPage::empty(1);
+        meta.dict_root = build_btree(
+            vec![(keys::dict_uuid_key(&target), keys::uint_bytes(1))],
+            &mut backend,
+            &cache,
+            &mut alloc,
+        )
+        .unwrap();
+        // The target prefix exists, but the rest of this fact is malformed.
+        meta.vaet_root = build_btree(
+            vec![(keys::entity_prefix(1), Vec::new())],
+            &mut backend,
+            &cache,
+            &mut alloc,
+        )
+        .unwrap();
+        let backend = Arc::new(Mutex::new(backend));
+        let reader = OnDiskReader::new(backend.clone(), cache.clone(), &meta);
+        let mut visits = 0;
+        assert!(
+            !reader
+                .incoming_ref_records(target, 0, &mut |_, _, _, _| visits += 1)
+                .unwrap()
+        );
+        let err = reader
+            .incoming_ref_records(target, 1, &mut |_, _, _, _| visits += 1)
+            .unwrap_err();
+        assert_eq!(crate::MinigrafError::from(err).code(), "INT-049");
+        assert_eq!(visits, 0);
+        // An unavailable VAET page is an error even with an otherwise readable DICT.
+        meta.vaet_root = alloc.next_append() + 100;
+        let reader = OnDiskReader::new(backend, cache, &meta);
+        assert!(
+            reader
+                .incoming_ref_records(target, 10, &mut |_, _, _, _| visits += 1)
+                .is_err()
+        );
+        assert_eq!(visits, 0);
     }
 }

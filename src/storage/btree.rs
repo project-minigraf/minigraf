@@ -674,7 +674,6 @@ impl<'a> LeafCursor<'a> {
 
     /// The next entry in key order without moving past it, or `None` past
     /// the last one.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn peek_ref(&mut self) -> Result<Option<&Entry>> {
         loop {
             if self.done {

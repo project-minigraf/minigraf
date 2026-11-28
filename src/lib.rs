@@ -87,6 +87,7 @@ pub mod fact_log;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod fault_matrix;
 pub(crate) mod graph;
+mod incoming;
 /// Build a new database from explicit fact records: [`LogWriter`].
 #[cfg(not(target_arch = "wasm32"))]
 pub mod log_writer;
@@ -113,6 +114,7 @@ pub use db::{
     WriteTransaction,
 };
 pub use error::{ErrorCategory, MinigrafError};
+pub use incoming::{IncomingRef, IncomingRefBudget, IncomingRefLimits, IncomingRefs};
 pub use overrides::Overridable;
 pub use query::datalog::functions::UdfError;
 pub use repl::Repl;
@@ -205,4 +207,10 @@ pub use query::datalog::optimizer::{Subplans, SubplansGuard};
 #[doc(hidden)]
 pub fn __subplans(mode: Subplans) -> SubplansGuard {
     query::datalog::optimizer::set_subplans(mode)
+}
+
+/// Take and reset incoming-lookup enumeration counts (records, prefix-end probes).
+#[cfg(feature = "test-hooks")]
+pub fn __incoming_enumeration() -> (usize, usize) {
+    incoming::enumeration()
 }

@@ -2112,6 +2112,52 @@ impl TxState {
         }
     }
 
+    fn incoming_refs(
+        &self,
+        ctx: &WriteContext,
+        inner: &Inner,
+        target: crate::EntityId,
+        limits: crate::IncomingRefLimits,
+    ) -> Result<crate::IncomingRefs> {
+        let snapshot = inner.fact_storage.snapshot()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let snapshot = if let (Some(tx), WriteContext::File { pfs, .. }) = (&self.large, ctx) {
+            if self.staged.pending_facts.is_empty() {
+                snapshot.with_committed(pfs.large_incoming_reader(tx))
+            } else {
+                snapshot
+            }
+        } else {
+            snapshot
+        };
+        #[cfg(target_arch = "wasm32")]
+        let _ = ctx;
+        let mut lookup = crate::incoming::Lookup::new(limits);
+        if let Some(reader) = &snapshot.committed {
+            let done = reader.incoming_ref_records(
+                target,
+                lookup.remaining(),
+                &mut |e, a, tx, asserted| {
+                    lookup.charge();
+                    lookup.record(e, a, tx, asserted);
+                },
+            )?;
+            if !done {
+                return Ok(lookup.finish(false));
+            }
+        }
+        lookup.next_layer();
+        if !snapshot.incoming_pending(target, &mut lookup)? {
+            return Ok(lookup.finish(false));
+        }
+        lookup.next_layer();
+        let done = self
+            .staged
+            .incoming
+            .visit(target, &self.staged.pending_facts, &mut lookup);
+        Ok(lookup.finish(done))
+    }
+
     /// The state a query inside the transaction reads (#550 spec §7): for a
     /// large transaction its working trees, which hold every committed and
     /// pending fact and its finished statements; otherwise the database with
@@ -2159,17 +2205,28 @@ impl TxState {
         // synced whatever the transaction's mode (#871).
         Minigraf::open_wal(wal, db_path, pfs.generation())?;
         let mut tx = pfs.begin_large(tx_id)?;
-        let mut staged: Vec<Fact> = std::mem::take(&mut self.staged.pending_facts)
-            .into_iter()
-            .zip(keep)
-            .filter_map(|(f, k)| k.then_some(f))
-            .collect();
-        let written = if staged.is_empty() {
+        // Reduce before stamping: the newest statements must still win when
+        // all retained records receive the same tx_count.
+        let mut keep = keep.into_iter();
+        self.staged
+            .pending_facts
+            .retain(|_| keep.next() == Some(true));
+        drop(keep);
+        let written = if self.staged.pending_facts.is_empty() {
             Ok(())
         } else {
-            pfs.write_staged_chunk(&mut tx, &mut staged)
+            pfs.write_staged_chunk(&mut tx, &mut self.staged.pending_facts)
         };
-        drop(staged);
+        self.staged.incoming = crate::incoming::RefPositions::default();
+        if written.is_ok() {
+            self.staged.pending_facts = Vec::new();
+        } else {
+            // Filtering and the writer may change positions; rebuild only
+            // after failure, for reads of the completed staged statements.
+            for (pos, fact) in self.staged.pending_facts.iter().enumerate() {
+                self.staged.incoming.insert(fact, pos);
+            }
+        }
         // After a failure the transaction stays open: `commit` refuses it
         // (STG-046), and a rollback or drop discards it.
         self.large = Some(tx);
@@ -2305,6 +2362,45 @@ impl<'a> WriteTransaction<'a> {
             .map_err(MinigrafError::from)
     }
 
+    /// Find every live stored scalar [`Value::Ref`] to `target` in this write
+    /// view. The newest transaction wins per triple; tied retractions win,
+    /// and the last staged statement wins. Valid time is ignored, including
+    /// future and expired assertions. Keywords, strings, sets and derived
+    /// facts are excluded. Result order is unspecified.
+    ///
+    /// `max_links` bounds distinct live pairs; `max_records` bounds inspected
+    /// versions across all layers, including retractions and superseded
+    /// versions. Zero is a real limit. Exhaustion returns no partial list;
+    /// require [`crate::IncomingRefs::Complete`] before staging a cascading
+    /// delete. Retry with larger limits or abandon the delete on exhaustion.
+    /// This read stages nothing, takes no transaction counter and does not
+    /// promote or checkpoint. Failed write handles remain readable.
+    ///
+    /// # Errors
+    /// Returns any lock, I/O or decoding error encountered by the lookup.
+    ///
+    /// ```
+    /// use minigraf::{Minigraf, IncomingRefLimits, IncomingRefs};
+    /// let db = Minigraf::in_memory().unwrap();
+    /// let mut tx = db.begin_write().unwrap();
+    /// let target = uuid::Uuid::nil();
+    /// match tx.incoming_refs(target, IncomingRefLimits::new(100, 1000)).unwrap() {
+    ///     IncomingRefs::Complete { links, .. } => assert!(links.is_empty()),
+    ///     IncomingRefs::Exhausted { .. } => { /* retry or abandon delete */ }
+    ///     _ => { /* future outcomes */ }
+    /// }
+    /// tx.rollback();
+    /// ```
+    pub fn incoming_refs(
+        &mut self,
+        target: crate::EntityId,
+        limits: crate::IncomingRefLimits,
+    ) -> Result<crate::IncomingRefs, MinigrafError> {
+        self.state
+            .incoming_refs(&self.guard.ctx, self.inner, target, limits)
+            .map_err(MinigrafError::from)
+    }
+
     /// This transaction's chunk size after the clamp, for tests.
     #[cfg(test)]
     pub(crate) fn chunk(&self) -> usize {
@@ -2386,6 +2482,7 @@ impl<'a> WriteTransaction<'a> {
 pub(crate) struct Staged {
     /// Facts buffered in this transaction (not yet committed to FactStorage).
     pub(crate) pending_facts: Vec<Fact>,
+    incoming: crate::incoming::RefPositions,
     /// Synthetic tx_count assigned to the next staged write batch.
     next_pending_tx_count: u64,
     /// Synthetic tx_id seed used to keep staged writes monotonic.
@@ -2397,6 +2494,7 @@ impl Staged {
     pub(crate) fn new(current_tx_count: u64) -> Self {
         Staged {
             pending_facts: Vec::new(),
+            incoming: crate::incoming::RefPositions::default(),
             next_pending_tx_count: current_tx_count.saturating_add(1),
             next_pending_tx_id: crate::graph::types::tx_id_now(),
         }
@@ -2412,11 +2510,13 @@ impl Staged {
         let staged_tx_id = self.next_tx_id();
         let staged_tx_count = self.next_pending_tx_count;
 
-        self.pending_facts.extend(facts.into_iter().map(|mut fact| {
+        self.pending_facts.reserve(facts.len());
+        for mut fact in facts {
             fact.tx_id = staged_tx_id;
             fact.tx_count = staged_tx_count;
-            fact
-        }));
+            self.incoming.insert(&fact, self.pending_facts.len());
+            self.pending_facts.push(fact);
+        }
 
         self.next_pending_tx_id = staged_tx_id.saturating_add(1);
         self.next_pending_tx_count = self.next_pending_tx_count.saturating_add(1);
@@ -2426,6 +2526,8 @@ impl Staged {
     /// default `valid_from` stays the sentinel until the commit stamps it;
     /// reads see it as the fact's own staged tx_id.
     pub(crate) fn read_view(&self) -> Vec<Fact> {
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::incoming::enumerated_many(self.pending_facts.len());
         self.pending_facts
             .iter()
             .cloned()
@@ -2596,6 +2698,29 @@ impl OwnedWriteTransaction {
         let _running = RunningHere::enter();
         self.state
             .execute(&mut slot.ctx, inner, input)
+            .map_err(MinigrafError::from)
+    }
+
+    /// Bounded incoming scalar references, with exactly the visibility,
+    /// valid-time, exhaustion and read-only semantics of
+    /// [`WriteTransaction::incoming_refs`]. Require a complete result before
+    /// deleting. May run on any thread; both budgets apply across all layers.
+    ///
+    /// # Errors
+    /// Returns read errors, or `API-001` if the write mutex is poisoned.
+    pub fn incoming_refs(
+        &mut self,
+        target: crate::EntityId,
+        limits: crate::IncomingRefLimits,
+    ) -> Result<crate::IncomingRefs, MinigrafError> {
+        let inner = &self.db.inner;
+        let slot = inner
+            .write_lock
+            .lock()
+            .map_err(|_| MinigrafError::from(err_coded!(ErrorCode::Api001)))?;
+        let _running = RunningHere::enter();
+        self.state
+            .incoming_refs(&slot.ctx, inner, target, limits)
             .map_err(MinigrafError::from)
     }
 
@@ -4024,3 +4149,6 @@ mod wasi_tests {
         }
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod incoming_tests;
