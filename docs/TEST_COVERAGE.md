@@ -28,9 +28,15 @@ Strict native all-target Clippy with and without `test-hooks`, fmt, and
 coverage-gates workflow's nightly-2026-10-01, cargo-llvm-cov 0.9.1 and `--branch`
 passes every per-module gate; `src/storage/mod.rs` has **85.82% line coverage**
 (84% floor) and **93.33% branch coverage** (92% floor).
-The earlier build, WASI, Firefox, wasm Clippy, distribution-size and benchmark
+The earlier local build, WASI, Firefox, wasm Clippy, distribution-size and benchmark
 results predate the later test-only changes; no production source has changed
-since. Windows was not run. The Rust 1.99.1 distribution binary is 1,250,568 bytes
+since. CI at commit `126a04175` passed all 28 checks, including build/test on
+`ubuntu-latest`, `macos-latest` and `windows-latest` (all 15 incoming-reference
+integration tests pass on Windows); browser tests in headless Chrome and Firefox
+(main thread and worker) and Safari (main thread and dedicated worker); WASI
+tests on Wasmtime; wasm32 and wasip1 Clippy; per-module coverage gates; MSRV 1.89;
+and the distribution binary size check on Rust 1.100.1: **1,225 KiB**, below the
+**1,250 KiB** limit. The local Rust 1.99.1 distribution binary is 1,250,568 bytes
 (+3,808 from the v3 base), below the unchanged 1,280,000-byte gate.
 No browser tests or ignored tests were added.
 See the [AC-to-test mapping, memory accounting and binary/benchmark evidence](testing/924-incoming-refs.md).

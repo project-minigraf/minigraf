@@ -170,10 +170,11 @@ cargo-llvm-cov 0.9.1 and `--branch` passes every per-module gate:
 `src/storage/mod.rs` has **85.82% line coverage** (84% floor) and
 **93.33% branch coverage** (92% floor).
 
-The build, WASI, Firefox, wasm Clippy, distribution-size and benchmark results
+The local build, WASI, Firefox, wasm Clippy, distribution-size and benchmark results
 predate the later test-only changes; no production source has changed since.
 Open main-file checks compare length on Windows because its mandatory lock
-prevents reading through a second handle. Windows was not run.
+prevents reading through a second handle. CI at commit `126a04175` passed all
+15 incoming-reference integration tests on Windows.
 
 | Command | Result |
 |---|---|
@@ -198,7 +199,13 @@ include the default-reader INT-019/no-visitor test, the existing golden-file,
 model, WAL, crash and transaction suites, and the new API rustdoc; ignored cases
 remain ignored.
 
-Chrome and Safari browser runs and CI's Rust 1.100 size build were not run for this repository. Ordinary unit tests exercise the test-only enumeration sites.
+CI at commit `126a04175` passed all 28 checks, including build/test on
+`ubuntu-latest`, `macos-latest` and `windows-latest`; browser tests in headless
+Chrome and Firefox (main thread and worker) and Safari (main thread and
+dedicated worker); WASI tests on Wasmtime; wasm32 and wasip1 Clippy; per-module
+coverage gates; MSRV 1.89; and the distribution binary size check on Rust
+1.100.1 (**1,225 KiB**, below the **1,250 KiB** limit). Ordinary unit tests
+exercise the test-only enumeration sites.
 
 ## Distribution binary size
 
@@ -209,4 +216,4 @@ The workflow builds the native x86_64 Linux CLI with `cargo build --profile dist
 | Rust 1.94.0 (local default) | 1,284,448 | 1,288,240 | +3,792 | Both exceed |
 | Rust 1.99.1 | 1,246,760 | 1,250,568 | +3,808 | Both pass |
 
-The gate is satisfied with the installed newer toolchain. CI's exact Rust 1.100 toolchain is unavailable locally; that exact build remains unverified.
+The gate is satisfied with the installed newer toolchain. CI at commit `126a04175` also passed the distribution binary size check on Rust 1.100.1: **1,225 KiB**, below the **1,250 KiB** limit.
